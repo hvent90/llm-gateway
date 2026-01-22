@@ -39,13 +39,19 @@ function createHarness(apiKey?: string): HarnessModule {
   });
 
   return {
-    async invoke({ emit, runId: providedRunId, ...params }: InvokeParams): Promise<void> {
+    async invoke({ emit, runId: providedRunId, context, ...params }: InvokeParams): Promise<void> {
       const input = convertMessages(params.messages);
       const tools = params.tools ? convertTools(params.tools) : undefined;
 
       const runId = providedRunId ?? v7();
+      const parentId = context?.parentId;
       const reasoningId = v7();
       const textId = v7();
+
+      // Wrap emit to add parentId to events
+      const taggedEmit = (event: Parameters<typeof emit>[0]) => {
+        emit(parentId ? { ...event, parentId } : event);
+      };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = client.callModel({
@@ -57,7 +63,7 @@ function createHarness(apiKey?: string): HarnessModule {
       // Stream reasoning (for o1 and similar models)
       try {
         for await (const delta of result.getReasoningStream()) {
-          emit({ type: "reasoning", runId, id: reasoningId, content: delta });
+          taggedEmit({ type: "reasoning", runId, id: reasoningId, content: delta });
         }
       } catch {
         // Model may not support reasoning - that's ok
@@ -66,10 +72,10 @@ function createHarness(apiKey?: string): HarnessModule {
       // Stream text
       try {
         for await (const delta of result.getTextStream()) {
-          emit({ type: "text", runId, id: textId, content: delta });
+          taggedEmit({ type: "text", runId, id: textId, content: delta });
         }
       } catch (error) {
-        emit({ type: "error", runId, error: error instanceof Error ? error : new Error(String(error)) });
+        taggedEmit({ type: "error", runId, error: error instanceof Error ? error : new Error(String(error)) });
         return;
       }
 
@@ -78,7 +84,7 @@ function createHarness(apiKey?: string): HarnessModule {
         const toolCalls: ToolCall[] = [];
         try {
           for await (const toolCall of result.getToolCallsStream()) {
-            emit({
+            taggedEmit({
               type: "tool_call",
               runId,
               name: toolCall.name,
@@ -100,20 +106,28 @@ function createHarness(apiKey?: string): HarnessModule {
           }
 
           const toolCtx: ToolContext = {
-            emit,
+            emit: taggedEmit,
             parentId: tc.id, // This tool_call becomes parent for nested events
           };
 
-          const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
-          // Emit tool_result with context for agent loop (context goes into messages)
-          // and result for application consumption
-          emit({
-            type: "tool_result",
-            runId,
-            name: tc.name,
-            id: tc.id,
-            output: { context: toolContext, result: toolResult },
-          });
+          try {
+            const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
+            // Emit tool_result with context for agent loop (context goes into messages)
+            // and result for application consumption
+            taggedEmit({
+              type: "tool_result",
+              runId,
+              name: tc.name,
+              id: tc.id,
+              output: { context: toolContext, result: toolResult },
+            });
+          } catch (error) {
+            taggedEmit({
+              type: "error",
+              runId,
+              error: error instanceof Error ? error : new Error(String(error)),
+            });
+          }
         }
       }
     },

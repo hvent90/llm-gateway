@@ -73,8 +73,13 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
               });
               return;
             }
-            // Executor exists but no result emitted - unexpected
-            continue;
+            // Executor exists but no result emitted - this is a bug
+            taggedEmit({
+              type: "error",
+              runId,
+              error: new Error(`Tool executor for '${tc.name}' did not emit a result`),
+            });
+            return;
           }
 
           if (resultOutput.context !== undefined) {
