@@ -1,0 +1,42 @@
+# dependencies
+node_modules
+
+# build output
+out
+dist
+*.tgz
+
+# coverage
+coverage
+*.lcov
+
+# logs
+logs
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# environment files
+.env
+.env.*.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IDEs
+.idea
+.vscode
+
+# AI assistants / coding agents
+.cursor
+.windsurf
+.claude
+.agent
+.agents
+.gemini
+.opencode
+
+# OS
+.DS_Store
+Thumbs.db
