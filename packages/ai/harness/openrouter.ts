@@ -1,7 +1,7 @@
 import { OpenRouter, tool } from "@openrouter/sdk";
 import type { z } from "zod";
 import {v7} from "uuid";
-import type { HarnessModule, InvokeParams, Message, ToolDefinition } from "../types";
+import type { HarnessModule, InvokeParams, Message, ToolDefinition, ToolContext, ToolCall } from "../types";
 
 function convertMessages(messages: Message[]) {
   return messages.map((msg) => {
@@ -73,8 +73,9 @@ function createHarness(apiKey?: string): HarnessModule {
         return;
       }
 
-      // Stream tool calls if tools were provided
+      // Stream tool calls and execute tools if executors are provided
       if (tools) {
+        const toolCalls: ToolCall[] = [];
         try {
           for await (const toolCall of result.getToolCallsStream()) {
             emit({
@@ -84,9 +85,35 @@ function createHarness(apiKey?: string): HarnessModule {
               id: toolCall.id,
               input: toolCall.arguments,
             });
+            toolCalls.push({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments });
           }
         } catch {
           // No tool calls or error - that's ok
+        }
+
+        // Execute tools if they have executors
+        for (const tc of toolCalls) {
+          const toolDef = params.tools?.find((t) => t.name === tc.name);
+          if (!toolDef?.execute) {
+            // No executor - that's ok, caller may process tool_call events directly
+            continue;
+          }
+
+          const toolCtx: ToolContext = {
+            emit,
+            parentId: tc.id, // This tool_call becomes parent for nested events
+          };
+
+          const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
+          // Emit tool_result with context for agent loop (context goes into messages)
+          // and result for application consumption
+          emit({
+            type: "tool_result",
+            runId,
+            name: tc.name,
+            id: tc.id,
+            output: { context: toolContext, result: toolResult },
+          });
         }
       }
     },

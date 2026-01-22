@@ -1,5 +1,10 @@
 import { v7 as uuidv7 } from "uuid";
-import type { HarnessModule, HarnessEvent, InvokeParams, ToolCall, ToolContext } from "../types";
+import type { HarnessModule, HarnessEvent, InvokeParams, ToolCall } from "../types";
+
+interface ToolResultOutput {
+  context?: string;
+  result?: unknown;
+}
 
 interface AgentHarnessOptions {
   harness: HarnessModule;
@@ -24,6 +29,7 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
 
       while (iterations++ < maxIterations) {
         const toolCalls: ToolCall[] = [];
+        const toolResults: Map<string, ToolResultOutput> = new Map();
         let textContent = "";
 
         await harness.invoke({
@@ -38,6 +44,10 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
             if (event.type === "text") {
               textContent += event.content;
             }
+            if (event.type === "tool_result") {
+              // Collect tool results for building messages
+              toolResults.set(event.id, event.output as ToolResultOutput);
+            }
           },
         });
 
@@ -49,30 +59,29 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
           tool_calls: toolCalls,
         });
 
+        // Build tool messages from collected results
         for (const tc of toolCalls) {
-          const toolDef = params.tools?.find((t) => t.name === tc.name);
-          if (!toolDef?.execute) {
-            taggedEmit({
-              type: "error",
-              runId,
-              error: new Error(`No executor for tool: ${tc.name}`),
-            });
-            return;
+          const resultOutput = toolResults.get(tc.id);
+          if (!resultOutput) {
+            // No result for this tool call - check if tool has no executor
+            const toolDef = params.tools?.find((t) => t.name === tc.name);
+            if (!toolDef?.execute) {
+              taggedEmit({
+                type: "error",
+                runId,
+                error: new Error(`No executor for tool: ${tc.name}`),
+              });
+              return;
+            }
+            // Executor exists but no result emitted - unexpected
+            continue;
           }
 
-          const toolCtx: ToolContext = {
-            emit: taggedEmit,
-            parentId: tc.id, // This tool_call becomes parent for nested events
-          };
-
-          const { context: toolContext, result } = await toolDef.execute(tc.arguments, toolCtx);
-          taggedEmit({ type: "tool_result", runId, name: tc.name, id: tc.id, output: result });
-
-          if (toolContext !== undefined) {
+          if (resultOutput.context !== undefined) {
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
-              content: toolContext,
+              content: resultOutput.context,
             });
           }
         }
