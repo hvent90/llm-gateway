@@ -37,6 +37,9 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .gemini
 .opencode
 
+# worktrees
+.worktrees
+
 # OS
 .DS_Store
 Thumbs.db
