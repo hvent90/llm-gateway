@@ -1,7 +1,15 @@
 import { OpenRouter, tool } from "@openrouter/sdk";
 import type { z } from "zod";
-import {v7} from "uuid";
-import type { HarnessModule, InvokeParams, Message, ToolDefinition, ToolContext, ToolCall } from "../types";
+import { v7 } from "uuid";
+import type {
+  HarnessModule,
+  InvokeParams,
+  Message,
+  ToolDefinition,
+  ToolContext,
+  ToolCall,
+} from "../types";
+import { matchesPermissions } from "../permissions";
 
 function convertMessages(messages: Message[]) {
   return messages.map((msg) => {
@@ -39,11 +47,11 @@ function createHarness(apiKey?: string): HarnessModule {
   });
 
   return {
-    async invoke({ emit, runId: providedRunId, context, ...params }: InvokeParams): Promise<void> {
+    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
       const input = convertMessages(params.messages);
       const tools = params.tools ? convertTools(params.tools) : undefined;
 
-      const runId = providedRunId ?? v7();
+      const runId = context?.runId ?? v7();
       const parentId = context?.parentId;
       const reasoningId = v7();
       const textId = v7();
@@ -75,7 +83,11 @@ function createHarness(apiKey?: string): HarnessModule {
           taggedEmit({ type: "text", runId, id: textId, content: delta });
         }
       } catch (error) {
-        taggedEmit({ type: "error", runId, error: error instanceof Error ? error : new Error(String(error)) });
+        taggedEmit({
+          type: "error",
+          runId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
         return;
       }
 
@@ -100,6 +112,39 @@ function createHarness(apiKey?: string): HarnessModule {
         // Execute tools if they have executors
         for (const tc of toolCalls) {
           const toolDef = params.tools?.find((t) => t.name === tc.name);
+
+          // Check deny list first
+          const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
+          if (denial) {
+            taggedEmit({
+              type: "tool_result",
+              runId,
+              id: tc.id,
+              name: tc.name,
+              output: { status: "denied", reason: denial.reason },
+            });
+            continue;
+          }
+
+          // Check if allowed (allowlist or allowOnce)
+          if (
+            params.permissions &&
+            !matchesPermissions(
+              { name: tc.name, arguments: tc.arguments as Record<string, unknown> | undefined },
+              params.permissions,
+            )
+          ) {
+            taggedEmit({
+              type: "permission_required",
+              runId,
+              id: v7(),
+              toolCallId: tc.id,
+              tool: tc.name,
+              params: (tc.arguments ?? {}) as Record<string, unknown>,
+            });
+            continue;
+          }
+
           if (!toolDef?.execute) {
             // No executor - that's ok, caller may process tool_call events directly
             continue;
@@ -111,7 +156,10 @@ function createHarness(apiKey?: string): HarnessModule {
           };
 
           try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
+            const { context: toolContext, result: toolResult } = await toolDef.execute(
+              tc.arguments,
+              toolCtx,
+            );
             // Emit tool_result with context for agent loop (context goes into messages)
             // and result for application consumption
             taggedEmit({

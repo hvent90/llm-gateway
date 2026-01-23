@@ -15,8 +15,8 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
   const { harness, maxIterations = 10 } = options;
 
   return {
-    async invoke({ emit, context, runId: providedRunId, ...params }: InvokeParams): Promise<void> {
-      const runId = providedRunId ?? uuidv7();
+    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
+      const runId = context?.runId ?? uuidv7();
       const parentId = context?.parentId;
 
       // Wrap emit to add parentId to events
@@ -31,11 +31,12 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
         const toolCalls: ToolCall[] = [];
         const toolResults: Map<string, ToolResultOutput> = new Map();
         let textContent = "";
+        let permissionRequired = false;
 
         await harness.invoke({
           ...params,
           messages,
-          runId,
+          context: { runId, parentId },
           emit: (event) => {
             taggedEmit(event);
             if (event.type === "tool_call") {
@@ -48,8 +49,16 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
               // Collect tool results for building messages
               toolResults.set(event.id, event.output as ToolResultOutput);
             }
+            if (event.type === "permission_required") {
+              permissionRequired = true;
+            }
           },
         });
+
+        // Stop loop when permission is required - client should handle the permission request
+        if (permissionRequired) {
+          return;
+        }
 
         if (toolCalls.length === 0) break;
 

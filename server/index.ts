@@ -3,7 +3,7 @@ import { streamSSE } from "hono/streaming";
 import { openRouterHarness } from "../packages/ai/harness/openrouter.ts";
 import { createAgentHarness } from "../packages/ai/harness/agent.ts";
 import { bashTool } from "../packages/ai/tools/index.ts";
-import type { Message, HarnessEvent } from "../packages/ai/types.ts";
+import type { Message, HarnessEvent, Permissions } from "../packages/ai/types.ts";
 
 const agentHarness = createAgentHarness({
   harness: openRouterHarness,
@@ -15,6 +15,7 @@ const app = new Hono();
 interface ChatRequest {
   model: string;
   messages: Message[];
+  permissions?: Permissions;
 }
 
 // Serialize a HarnessEvent to JSON-safe format
@@ -60,6 +61,7 @@ app.post("/chat", async (c) => {
         messages: body.messages,
         tools: [bashTool],
         emit,
+        permissions: body.permissions,
       });
       // Wait for all queued writes to complete
       await Promise.all(writeQueue);

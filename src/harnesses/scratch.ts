@@ -61,7 +61,8 @@ const createSubagentTool = (
   availableTools: ToolDefinition[],
 ): ToolDefinition<typeof subagentSchema, SubagentResult> => ({
   name: "subagent",
-  description: "Spawn a subagent to handle a delegated task. The subagent has access to the bash tool.",
+  description:
+    "Spawn a subagent to handle a delegated task. The subagent has access to the bash tool.",
   schema: subagentSchema,
   execute: async ({ task }, ctx) => {
     const subagent = createAgentHarness({
@@ -268,9 +269,8 @@ async function createTuiRenderer() {
         // Record depth for child agents
         state.toolCallDepths.set(event.id, depth);
 
-        const inputStr = typeof event.input === "string"
-          ? event.input
-          : JSON.stringify(event.input);
+        const inputStr =
+          typeof event.input === "string" ? event.input : JSON.stringify(event.input);
 
         box.contentStr += `\n🔧 ${event.name}: ${inputStr}\n`;
         box.content.content = box.contentStr;
