@@ -31,6 +31,7 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
         const toolCalls: ToolCall[] = [];
         const toolResults: Map<string, ToolResultOutput> = new Map();
         let textContent = "";
+        let permissionRequired = false;
 
         await harness.invoke({
           ...params,
@@ -48,8 +49,16 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
               // Collect tool results for building messages
               toolResults.set(event.id, event.output as ToolResultOutput);
             }
+            if (event.type === "permission_required") {
+              permissionRequired = true;
+            }
           },
         });
+
+        // Stop loop when permission is required - client should handle the permission request
+        if (permissionRequired) {
+          return;
+        }
 
         if (toolCalls.length === 0) break;
 

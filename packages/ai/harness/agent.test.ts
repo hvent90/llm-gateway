@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { z } from "zod";
 import type { HarnessEvent, ToolDefinition } from "../types.ts";
-import { openRouterHarness } from "./openrouter.ts";
+import { openRouterHarness, createHarness } from "./openrouter.ts";
 import { createAgentHarness } from "./agent.ts";
 
 const TEST_MODEL = "nvidia/nemotron-nano-9b-v2:free";
@@ -193,5 +193,52 @@ describe("Agent Harness", () => {
       expect(toolCallEvents.length).toBe(0);
     },
     { timeout: 30000 },
+  );
+
+  test(
+    "stops iterating when permission_required is emitted",
+    async () => {
+      const calculatorSchema = z.object({ a: z.number(), b: z.number() });
+
+      const calculatorTool: ToolDefinition<typeof calculatorSchema, number> = {
+        name: "calculator",
+        description: "Add two numbers. Always use this tool for math.",
+        schema: calculatorSchema,
+        execute: async ({ a, b }) => ({
+          context: `${a} + ${b} = ${a + b}`,
+          result: a + b,
+        }),
+      };
+
+      const events: HarnessEvent[] = [];
+      const emit = (event: HarnessEvent) => events.push(event);
+
+      const agentHarness = createAgentHarness({
+        harness: createHarness(),
+        maxIterations: 5,
+      });
+
+      await agentHarness.invoke({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "What is 2+2? Use the calculator tool." }],
+        tools: [calculatorTool],
+        emit,
+        permissions: {
+          allowlist: [], // Nothing allowed - will trigger permission_required
+        },
+      });
+
+      const permissionEvents = events.filter((e) => e.type === "permission_required");
+      expect(permissionEvents.length).toBeGreaterThan(0);
+
+      // Should only have one iteration's worth of events (not multiple loops)
+      const toolCallEvents = events.filter((e) => e.type === "tool_call");
+      expect(toolCallEvents.length).toBe(permissionEvents.length);
+
+      // Should stop cleanly without error
+      const errorEvents = events.filter((e) => e.type === "error");
+      expect(errorEvents.length).toBe(0);
+    },
+    { timeout: 60000 },
   );
 });
