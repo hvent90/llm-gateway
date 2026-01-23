@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { openRouterHarness } from "../packages/ai/harness/openrouter.ts";
-import type { Message, HarnessEvent } from "../packages/ai/types.ts";
+import type { Message, HarnessEvent, Permissions } from "../packages/ai/types.ts";
 
 const app = new Hono();
 
 interface ChatRequest {
   model: string;
   messages: Message[];
+  permissions?: Permissions;
 }
 
 // Serialize a HarnessEvent to JSON-safe format
@@ -52,6 +53,7 @@ app.post("/chat", async (c) => {
         model: body.model,
         messages: body.messages,
         emit,
+        permissions: body.permissions,
       });
       // Wait for all queued writes to complete
       await Promise.all(writeQueue);
