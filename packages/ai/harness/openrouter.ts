@@ -39,11 +39,11 @@ function createHarness(apiKey?: string): HarnessModule {
   });
 
   return {
-    async invoke({ emit, runId: providedRunId, context, ...params }: InvokeParams): Promise<void> {
+    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
       const input = convertMessages(params.messages);
       const tools = params.tools ? convertTools(params.tools) : undefined;
 
-      const runId = providedRunId ?? v7();
+      const runId = context?.runId ?? v7();
       const parentId = context?.parentId;
       const reasoningId = v7();
       const textId = v7();

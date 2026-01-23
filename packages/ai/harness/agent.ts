@@ -15,8 +15,8 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
   const { harness, maxIterations = 10 } = options;
 
   return {
-    async invoke({ emit, context, runId: providedRunId, ...params }: InvokeParams): Promise<void> {
-      const runId = providedRunId ?? uuidv7();
+    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
+      const runId = context?.runId ?? uuidv7();
       const parentId = context?.parentId;
 
       // Wrap emit to add parentId to events
@@ -35,7 +35,7 @@ function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
         await harness.invoke({
           ...params,
           messages,
-          runId,
+          context: { runId, parentId },
           emit: (event) => {
             taggedEmit(event);
             if (event.type === "tool_call") {

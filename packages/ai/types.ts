@@ -42,13 +42,26 @@ export interface ToolCall<TSchema extends z.ZodTypeAny = z.ZodTypeAny> {
   arguments?: z.infer<TSchema>;
 }
 
+// Permission types for tool execution control
+export interface ToolPermission {
+  tool: string;
+  params?: Record<string, string>; // param name → glob pattern
+}
+
+export interface Permissions {
+  allowlist?: ToolPermission[];
+  allowOnce?: ToolPermission[];
+  deny?: Array<{ toolCallId: string; reason?: string }>;
+}
+
 // Events that a harness can yield during invocation
 export type HarnessEvent =
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
   | { type: "text"; runId: string; id: string; parentId?: string; content: string }
   | { type: "tool_call"; runId: string; id: string; parentId?: string; name: string; input: unknown }
   | { type: "tool_result"; runId: string; id: string; parentId?: string; name: string; output: unknown }
-  | { type: "error"; runId: string; parentId?: string; error: Error };
+  | { type: "error"; runId: string; parentId?: string; error: Error }
+  | { type: "permission_required"; runId: string; id: string; parentId?: string; toolCallId: string; tool: string; params: Record<string, unknown> };
 
 // Parameters for invoking a harness
 export interface InvokeParams {
@@ -56,8 +69,11 @@ export interface InvokeParams {
   messages: Message[];
   tools?: ToolDefinition[];
   emit: (event: HarnessEvent) => void;
-  runId?: string; // If provided, use this runId; otherwise generate one
-  context?: { parentId?: string }; // Context for nested invocations
+  context?: {
+    runId?: string;
+    parentId?: string;
+  };
+  permissions?: Permissions;
 }
 
 // The interface a harness module must implement
