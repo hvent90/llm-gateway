@@ -3,6 +3,11 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "bun run --hot index.ts & SERVER_PID=$!; trap 'kill $SERVER_PID 2>/dev/null' EXIT; bun run clients/cli/index.ts",
+    "dev": "bun run --hot server/index.ts",
+    "cli": "bun run clients/cli/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -12,6 +17,7 @@
   "dependencies": {
     "@openrouter/sdk": "^0.3.16",
     "@opentui/core": "^0.1.74",
+    "hono": "^4.11.5",
     "picocolors": "^1.1.1",
     "uuid": "^13.0.0",
     "zod": "^4.3.5"
