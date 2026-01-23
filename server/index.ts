@@ -1,7 +1,14 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { openRouterHarness } from "../packages/ai/harness/openrouter.ts";
+import { createAgentHarness } from "../packages/ai/harness/agent.ts";
+import { bashTool } from "../packages/ai/tools/index.ts";
 import type { Message, HarnessEvent } from "../packages/ai/types.ts";
+
+const agentHarness = createAgentHarness({
+  harness: openRouterHarness,
+  maxIterations: 10,
+});
 
 const app = new Hono();
 
@@ -48,9 +55,10 @@ app.post("/chat", async (c) => {
     };
 
     try {
-      await openRouterHarness.invoke({
+      await agentHarness.invoke({
         model: body.model,
         messages: body.messages,
+        tools: [bashTool],
         emit,
       });
       // Wait for all queued writes to complete

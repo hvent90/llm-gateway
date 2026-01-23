@@ -17,6 +17,10 @@ import {
   InputRenderable,
   InputRenderableEvents,
   type CliRenderer,
+  StyledText,
+  t,
+  dim,
+  italic,
 } from "@opentui/core";
 
 // Configuration from environment
@@ -42,6 +46,7 @@ interface ConversationState {
   messages: Message[];
   isStreaming: boolean;
   currentAssistantContent: string;
+  isInReasoning: boolean;
 }
 
 /**
@@ -58,9 +63,12 @@ class CliClient {
     messages: [],
     isStreaming: false,
     currentAssistantContent: "",
+    isInReasoning: false,
   };
 
-  private displayContent: string = "";
+  private contentSegments: Array<{ text: string; isReasoning: boolean }> = [
+    { text: "Welcome! Type a message and press Enter to start chatting.\n", isReasoning: false },
+  ];
 
   async start(): Promise<void> {
     this.renderer = await createCliRenderer({
@@ -73,9 +81,7 @@ class CliClient {
     this.renderer.start();
 
     // Focus the input field
-    if (this.inputField) {
-      this.renderer.focusRenderable(this.inputField);
-    }
+    this.inputField?.focus();
   }
 
   /**
@@ -138,10 +144,11 @@ class CliClient {
 
     this.conversationContent = new TextRenderable(this.renderer, {
       id: "conversation-content",
-      content: "Welcome! Type a message and press Enter to start chatting.\n",
+      content: "",
       width: "100%",
       wrapMode: "word",
     });
+    this.updateConversationContent();
 
     this.conversationView.add(this.conversationContent);
     conversationBox.add(this.conversationView);
@@ -219,6 +226,7 @@ class CliClient {
     // Start streaming
     this.state.isStreaming = true;
     this.state.currentAssistantContent = "";
+    this.state.isInReasoning = false;
     this.updateStatus("Streaming...");
 
     try {
@@ -240,9 +248,7 @@ class CliClient {
       this.updateStatus(`Connected to ${SERVER_URL}`);
 
       // Re-focus input
-      if (this.inputField && this.renderer) {
-        this.renderer.focusRenderable(this.inputField);
-      }
+      this.inputField?.focus();
     }
   }
 
@@ -353,14 +359,19 @@ class CliClient {
       case "text":
         // Start assistant response on first text
         if (isFirstText) {
-          this.appendToConversation("\n");
+          this.appendToConversation("\n", false);
         }
-        this.appendToConversation(event.content);
+        this.appendToConversation(event.content, false);
         this.state.currentAssistantContent += event.content;
         break;
 
       case "reasoning":
-        this.appendToConversation(`💭 ${event.content}`);
+        // Add newline before first reasoning chunk
+        if (!this.state.isInReasoning) {
+          this.appendToConversation("\n", false);
+          this.state.isInReasoning = true;
+        }
+        this.appendToConversation(event.content, true);
         break;
 
       case "tool_call": {
@@ -395,11 +406,32 @@ class CliClient {
   /**
    * Append text to the conversation view
    */
-  private appendToConversation(text: string): void {
-    this.displayContent += text;
-    if (this.conversationContent) {
-      this.conversationContent.content = this.displayContent;
+  private appendToConversation(text: string, isReasoning: boolean = false): void {
+    // Try to merge with last segment if same type
+    const lastSegment = this.contentSegments[this.contentSegments.length - 1];
+    if (lastSegment && lastSegment.isReasoning === isReasoning) {
+      lastSegment.text += text;
+    } else {
+      this.contentSegments.push({ text, isReasoning });
     }
+    this.updateConversationContent();
+  }
+
+  /**
+   * Rebuild and update the conversation content with styling
+   */
+  private updateConversationContent(): void {
+    if (!this.conversationContent) return;
+
+    // Build StyledText by concatenating chunks from each segment
+    const allChunks = this.contentSegments.flatMap((segment) => {
+      const styledSegment = segment.isReasoning
+        ? t`${dim(italic(segment.text))}`
+        : t`${segment.text}`;
+      return styledSegment.chunks;
+    });
+
+    this.conversationContent.content = new StyledText(allChunks);
   }
 
   /**
