@@ -6,10 +6,7 @@ interface ToolCallLike {
   arguments?: Record<string, unknown>;
 }
 
-export function matchesPermission(
-  toolCall: ToolCallLike,
-  permission: ToolPermission
-): boolean {
+export function matchesPermission(toolCall: ToolCallLike, permission: ToolPermission): boolean {
   if (toolCall.name !== permission.tool) {
     return false;
   }
@@ -33,11 +30,8 @@ export function matchesPermission(
 
 export function matchesPermissions(
   toolCall: ToolCallLike,
-  permissions?: Pick<Permissions, "allowlist" | "allowOnce">
+  permissions?: Pick<Permissions, "allowlist" | "allowOnce">,
 ): boolean {
-  const allAllowed = [
-    ...(permissions?.allowlist ?? []),
-    ...(permissions?.allowOnce ?? []),
-  ];
+  const allAllowed = [...(permissions?.allowlist ?? []), ...(permissions?.allowOnce ?? [])];
   return allAllowed.some((p) => matchesPermission(toolCall, p));
 }

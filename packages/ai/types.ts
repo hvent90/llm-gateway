@@ -22,17 +22,11 @@ export interface ToolContext {
 }
 
 // Tool definition (passed at request level)
-export interface ToolDefinition<
-  TSchema extends z.ZodTypeAny = z.ZodTypeAny,
-  TResult = unknown,
-> {
+export interface ToolDefinition<TSchema extends z.ZodTypeAny = z.ZodTypeAny, TResult = unknown> {
   name: string;
   description: string;
   schema: TSchema;
-  execute?: (
-    input: z.infer<TSchema>,
-    ctx: ToolContext,
-  ) => Promise<ToolExecutionResult<TResult>>;
+  execute?: (input: z.infer<TSchema>, ctx: ToolContext) => Promise<ToolExecutionResult<TResult>>;
 }
 
 // Tool call (in assistant messages)
@@ -58,10 +52,32 @@ export interface Permissions {
 export type HarnessEvent =
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
   | { type: "text"; runId: string; id: string; parentId?: string; content: string }
-  | { type: "tool_call"; runId: string; id: string; parentId?: string; name: string; input: unknown }
-  | { type: "tool_result"; runId: string; id: string; parentId?: string; name: string; output: unknown }
+  | {
+      type: "tool_call";
+      runId: string;
+      id: string;
+      parentId?: string;
+      name: string;
+      input: unknown;
+    }
+  | {
+      type: "tool_result";
+      runId: string;
+      id: string;
+      parentId?: string;
+      name: string;
+      output: unknown;
+    }
   | { type: "error"; runId: string; parentId?: string; error: Error }
-  | { type: "permission_required"; runId: string; id: string; parentId?: string; toolCallId: string; tool: string; params: Record<string, unknown> };
+  | {
+      type: "permission_required";
+      runId: string;
+      id: string;
+      parentId?: string;
+      toolCallId: string;
+      tool: string;
+      params: Record<string, unknown>;
+    };
 
 // Parameters for invoking a harness
 export interface InvokeParams {

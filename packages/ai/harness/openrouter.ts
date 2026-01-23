@@ -1,7 +1,14 @@
 import { OpenRouter, tool } from "@openrouter/sdk";
 import type { z } from "zod";
-import {v7} from "uuid";
-import type { HarnessModule, InvokeParams, Message, ToolDefinition, ToolContext, ToolCall } from "../types";
+import { v7 } from "uuid";
+import type {
+  HarnessModule,
+  InvokeParams,
+  Message,
+  ToolDefinition,
+  ToolContext,
+  ToolCall,
+} from "../types";
 import { matchesPermissions } from "../permissions";
 
 function convertMessages(messages: Message[]) {
@@ -76,7 +83,11 @@ function createHarness(apiKey?: string): HarnessModule {
           taggedEmit({ type: "text", runId, id: textId, content: delta });
         }
       } catch (error) {
-        taggedEmit({ type: "error", runId, error: error instanceof Error ? error : new Error(String(error)) });
+        taggedEmit({
+          type: "error",
+          runId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
         return;
       }
 
@@ -116,7 +127,13 @@ function createHarness(apiKey?: string): HarnessModule {
           }
 
           // Check if allowed (allowlist or allowOnce)
-          if (params.permissions && !matchesPermissions({ name: tc.name, arguments: tc.arguments as Record<string, unknown> | undefined }, params.permissions)) {
+          if (
+            params.permissions &&
+            !matchesPermissions(
+              { name: tc.name, arguments: tc.arguments as Record<string, unknown> | undefined },
+              params.permissions,
+            )
+          ) {
             taggedEmit({
               type: "permission_required",
               runId,
@@ -139,7 +156,10 @@ function createHarness(apiKey?: string): HarnessModule {
           };
 
           try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
+            const { context: toolContext, result: toolResult } = await toolDef.execute(
+              tc.arguments,
+              toolCtx,
+            );
             // Emit tool_result with context for agent loop (context goes into messages)
             // and result for application consumption
             taggedEmit({

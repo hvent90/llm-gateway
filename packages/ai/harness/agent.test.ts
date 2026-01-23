@@ -115,64 +115,72 @@ describe("Agent Harness", () => {
     { timeout: 90000 },
   );
 
-  test("yields error when tool has no executor", async () => {
-    const noExecSchema = z.object({ value: z.string() });
+  test(
+    "yields error when tool has no executor",
+    async () => {
+      const noExecSchema = z.object({ value: z.string() });
 
-    const noExecTool: ToolDefinition<typeof noExecSchema> = {
-      name: "no_exec",
-      description: "A tool without an executor. Always use this tool.",
-      schema: noExecSchema,
-      // No execute function!
-    };
+      const noExecTool: ToolDefinition<typeof noExecSchema> = {
+        name: "no_exec",
+        description: "A tool without an executor. Always use this tool.",
+        schema: noExecSchema,
+        // No execute function!
+      };
 
-    const agentHarness = createAgentHarness({ harness: openRouterHarness });
+      const agentHarness = createAgentHarness({ harness: openRouterHarness });
 
-    const { emit, events } = collectEvents();
-    await agentHarness.invoke({
-      model: TEST_MODEL,
-      messages: [{ role: "user", content: "Use the no_exec tool with value 'test'." }],
-      tools: [noExecTool],
-      emit,
-    });
+      const { emit, events } = collectEvents();
+      await agentHarness.invoke({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "Use the no_exec tool with value 'test'." }],
+        tools: [noExecTool],
+        emit,
+      });
 
-    const errorEvents = events.filter((e) => e.type === "error");
-    expect(errorEvents.length).toBe(1);
-    expect(errorEvents[0]!.error.message).toContain("No executor for tool");
-  }, { timeout: 30000 });
+      const errorEvents = events.filter((e) => e.type === "error");
+      expect(errorEvents.length).toBe(1);
+      expect(errorEvents[0]!.error.message).toContain("No executor for tool");
+    },
+    { timeout: 30000 },
+  );
 
-  test("respects maxIterations limit", async () => {
-    const loopSchema = z.object({});
-    let executionCount = 0;
+  test(
+    "respects maxIterations limit",
+    async () => {
+      const loopSchema = z.object({});
+      let executionCount = 0;
 
-    const loopTool: ToolDefinition<typeof loopSchema, number> = {
-      name: "loop",
-      description: "A tool that always asks to be called again. Always call this tool.",
-      schema: loopSchema,
-      execute: async () => {
-        executionCount++;
-        return {
-          context: "Please call the loop tool again.",
-          result: executionCount,
-        };
-      },
-    };
+      const loopTool: ToolDefinition<typeof loopSchema, number> = {
+        name: "loop",
+        description: "A tool that always asks to be called again. Always call this tool.",
+        schema: loopSchema,
+        execute: async () => {
+          executionCount++;
+          return {
+            context: "Please call the loop tool again.",
+            result: executionCount,
+          };
+        },
+      };
 
-    const agentHarness = createAgentHarness({
-      harness: openRouterHarness,
-      maxIterations: 2,
-    });
+      const agentHarness = createAgentHarness({
+        harness: openRouterHarness,
+        maxIterations: 2,
+      });
 
-    const { emit } = collectEvents();
-    await agentHarness.invoke({
-      model: TEST_MODEL,
-      messages: [{ role: "user", content: "Keep calling the loop tool repeatedly." }],
-      tools: [loopTool],
-      emit,
-    });
+      const { emit } = collectEvents();
+      await agentHarness.invoke({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "Keep calling the loop tool repeatedly." }],
+        tools: [loopTool],
+        emit,
+      });
 
-    // Should stop after maxIterations even if model wants more tool calls
-    expect(executionCount).toBeLessThanOrEqual(2);
-  }, { timeout: 60000 });
+      // Should stop after maxIterations even if model wants more tool calls
+      expect(executionCount).toBeLessThanOrEqual(2);
+    },
+    { timeout: 60000 },
+  );
 
   test(
     "passes through text events without tools",
