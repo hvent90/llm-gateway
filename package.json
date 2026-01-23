@@ -19,6 +19,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@base-ui-components/react": "^1.0.0-rc.0",
     "@effect/platform": "^0.94.2",
     "@openrouter/sdk": "^0.3.16",
     "@opentui/core": "^0.1.74",
