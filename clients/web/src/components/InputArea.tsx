@@ -1,5 +1,5 @@
 import { Input } from "@base-ui-components/react/input";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type FormEvent } from "react";
 
 interface InputAreaProps {
   onSubmit: (content: string) => void;
@@ -16,7 +16,9 @@ export function InputArea({ onSubmit, disabled }: InputAreaProps) {
     }
   }, [disabled]);
 
-  const handleSubmit = () => {
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     const trimmed = value.trim();
     if (trimmed && !disabled) {
       onSubmit(trimmed);
@@ -27,28 +29,35 @@ export function InputArea({ onSubmit, disabled }: InputAreaProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      const trimmed = value.trim();
+      if (trimmed && !disabled) {
+        onSubmit(trimmed);
+        setValue("");
+      }
     }
   };
 
   return (
-    <div className="flex gap-2 border-t border-gray-700 p-4">
+    <form
+      onSubmit={handleSubmit}
+      className="flex gap-2 border-t border-gray-700 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
+    >
       <Input
         ref={inputRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
-        placeholder={disabled ? "Waiting for response..." : "Type your message..."}
-        className="flex-1 rounded border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+        placeholder={disabled ? "Waiting..." : "Type a message..."}
+        className="flex-1 rounded border border-gray-600 bg-gray-800 px-3 py-2 text-base text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
       />
       <button
-        onClick={handleSubmit}
+        type="submit"
         disabled={disabled || !value.trim()}
-        className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
+        className="rounded bg-blue-600 px-4 py-2 text-base font-medium text-white hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:hover:bg-blue-600"
       >
         Send
       </button>
-    </div>
+    </form>
   );
 }

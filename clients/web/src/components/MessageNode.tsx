@@ -33,7 +33,14 @@ function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
 }
 
 // Tailwind needs static class names for purge - can't use dynamic `ml-${n}`
-const indentClasses = ["", "ml-4", "ml-8", "ml-12", "ml-16"] as const;
+// Use smaller indentation on mobile (ml-2) and larger on desktop (sm:ml-4)
+const indentClasses = [
+  "",
+  "ml-2 sm:ml-4",
+  "ml-4 sm:ml-8",
+  "ml-6 sm:ml-12",
+  "ml-8 sm:ml-16",
+] as const;
 
 export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
   const isUser = node.role === "user";
@@ -67,7 +74,7 @@ export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
 
       {/* Children (subagents) */}
       {node.children.length > 0 && (
-        <div className="mt-2 border-l-2 border-gray-700 pl-4">
+        <div className="mt-2 border-l-2 border-gray-700 pl-2 sm:pl-4">
           {node.children.map((child) => (
             <MessageNode key={child.id} node={child} depth={depth + 1} />
           ))}

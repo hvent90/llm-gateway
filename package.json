@@ -6,6 +6,7 @@
   "scripts": {
     "start": "bun run --hot index.ts & SERVER_PID=$!; trap 'kill $SERVER_PID 2>/dev/null' EXIT; bun run clients/cli/index.ts",
     "dev": "bun run --hot server/index.ts",
+    "dev:all": "bun run --hot server/index.ts & bunx vite --config clients/web/vite.config.ts",
     "cli": "bun run clients/cli/index.ts",
     "web": "bunx vite --config clients/web/vite.config.ts",
     "web:build": "bunx vite build --config clients/web/vite.config.ts"

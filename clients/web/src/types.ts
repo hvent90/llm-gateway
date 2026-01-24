@@ -47,6 +47,18 @@ export interface PermissionRequest {
   params: Record<string, unknown>;
 }
 
+// Permission types (matching server's packages/ai/types.ts)
+export interface ToolPermission {
+  tool: string;
+  params?: Record<string, string>;
+}
+
+export interface Permissions {
+  allowlist?: ToolPermission[];
+  allowOnce?: ToolPermission[];
+  deny?: Array<{ toolCallId: string; reason?: string }>;
+}
+
 // Conversation state
 export interface ConversationState {
   messages: MessageNode[];

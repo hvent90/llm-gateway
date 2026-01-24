@@ -1,9 +1,9 @@
-import type { Message, ServerEvent } from "../types";
+import type { Message, Permissions, ServerEvent } from "../types";
 
 export interface ChatRequest {
   model: string;
   messages: Message[];
-  permissions?: string[];
+  permissions?: Permissions;
 }
 
 export async function* streamChat(
@@ -16,9 +16,7 @@ export async function* streamChat(
     body: JSON.stringify({
       model: request.model,
       messages: request.messages,
-      permissions: request.permissions
-        ? { allowlist: request.permissions.map((tool) => ({ tool })) }
-        : undefined,
+      permissions: request.permissions,
     }),
     signal,
   });
@@ -42,37 +40,29 @@ export async function* streamChat(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Parse SSE events
-      const lines = buffer.split("\n");
-      buffer = "";
+      // SSE events are separated by double newlines
+      const events = buffer.split("\n\n");
+      // Keep the last part in buffer (may be incomplete)
+      buffer = events.pop() ?? "";
 
-      let eventType = "";
-      let data = "";
+      for (const eventBlock of events) {
+        if (!eventBlock.trim()) continue;
 
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          eventType = line.slice(7);
-        } else if (line.startsWith("data: ")) {
-          data = line.slice(6);
-        } else if (line === "" && data) {
+        let data = "";
+        for (const line of eventBlock.split("\n")) {
+          if (line.startsWith("data: ")) {
+            data = line.slice(6);
+          }
+        }
+
+        if (data) {
           try {
             const event = JSON.parse(data) as ServerEvent;
             yield event;
           } catch {
             // Skip invalid JSON
           }
-          eventType = "";
-          data = "";
-        } else if (line !== "") {
-          // Incomplete line, keep in buffer
-          buffer = line;
         }
-      }
-
-      // Keep partial event in buffer
-      if (eventType || data) {
-        if (eventType) buffer += `event: ${eventType}\n`;
-        if (data) buffer += `data: ${data}\n`;
       }
     }
   } finally {
