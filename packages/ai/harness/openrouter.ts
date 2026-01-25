@@ -2,22 +2,27 @@ import { OpenRouter, tool } from "@openrouter/sdk";
 import type { z } from "zod";
 import { v7 } from "uuid";
 import type {
-  HarnessModule,
-  InvokeParams,
+  GeneratorHarnessModule,
+  GeneratorInvokeParams,
+  HarnessEvent,
   Message,
   ToolDefinition,
   ToolContext,
   ToolCall,
 } from "../types";
 import { matchesPermissions } from "../permissions";
+import { deferred } from "../primitives";
 
+/**
+ * Convert our Message[] format to OpenRouter SDK input format.
+ *
+ * Note: OpenRouter's SDK uses camelCase for callId in function_call_output.
+ * Assistant tool_calls are tracked internally by the SDK based on the response stream.
+ */
 function convertMessages(messages: Message[]) {
   return messages.map((msg) => {
     if (msg.role === "assistant") {
-      return {
-        role: "assistant" as const,
-        content: msg.content ?? "",
-      };
+      return { role: "assistant" as const, content: msg.content ?? "" };
     }
     if (msg.role === "tool") {
       return {
@@ -41,120 +46,137 @@ function convertTools(tools: ToolDefinition[]) {
   );
 }
 
-function createHarness(apiKey?: string): HarnessModule {
+function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
   const client = new OpenRouter({
     apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
   });
 
   return {
-    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
-      const input = convertMessages(params.messages);
-      const tools = params.tools ? convertTools(params.tools) : undefined;
-
+    async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
       const runId = context?.runId ?? v7();
       const parentId = context?.parentId;
-      const reasoningId = v7();
-      const textId = v7();
+      const tools = params.tools ? convertTools(params.tools) : undefined;
 
-      // Wrap emit to add parentId to events
-      const taggedEmit = (event: Parameters<typeof emit>[0]) => {
-        emit(parentId ? { ...event, parentId } : event);
-      };
+      const tag = <T extends object>(event: T): T & { parentId?: string } =>
+        parentId ? { ...event, parentId } : event;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = client.callModel({
-        model: params.model,
-        input,
-        ...(tools && { tools }),
-      } as any);
+      // Mutable messages array for the agent loop
+      const messages = [...params.messages];
 
-      // Use unified stream to get all events in order (reasoning, text, tool calls)
-      const toolCalls: ToolCall[] = [];
-      try {
-        for await (const event of result.getFullResponsesStream()) {
-          // Handle text deltas
-          if (event.type === "response.output_text.delta") {
-            taggedEmit({ type: "text", runId, id: textId, content: event.delta });
+      while (true) {
+        const input = convertMessages(messages);
+        const reasoningId = v7();
+        const textId = v7();
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = client.callModel({
+          model: params.model,
+          input,
+          ...(tools && { tools }),
+        } as any);
+
+        const toolCalls: ToolCall[] = [];
+        let assistantText = "";
+
+        try {
+          for await (const event of result.getFullResponsesStream()) {
+            if (event.type === "response.output_text.delta") {
+              yield tag({ type: "text", runId, id: textId, content: event.delta });
+              assistantText += event.delta;
+            } else if (event.type === "response.reasoning_text.delta") {
+              yield tag({ type: "reasoning", runId, id: reasoningId, content: event.delta });
+            } else if (event.type === "response.function_call_arguments.done") {
+              let args: unknown;
+              try {
+                args = JSON.parse(event.arguments);
+              } catch (e) {
+                yield tag({
+                  type: "error",
+                  runId,
+                  error: new Error(`Failed to parse tool arguments: ${event.arguments}`),
+                });
+                return;
+              }
+              toolCalls.push({ id: event.itemId, name: event.name, arguments: args });
+            } else if (event.type === "error") {
+              yield tag({
+                type: "error",
+                runId,
+                error: new Error(event.message ?? "Unknown error"),
+              });
+              return;
+            }
           }
-          // Handle reasoning deltas
-          else if (event.type === "response.reasoning_text.delta") {
-            taggedEmit({ type: "reasoning", runId, id: reasoningId, content: event.delta });
-          }
-          // Handle completed function calls
-          else if (event.type === "response.function_call_arguments.done") {
-            const args = JSON.parse(event.arguments);
-            taggedEmit({
-              type: "tool_call",
-              runId,
-              name: event.name,
-              id: event.itemId,
-              input: args,
-            });
-            toolCalls.push({ id: event.itemId, name: event.name, arguments: args });
-          }
-          // Handle errors
-          else if (event.type === "error") {
-            taggedEmit({
-              type: "error",
-              runId,
-              error: new Error(event.message ?? "Unknown error"),
-            });
-            return;
-          }
+        } catch (error) {
+          yield tag({
+            type: "error",
+            runId,
+            error: error instanceof Error ? error : new Error(String(error)),
+          });
+          return;
         }
-      } catch (error) {
-        taggedEmit({
-          type: "error",
-          runId,
-          error: error instanceof Error ? error : new Error(String(error)),
-        });
-        return;
-      }
 
-      // Execute tools if executors are provided
-      if (tools && toolCalls.length > 0) {
+        // No tool calls - we're done
+        if (toolCalls.length === 0) {
+          return;
+        }
+
+        // Add assistant message with tool calls to history
+        messages.push({ role: "assistant", content: assistantText || null, tool_calls: toolCalls });
+
+        // Process each tool call
         for (const tc of toolCalls) {
           const toolDef = params.tools?.find((t) => t.name === tc.name);
+          const args = (tc.arguments ?? {}) as Record<string, unknown>;
 
           // Check deny list first
           const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
           if (denial) {
-            taggedEmit({
-              type: "tool_result",
-              runId,
-              id: tc.id,
-              name: tc.name,
-              output: { status: "denied", reason: denial.reason },
-            });
+            const output = { status: "denied", reason: denial.reason };
+            yield tag({ type: "tool_result", runId, id: tc.id, name: tc.name, output });
+            messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(output) });
             continue;
           }
 
           // Check if allowed (allowlist or allowOnce)
-          if (
+          const isAllowed =
             params.permissions &&
-            !matchesPermissions(
-              { name: tc.name, arguments: tc.arguments as Record<string, unknown> | undefined },
-              params.permissions,
-            )
-          ) {
-            taggedEmit({
+            matchesPermissions({ name: tc.name, arguments: args }, params.permissions);
+
+          if (!isAllowed) {
+            // Need permission - create deferred and yield permission_required
+            const { promise, resolve } = deferred<{ approved: boolean; reason?: string }>();
+            yield tag({
               type: "permission_required",
               runId,
               id: v7(),
               toolCallId: tc.id,
               tool: tc.name,
-              params: (tc.arguments ?? {}) as Record<string, unknown>,
+              params: args,
+              respond: (approved, reason) => resolve({ approved, reason }),
             });
-            continue;
+
+            // Generator pauses here until respond() is called
+            const decision = await promise;
+
+            if (!decision.approved) {
+              const output = { status: "denied", reason: decision.reason };
+              yield tag({ type: "tool_result", runId, id: tc.id, name: tc.name, output });
+              messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(output) });
+              continue;
+            }
           }
 
+          // Permission granted or in allowlist - yield tool_call and execute
+          yield tag({ type: "tool_call", runId, name: tc.name, id: tc.id, input: args });
+
           if (!toolDef?.execute) {
-            // No executor - that's ok, caller may process tool_call events directly
+            // No executor - add placeholder to messages
+            messages.push({ role: "tool", tool_call_id: tc.id, content: "Tool not implemented" });
             continue;
           }
 
           const toolCtx: ToolContext = {
-            emit: taggedEmit,
             parentId: tc.id, // This tool_call becomes parent for nested events
           };
 
@@ -163,23 +185,25 @@ function createHarness(apiKey?: string): HarnessModule {
               tc.arguments,
               toolCtx,
             );
-            // Emit tool_result with context for agent loop (context goes into messages)
-            // and result for application consumption
-            taggedEmit({
-              type: "tool_result",
-              runId,
-              name: tc.name,
-              id: tc.id,
-              output: { context: toolContext, result: toolResult },
-            });
+            const output = { context: toolContext, result: toolResult };
+            yield tag({ type: "tool_result", runId, name: tc.name, id: tc.id, output });
+            messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(output) });
           } catch (error) {
-            taggedEmit({
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            yield tag({
               type: "error",
               runId,
-              error: error instanceof Error ? error : new Error(String(error)),
+              error: error instanceof Error ? error : new Error(errorMsg),
+            });
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: JSON.stringify({ error: errorMsg }),
             });
           }
         }
+
+        // Loop continues - will call LLM again with tool results
       }
     },
 
@@ -190,5 +214,5 @@ function createHarness(apiKey?: string): HarnessModule {
   };
 }
 
-export const openRouterHarness = createHarness();
-export { createHarness };
+export const openRouterHarness = createGeneratorHarness();
+export { createGeneratorHarness };
