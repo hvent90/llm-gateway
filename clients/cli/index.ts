@@ -25,7 +25,7 @@ import {
 
 // Configuration from environment
 const MODEL = process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
-const SERVER_URL = process.env.LLM_GATEWAY_URL ?? "http://localhost:3000";
+const SERVER_URL = process.env.LLM_GATEWAY_URL ?? "http://localhost:4000";
 
 // Message types (matching packages/ai/types.ts)
 interface Message {

@@ -68,19 +68,39 @@ function createHarness(apiKey?: string): HarnessModule {
         ...(tools && { tools }),
       } as any);
 
-      // Stream reasoning (for o1 and similar models)
+      // Use unified stream to get all events in order (reasoning, text, tool calls)
+      const toolCalls: ToolCall[] = [];
       try {
-        for await (const delta of result.getReasoningStream()) {
-          taggedEmit({ type: "reasoning", runId, id: reasoningId, content: delta });
-        }
-      } catch {
-        // Model may not support reasoning - that's ok
-      }
-
-      // Stream text
-      try {
-        for await (const delta of result.getTextStream()) {
-          taggedEmit({ type: "text", runId, id: textId, content: delta });
+        for await (const event of result.getFullResponsesStream()) {
+          // Handle text deltas
+          if (event.type === "response.output_text.delta") {
+            taggedEmit({ type: "text", runId, id: textId, content: event.delta });
+          }
+          // Handle reasoning deltas
+          else if (event.type === "response.reasoning_text.delta") {
+            taggedEmit({ type: "reasoning", runId, id: reasoningId, content: event.delta });
+          }
+          // Handle completed function calls
+          else if (event.type === "response.function_call_arguments.done") {
+            const args = JSON.parse(event.arguments);
+            taggedEmit({
+              type: "tool_call",
+              runId,
+              name: event.name,
+              id: event.itemId,
+              input: args,
+            });
+            toolCalls.push({ id: event.itemId, name: event.name, arguments: args });
+          }
+          // Handle errors
+          else if (event.type === "error") {
+            taggedEmit({
+              type: "error",
+              runId,
+              error: new Error(event.message ?? "Unknown error"),
+            });
+            return;
+          }
         }
       } catch (error) {
         taggedEmit({
@@ -91,25 +111,8 @@ function createHarness(apiKey?: string): HarnessModule {
         return;
       }
 
-      // Stream tool calls and execute tools if executors are provided
-      if (tools) {
-        const toolCalls: ToolCall[] = [];
-        try {
-          for await (const toolCall of result.getToolCallsStream()) {
-            taggedEmit({
-              type: "tool_call",
-              runId,
-              name: toolCall.name,
-              id: toolCall.id,
-              input: toolCall.arguments,
-            });
-            toolCalls.push({ id: toolCall.id, name: toolCall.name, arguments: toolCall.arguments });
-          }
-        } catch {
-          // No tool calls or error - that's ok
-        }
-
-        // Execute tools if they have executors
+      // Execute tools if executors are provided
+      if (tools && toolCalls.length > 0) {
         for (const tc of toolCalls) {
           const toolDef = params.tools?.find((t) => t.name === tc.name);
 

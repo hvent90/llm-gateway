@@ -78,7 +78,7 @@ app.post("/chat", async (c) => {
 });
 
 // Start server
-const port = Number(process.env.PORT) || 3000;
+const port = Number(process.env.PORT) || 4000;
 console.log(`LLM Gateway server running on http://localhost:${port}`);
 
 export default {

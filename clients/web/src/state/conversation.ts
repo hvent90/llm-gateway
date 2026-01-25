@@ -1,17 +1,5 @@
+import { v4 as uuidv4 } from "uuid";
 import type { ConversationState, MessageNode, ServerEvent, ToolCall } from "../types";
-
-// Fallback for browsers without crypto.randomUUID (Safari, non-HTTPS)
-function generateId(): string {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return generateId();
-  }
-  // Fallback: generate a UUID-like string
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
 
 export function createInitialState(): ConversationState {
   return {
@@ -24,7 +12,7 @@ export function createInitialState(): ConversationState {
 
 export function addUserMessage(state: ConversationState, content: string): ConversationState {
   const userNode: MessageNode = {
-    id: generateId(),
+    id: uuidv4(),
     agentId: "user",
     role: "user",
     content,
@@ -40,7 +28,7 @@ export function addUserMessage(state: ConversationState, content: string): Conve
 
 export function addErrorMessage(state: ConversationState, error: string): ConversationState {
   const errorNode: MessageNode = {
-    id: generateId(),
+    id: uuidv4(),
     agentId: "system",
     role: "assistant",
     content: `Error: ${error}`,
