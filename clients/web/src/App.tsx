@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import { PermissionPrompt } from "./components/PermissionPrompt";
-import { streamChat } from "./services/chat";
+import { streamChat, resolvePermission } from "./services/chat";
 import {
   createInitialState,
   addUserMessage,
@@ -18,17 +18,20 @@ export default function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Build messages array from current state
-  const buildMessagesFromState = useCallback((currentMessages: typeof state.messages): Message[] => {
-    const messages: Message[] = [];
-    const traverse = (nodes: typeof state.messages) => {
-      for (const node of nodes) {
-        messages.push({ role: node.role, content: node.content });
-        traverse(node.children);
-      }
-    };
-    traverse(currentMessages);
-    return messages;
-  }, []);
+  const buildMessagesFromState = useCallback(
+    (currentMessages: typeof state.messages): Message[] => {
+      const messages: Message[] = [];
+      const traverse = (nodes: typeof state.messages) => {
+        for (const node of nodes) {
+          messages.push({ role: node.role, content: node.content });
+          traverse(node.children);
+        }
+      };
+      traverse(currentMessages);
+      return messages;
+    },
+    [],
+  );
 
   // Core streaming function - can be called with different permissions
   const sendChat = useCallback(async (messages: Message[], permissions: Permissions) => {
@@ -38,10 +41,7 @@ export default function App() {
     abortControllerRef.current = controller;
 
     try {
-      const stream = streamChat(
-        { model: MODEL, messages, permissions },
-        controller.signal
-      );
+      const stream = streamChat({ model: MODEL, messages, permissions }, controller.signal);
 
       for await (const event of stream) {
         console.log("Received event:", event.type, event);
@@ -58,73 +58,66 @@ export default function App() {
     }
   }, []);
 
-  const handleSubmit = useCallback(async (content: string) => {
-    // Add user message to state
-    setState((s) => addUserMessage(s, content));
+  const handleSubmit = useCallback(
+    async (content: string) => {
+      // Add user message to state
+      setState((s) => addUserMessage(s, content));
 
-    // Build messages including the new user message
-    const messages = buildMessagesFromState(state.messages);
-    messages.push({ role: "user", content });
+      // Build messages including the new user message
+      const messages = buildMessagesFromState(state.messages);
+      messages.push({ role: "user", content });
 
-    // Build permissions from granted tools
-    const permissions: Permissions = {
-      allowlist: Array.from(state.grantedTools).map((tool) => ({ tool })),
-    };
+      // Build permissions from granted tools
+      const permissions: Permissions = {
+        allowlist: Array.from(state.grantedTools).map((tool) => ({ tool })),
+      };
 
-    await sendChat(messages, permissions);
-  }, [state.messages, state.grantedTools, buildMessagesFromState, sendChat]);
+      await sendChat(messages, permissions);
+    },
+    [state.messages, state.grantedTools, buildMessagesFromState, sendChat],
+  );
 
   const handleAllow = useCallback(async () => {
-    if (!state.pendingPermission) return;
+    if (!state.pendingPermission || !state.sessionId) return;
 
-    // Build messages from current state (includes partial assistant response)
-    const messages = buildMessagesFromState(state.messages);
+    // Clear pending permission immediately
+    setState((s) => ({ ...s, pendingPermission: null }));
 
-    // Resend with the specific tool allowed once
-    const permissions: Permissions = {
-      allowlist: Array.from(state.grantedTools).map((tool) => ({ tool })),
-      allowOnce: [{ tool: state.pendingPermission.tool }],
-    };
-
-    await sendChat(messages, permissions);
-  }, [state.messages, state.grantedTools, state.pendingPermission, buildMessagesFromState, sendChat]);
+    // Resolve permission - stream continues automatically
+    await resolvePermission(state.sessionId, state.pendingPermission.toolCallId, true);
+  }, [state.sessionId, state.pendingPermission]);
 
   const handleAllowAll = useCallback(async () => {
-    if (!state.pendingPermission) return;
+    if (!state.pendingPermission || !state.sessionId) return;
 
     const tool = state.pendingPermission.tool;
+    const toolCallId = state.pendingPermission.toolCallId;
 
-    // Add to granted tools
+    // Add to granted tools and clear pending permission
     setState((s) => ({
       ...s,
       grantedTools: new Set([...s.grantedTools, tool]),
+      pendingPermission: null,
     }));
 
-    // Build messages from current state
-    const messages = buildMessagesFromState(state.messages);
-
-    // Resend with the tool in allowlist
-    const permissions: Permissions = {
-      allowlist: [...Array.from(state.grantedTools).map((t) => ({ tool: t })), { tool }],
-    };
-
-    await sendChat(messages, permissions);
-  }, [state.messages, state.grantedTools, state.pendingPermission, buildMessagesFromState, sendChat]);
+    // Resolve permission - stream continues automatically
+    await resolvePermission(state.sessionId, toolCallId, true);
+  }, [state.sessionId, state.pendingPermission]);
 
   const handleDeny = useCallback(async () => {
-    if (!state.pendingPermission) return;
+    if (!state.pendingPermission || !state.sessionId) return;
 
-    // Build messages from current state
-    const messages = buildMessagesFromState(state.messages);
+    // Clear pending permission immediately
+    setState((s) => ({ ...s, pendingPermission: null }));
 
-    // Resend with the tool call denied
-    const permissions: Permissions = {
-      allowlist: Array.from(state.grantedTools).map((tool) => ({ tool })),
-      deny: [{ toolCallId: state.pendingPermission.toolCallId, reason: "User denied" }],
-    };
-
-    await sendChat(messages, permissions);
-  }, [state.messages, state.grantedTools, state.pendingPermission, buildMessagesFromState, sendChat]);
+    // Resolve permission with denial - stream continues automatically
+    await resolvePermission(
+      state.sessionId,
+      state.pendingPermission.toolCallId,
+      false,
+      "User denied",
+    );
+  }, [state.sessionId, state.pendingPermission]);
 
   return (
     <div className="flex h-dvh flex-col bg-gray-900 text-gray-100">

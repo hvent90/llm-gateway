@@ -6,21 +6,19 @@ interface MessageNodeProps {
 }
 
 function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
-  const inputStr = typeof toolCall.input === "string"
-    ? toolCall.input
-    : JSON.stringify(toolCall.input, null, 2);
+  const inputStr =
+    typeof toolCall.input === "string" ? toolCall.input : JSON.stringify(toolCall.input, null, 2);
 
-  const outputStr = toolCall.output !== undefined
-    ? typeof toolCall.output === "string"
-      ? toolCall.output
-      : JSON.stringify(toolCall.output, null, 2)
-    : null;
+  const outputStr =
+    toolCall.output !== undefined
+      ? typeof toolCall.output === "string"
+        ? toolCall.output
+        : JSON.stringify(toolCall.output, null, 2)
+      : null;
 
   return (
     <div className="my-2 rounded border border-gray-700 bg-gray-800 p-2 text-sm">
-      <div className="font-mono text-yellow-400">
-        🔧 {toolCall.name}
-      </div>
+      <div className="font-mono text-yellow-400">🔧 {toolCall.name}</div>
       <pre className="mt-1 overflow-x-auto text-gray-400">{inputStr}</pre>
       {outputStr && (
         <div className="mt-2 border-t border-gray-700 pt-2">
@@ -55,9 +53,7 @@ export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
 
       {/* Reasoning */}
       {node.reasoning.length > 0 && (
-        <div className="mt-1 text-sm italic text-gray-500">
-          💭 {node.reasoning.join("")}
-        </div>
+        <div className="mt-1 text-sm italic text-gray-500">💭 {node.reasoning.join("")}</div>
       )}
 
       {/* Tool calls */}
@@ -66,11 +62,7 @@ export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
       ))}
 
       {/* Content */}
-      {node.content && (
-        <div className="mt-1 whitespace-pre-wrap text-gray-200">
-          {node.content}
-        </div>
-      )}
+      {node.content && <div className="mt-1 whitespace-pre-wrap text-gray-200">{node.content}</div>}
 
       {/* Children (subagents) */}
       {node.children.length > 0 && (

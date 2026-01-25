@@ -21,10 +21,10 @@ LLM Gateway proxies LLM requests through a harness interface, with durable strea
 
 ### Stream Lifecycle
 
-| Event | Action |
-|-------|--------|
+| Event   | Action                                          |
+| ------- | ----------------------------------------------- |
 | Success | Persist message to Postgres, flush Redis stream |
-| Failure | Discard partial response, flush Redis stream |
+| Failure | Discard partial response, flush Redis stream    |
 
 ## Persistence
 

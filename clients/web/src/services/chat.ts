@@ -6,9 +6,23 @@ export interface ChatRequest {
   permissions?: Permissions;
 }
 
+export async function resolvePermission(
+  sessionId: string,
+  toolCallId: string,
+  approved: boolean,
+  reason?: string,
+): Promise<boolean> {
+  const response = await fetch(`/chat/permission/${toolCallId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, approved, reason }),
+  });
+  return response.ok;
+}
+
 export async function* streamChat(
   request: ChatRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): AsyncGenerator<ServerEvent> {
   const response = await fetch("/chat", {
     method: "POST",

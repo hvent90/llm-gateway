@@ -4,12 +4,12 @@ Hono server proxying LLM requests through a harness interface.
 
 ## Tech Stack
 
-| Tool | Purpose |
-|------|---------|
-| Bun | Runtime & package manager |
-| Hono | Web framework |
-| Effect | Error handling & retries |
-| oxfmt | Formatting |
+| Tool   | Purpose                   |
+| ------ | ------------------------- |
+| Bun    | Runtime & package manager |
+| Hono   | Web framework             |
+| Effect | Error handling & retries  |
+| oxfmt  | Formatting                |
 
 ## Development Principles
 
@@ -34,4 +34,3 @@ bun test
 bun run format
 bun run check
 ```
-

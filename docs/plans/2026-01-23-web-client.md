@@ -13,6 +13,7 @@
 ## Task 1: Project Scaffolding
 
 **Files:**
+
 - Create: `clients/web/index.html`
 - Create: `clients/web/vite.config.ts`
 - Create: `clients/web/tailwind.config.ts`
@@ -100,7 +101,7 @@ import "./index.css";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
-  </StrictMode>
+  </StrictMode>,
 );
 ```
 
@@ -124,6 +125,7 @@ export default function App() {
 **Step 8: Install dependencies**
 
 Run:
+
 ```bash
 cd clients/web && bun add react react-dom @vitejs/plugin-react vite tailwindcss postcss autoprefixer
 cd clients/web && bun add -d @types/react @types/react-dom
@@ -132,6 +134,7 @@ cd clients/web && bun add -d @types/react @types/react-dom
 **Step 9: Add scripts to root package.json**
 
 Add to `scripts`:
+
 ```json
 "web": "bunx vite --config clients/web/vite.config.ts",
 "web:build": "bunx vite build --config clients/web/vite.config.ts"
@@ -154,6 +157,7 @@ git commit -m "feat(web): scaffold vite + react + tailwind project"
 ## Task 2: Types and State Structure
 
 **Files:**
+
 - Create: `clients/web/src/types.ts`
 - Create: `clients/web/src/state/conversation.ts`
 
@@ -170,8 +174,22 @@ export interface Message {
 export type ServerEvent =
   | { type: "text"; runId: string; id: string; parentId?: string; content: string }
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
-  | { type: "tool_call"; runId: string; id: string; parentId?: string; name: string; input: unknown }
-  | { type: "tool_result"; runId: string; id: string; parentId?: string; name: string; output: unknown }
+  | {
+      type: "tool_call";
+      runId: string;
+      id: string;
+      parentId?: string;
+      name: string;
+      input: unknown;
+    }
+  | {
+      type: "tool_result";
+      runId: string;
+      id: string;
+      parentId?: string;
+      name: string;
+      output: unknown;
+    }
   | { type: "error"; runId: string; parentId?: string; message: string }
   | {
       type: "permission_required";
@@ -221,7 +239,13 @@ export interface ConversationState {
 **Step 2: Create state/conversation.ts**
 
 ```ts
-import type { ConversationState, MessageNode, PermissionRequest, ServerEvent, ToolCall } from "../types";
+import type {
+  ConversationState,
+  MessageNode,
+  PermissionRequest,
+  ServerEvent,
+  ToolCall,
+} from "../types";
 
 export function createInitialState(): ConversationState {
   return {
@@ -251,7 +275,7 @@ export function addUserMessage(state: ConversationState, content: string): Conve
 export function findOrCreateAgentNode(
   messages: MessageNode[],
   runId: string,
-  parentId?: string
+  parentId?: string,
 ): { messages: MessageNode[]; node: MessageNode } {
   // Find existing node with this runId
   const findNode = (nodes: MessageNode[]): MessageNode | null => {
@@ -296,7 +320,7 @@ export function findOrCreateAgentNode(
 export function updateAgentNode(
   messages: MessageNode[],
   runId: string,
-  updater: (node: MessageNode) => MessageNode
+  updater: (node: MessageNode) => MessageNode,
 ): MessageNode[] {
   return messages.map((node) => {
     if (node.id === runId) return updater(node);
@@ -349,7 +373,7 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         messages: updateAgentNode(state.messages, runId, (node) => ({
           ...node,
           toolCalls: node.toolCalls.map((tc) =>
-            tc.id === event.id ? { ...tc, output: event.output } : tc
+            tc.id === event.id ? { ...tc, output: event.output } : tc,
           ),
         })),
       };
@@ -395,11 +419,13 @@ git commit -m "feat(web): add types and conversation state management"
 ## Task 3: SSE Service
 
 **Files:**
+
 - Create: `clients/web/src/services/chat.ts`
 
 **Step 1: Install Effect dependencies**
 
 Run:
+
 ```bash
 cd clients/web && bun add effect @effect/platform
 ```
@@ -417,7 +443,7 @@ export interface ChatRequest {
 
 export async function* streamChat(
   request: ChatRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): AsyncGenerator<ServerEvent> {
   const response = await fetch("/chat", {
     method: "POST",
@@ -502,12 +528,14 @@ git commit -m "feat(web): add SSE streaming chat service"
 ## Task 4: Base UI Setup and Input Component
 
 **Files:**
+
 - Create: `clients/web/src/components/InputArea.tsx`
 - Modify: `clients/web/src/App.tsx`
 
 **Step 1: Install Base UI**
 
 Run:
+
 ```bash
 cd clients/web && bun add @base-ui-components/react
 ```
@@ -616,6 +644,7 @@ git commit -m "feat(web): add input area with Base UI"
 ## Task 5: Message Display Components
 
 **Files:**
+
 - Create: `clients/web/src/components/MessageNode.tsx`
 - Create: `clients/web/src/components/ConversationThread.tsx`
 
@@ -630,21 +659,19 @@ interface MessageNodeProps {
 }
 
 function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
-  const inputStr = typeof toolCall.input === "string"
-    ? toolCall.input
-    : JSON.stringify(toolCall.input, null, 2);
+  const inputStr =
+    typeof toolCall.input === "string" ? toolCall.input : JSON.stringify(toolCall.input, null, 2);
 
-  const outputStr = toolCall.output !== undefined
-    ? typeof toolCall.output === "string"
-      ? toolCall.output
-      : JSON.stringify(toolCall.output, null, 2)
-    : null;
+  const outputStr =
+    toolCall.output !== undefined
+      ? typeof toolCall.output === "string"
+        ? toolCall.output
+        : JSON.stringify(toolCall.output, null, 2)
+      : null;
 
   return (
     <div className="my-2 rounded border border-gray-700 bg-gray-800 p-2 text-sm">
-      <div className="font-mono text-yellow-400">
-        🔧 {toolCall.name}
-      </div>
+      <div className="font-mono text-yellow-400">🔧 {toolCall.name}</div>
       <pre className="mt-1 overflow-x-auto text-gray-400">{inputStr}</pre>
       {outputStr && (
         <div className="mt-2 border-t border-gray-700 pt-2">
@@ -669,9 +696,7 @@ export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
 
       {/* Reasoning */}
       {node.reasoning.length > 0 && (
-        <div className="mt-1 text-sm italic text-gray-500">
-          💭 {node.reasoning.join("")}
-        </div>
+        <div className="mt-1 text-sm italic text-gray-500">💭 {node.reasoning.join("")}</div>
       )}
 
       {/* Tool calls */}
@@ -680,11 +705,7 @@ export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
       ))}
 
       {/* Content */}
-      {node.content && (
-        <div className="mt-1 whitespace-pre-wrap text-gray-200">
-          {node.content}
-        </div>
-      )}
+      {node.content && <div className="mt-1 whitespace-pre-wrap text-gray-200">{node.content}</div>}
 
       {/* Children (subagents) */}
       {node.children.length > 0 && (
@@ -748,6 +769,7 @@ git commit -m "feat(web): add message display components with nested agent suppo
 ## Task 6: Permission Prompt Component
 
 **Files:**
+
 - Create: `clients/web/src/components/PermissionPrompt.tsx`
 
 **Step 1: Create components/PermissionPrompt.tsx**
@@ -767,9 +789,7 @@ export function PermissionPrompt({ request, onAllow, onAllowAll, onDeny }: Permi
 
   return (
     <div className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
-      <div className="mb-2 font-medium text-yellow-400">
-        ⚠️ Permission Required
-      </div>
+      <div className="mb-2 font-medium text-yellow-400">⚠️ Permission Required</div>
       <div className="mb-2 text-sm text-gray-300">
         Tool: <span className="font-mono text-yellow-300">{request.tool}</span>
       </div>
@@ -813,6 +833,7 @@ git commit -m "feat(web): add permission prompt component"
 ## Task 7: Wire Everything Together
 
 **Files:**
+
 - Modify: `clients/web/src/App.tsx`
 
 **Step 1: Update App.tsx with full integration**
@@ -823,11 +844,7 @@ import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import { PermissionPrompt } from "./components/PermissionPrompt";
 import { streamChat } from "./services/chat";
-import {
-  createInitialState,
-  addUserMessage,
-  handleEvent,
-} from "./state/conversation";
+import { createInitialState, addUserMessage, handleEvent } from "./state/conversation";
 import type { ConversationState, Message } from "./types";
 
 const MODEL = "nvidia/nemotron-nano-9b-v2:free";
@@ -836,47 +853,50 @@ export default function App() {
   const [state, setState] = useState<ConversationState>(createInitialState);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  const handleSubmit = useCallback(async (content: string) => {
-    // Add user message
-    setState((s) => ({ ...addUserMessage(s, content), isStreaming: true }));
+  const handleSubmit = useCallback(
+    async (content: string) => {
+      // Add user message
+      setState((s) => ({ ...addUserMessage(s, content), isStreaming: true }));
 
-    // Build messages array for API
-    const messages: Message[] = [];
-    const buildMessages = (nodes: typeof state.messages) => {
-      for (const node of nodes) {
-        messages.push({ role: node.role, content: node.content });
-        buildMessages(node.children);
+      // Build messages array for API
+      const messages: Message[] = [];
+      const buildMessages = (nodes: typeof state.messages) => {
+        for (const node of nodes) {
+          messages.push({ role: node.role, content: node.content });
+          buildMessages(node.children);
+        }
+      };
+      buildMessages(state.messages);
+      messages.push({ role: "user", content });
+
+      // Create abort controller
+      const controller = new AbortController();
+      setAbortController(controller);
+
+      try {
+        const stream = streamChat(
+          {
+            model: MODEL,
+            messages,
+            permissions: Array.from(state.grantedTools),
+          },
+          controller.signal,
+        );
+
+        for await (const event of stream) {
+          setState((s) => handleEvent(s, event));
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name !== "AbortError") {
+          console.error("Stream error:", error);
+        }
+      } finally {
+        setState((s) => ({ ...s, isStreaming: false }));
+        setAbortController(null);
       }
-    };
-    buildMessages(state.messages);
-    messages.push({ role: "user", content });
-
-    // Create abort controller
-    const controller = new AbortController();
-    setAbortController(controller);
-
-    try {
-      const stream = streamChat(
-        {
-          model: MODEL,
-          messages,
-          permissions: Array.from(state.grantedTools),
-        },
-        controller.signal
-      );
-
-      for await (const event of stream) {
-        setState((s) => handleEvent(s, event));
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name !== "AbortError") {
-        console.error("Stream error:", error);
-      }
-    } finally {
-      setState((s) => ({ ...s, isStreaming: false }));
-      setAbortController(null);
-    }
-  }, [state.messages, state.grantedTools]);
+    },
+    [state.messages, state.grantedTools],
+  );
 
   const handleAllow = useCallback(() => {
     // TODO: Send allow response to server
@@ -928,6 +948,7 @@ export default function App() {
 **Step 2: Verify full flow works**
 
 Run:
+
 ```bash
 # Terminal 1
 bun run dev
@@ -954,6 +975,7 @@ git commit -m "feat(web): integrate all components into working chat client"
 **Step 1: Start server and client**
 
 Run in separate terminals:
+
 ```bash
 bun run dev
 bun run web
@@ -968,6 +990,7 @@ Expected: Text appears incrementally as it streams.
 
 Send: "List the files in the current directory"
 Expected:
+
 - Tool call block appears with 🔧 bash
 - Tool result appears with ↳ output
 - Final text response appears
@@ -992,13 +1015,13 @@ git commit --allow-empty -m "chore(web): manual validation complete"
 
 ## Summary
 
-| Task | Description |
-|------|-------------|
-| 1 | Project scaffolding (Vite, React, Tailwind) |
-| 2 | Types and state structure |
-| 3 | SSE streaming service |
-| 4 | Base UI input component |
-| 5 | Message display with nested agents |
-| 6 | Permission prompt component |
-| 7 | Full integration |
-| 8 | Manual validation |
+| Task | Description                                 |
+| ---- | ------------------------------------------- |
+| 1    | Project scaffolding (Vite, React, Tailwind) |
+| 2    | Types and state structure                   |
+| 3    | SSE streaming service                       |
+| 4    | Base UI input component                     |
+| 5    | Message display with nested agents          |
+| 6    | Permission prompt component                 |
+| 7    | Full integration                            |
+| 8    | Manual validation                           |

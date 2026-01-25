@@ -6,10 +6,25 @@ export interface Message {
 
 // Server event types
 export type ServerEvent =
+  | { type: "connected"; sessionId: string }
   | { type: "text"; runId: string; id: string; parentId?: string; content: string }
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
-  | { type: "tool_call"; runId: string; id: string; parentId?: string; name: string; input: unknown }
-  | { type: "tool_result"; runId: string; id: string; parentId?: string; name: string; output: unknown }
+  | {
+      type: "tool_call";
+      runId: string;
+      id: string;
+      parentId?: string;
+      name: string;
+      input: unknown;
+    }
+  | {
+      type: "tool_result";
+      runId: string;
+      id: string;
+      parentId?: string;
+      name: string;
+      output: unknown;
+    }
   | { type: "error"; runId: string; parentId?: string; message: string }
   | {
       type: "permission_required";
@@ -61,6 +76,7 @@ export interface Permissions {
 
 // Conversation state
 export interface ConversationState {
+  sessionId: string | null;
   messages: MessageNode[];
   isStreaming: boolean;
   pendingPermission: PermissionRequest | null;

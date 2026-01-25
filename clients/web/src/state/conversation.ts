@@ -3,6 +3,7 @@ import type { ConversationState, MessageNode, ServerEvent, ToolCall } from "../t
 
 export function createInitialState(): ConversationState {
   return {
+    sessionId: null,
     messages: [],
     isStreaming: false,
     pendingPermission: null,
@@ -45,7 +46,7 @@ export function addErrorMessage(state: ConversationState, error: string): Conver
 export function findOrCreateAgentNode(
   messages: MessageNode[],
   runId: string,
-  parentId?: string
+  parentId?: string,
 ): { messages: MessageNode[]; node: MessageNode } {
   // Find existing node with this runId
   const findNode = (nodes: MessageNode[]): MessageNode | null => {
@@ -90,7 +91,7 @@ export function findOrCreateAgentNode(
 export function updateAgentNode(
   messages: MessageNode[],
   runId: string,
-  updater: (node: MessageNode) => MessageNode
+  updater: (node: MessageNode) => MessageNode,
 ): MessageNode[] {
   return messages.map((node) => {
     if (node.id === runId) return updater(node);
@@ -99,6 +100,14 @@ export function updateAgentNode(
 }
 
 export function handleEvent(state: ConversationState, event: ServerEvent): ConversationState {
+  // Handle connected event first (no runId)
+  if (event.type === "connected") {
+    return {
+      ...state,
+      sessionId: event.sessionId,
+    };
+  }
+
   const runId = event.runId;
   const parentId = "parentId" in event ? event.parentId : undefined;
 
@@ -149,7 +158,7 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         messages: updateAgentNode(state.messages, runId, (node) => ({
           ...node,
           toolCalls: node.toolCalls.map((tc) =>
-            tc.id === event.id ? { ...tc, output: event.output } : tc
+            tc.id === event.id ? { ...tc, output: event.output } : tc,
           ),
         })),
       };

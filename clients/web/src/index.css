@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 /* Mobile optimizations */
-html, body {
+html,
+body {
   touch-action: manipulation; /* Prevent double-tap zoom delay */
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none; /* Prevent pull-to-refresh and overscroll */

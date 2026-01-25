@@ -17,7 +17,6 @@ export interface ToolExecutionResult<T = unknown> {
 
 // Context passed to tool execute functions
 export interface ToolContext {
-  emit: (event: HarnessEvent) => void;
   parentId?: string; // The tool_call ID that spawned this execution context
 }
 
@@ -77,6 +76,7 @@ export type HarnessEvent =
       toolCallId: string;
       tool: string;
       params: Record<string, unknown>;
+      respond: (approved: boolean, reason?: string) => void;
     };
 
 // Parameters for invoking a harness
@@ -92,9 +92,27 @@ export interface InvokeParams {
   permissions?: Permissions;
 }
 
+// Parameters for generator-based harness invocation (no emit callback)
+export interface GeneratorInvokeParams {
+  model: string;
+  messages: Message[];
+  tools?: ToolDefinition[];
+  context?: {
+    runId?: string;
+    parentId?: string;
+  };
+  permissions?: Permissions;
+}
+
 // The interface a harness module must implement
 export interface HarnessModule {
   invoke(params: InvokeParams): Promise<void>;
+  supportedModels(): Promise<string[]>;
+}
+
+// Generator-based harness module interface
+export interface GeneratorHarnessModule {
+  invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent>;
   supportedModels(): Promise<string[]>;
 }
 

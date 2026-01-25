@@ -1,16 +1,14 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { openRouterHarness } from "../packages/ai/harness/openrouter.ts";
-import { createAgentHarness } from "../packages/ai/harness/agent.ts";
+import { v7 } from "uuid";
+import { AgentOrchestrator, type ConsumerHarnessEvent } from "../packages/ai/orchestrator.ts";
 import { bashTool } from "../packages/ai/tools/index.ts";
-import type { Message, HarnessEvent, Permissions } from "../packages/ai/types.ts";
-
-const agentHarness = createAgentHarness({
-  harness: openRouterHarness,
-  maxIterations: 10,
-});
+import type { Message, Permissions } from "../packages/ai/types.ts";
 
 const app = new Hono();
+
+// Store active orchestrators by session ID
+const orchestrators = new Map<string, AgentOrchestrator>();
 
 interface ChatRequest {
   model: string;
@@ -18,17 +16,24 @@ interface ChatRequest {
   permissions?: Permissions;
 }
 
-// Serialize a HarnessEvent to JSON-safe format
-function serializeEvent(event: HarnessEvent): object {
+interface PermissionRequest {
+  sessionId: string;
+  approved: boolean;
+  reason?: string;
+}
+
+// Serialize a ConsumerHarnessEvent to JSON-safe format, adding agentId
+function serializeEvent(event: ConsumerHarnessEvent, agentId: string): object {
   if (event.type === "error") {
     return {
       type: event.type,
       runId: event.runId,
+      agentId,
       ...(event.parentId && { parentId: event.parentId }),
       message: event.error.message,
     };
   }
-  return event;
+  return { ...event, agentId };
 }
 
 app.post("/chat", async (c) => {
@@ -43,28 +48,36 @@ app.post("/chat", async (c) => {
     return c.json({ error: "model and messages are required" }, 400);
   }
 
-  return streamSSE(c, async (stream) => {
-    // Queue to ensure events are written in order
-    const writeQueue: Promise<void>[] = [];
+  // Generate session ID for this connection
+  const sessionId = v7();
 
-    const emit = (event: HarnessEvent) => {
-      const writePromise = stream.writeSSE({
-        event: event.type,
-        data: JSON.stringify(serializeEvent(event)),
-      });
-      writeQueue.push(writePromise);
-    };
+  return streamSSE(c, async (stream) => {
+    // Create orchestrator for this session
+    const orchestrator = new AgentOrchestrator();
+    orchestrators.set(sessionId, orchestrator);
 
     try {
-      await agentHarness.invoke({
+      // Send connected event with session ID
+      await stream.writeSSE({
+        event: "connected",
+        data: JSON.stringify({ sessionId }),
+      });
+
+      // Spawn the agent
+      const agentId = orchestrator.spawn({
         model: body.model,
         messages: body.messages,
         tools: [bashTool],
-        emit,
         permissions: body.permissions,
       });
-      // Wait for all queued writes to complete
-      await Promise.all(writeQueue);
+
+      // Stream events from the orchestrator
+      for await (const { agentId: eventAgentId, event } of orchestrator.events()) {
+        await stream.writeSSE({
+          event: event.type,
+          data: JSON.stringify(serializeEvent(event, eventAgentId)),
+        });
+      }
     } catch (error) {
       await stream.writeSSE({
         event: "error",
@@ -73,8 +86,39 @@ app.post("/chat", async (c) => {
           message: error instanceof Error ? error.message : String(error),
         }),
       });
+    } finally {
+      // Clean up orchestrator when stream ends
+      orchestrators.delete(sessionId);
     }
   });
+});
+
+// Permission resolution endpoint
+app.post("/chat/permission/:toolCallId", async (c) => {
+  let body: PermissionRequest;
+  try {
+    body = await c.req.json<PermissionRequest>();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+
+  const toolCallId = c.req.param("toolCallId");
+
+  if (!body.sessionId || body.approved === undefined) {
+    return c.json({ error: "sessionId and approved are required" }, 400);
+  }
+
+  const orchestrator = orchestrators.get(body.sessionId);
+  if (!orchestrator) {
+    return c.json({ error: "Session not found or permission request not found" }, 404);
+  }
+
+  const resolved = orchestrator.resolvePermission(toolCallId, body.approved, body.reason);
+  if (!resolved) {
+    return c.json({ error: "Session not found or permission request not found" }, 404);
+  }
+
+  return c.json({ success: true });
 });
 
 // Start server

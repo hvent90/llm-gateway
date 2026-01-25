@@ -12,9 +12,7 @@ export function PermissionPrompt({ request, onAllow, onAllowAll, onDeny }: Permi
 
   return (
     <div className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
-      <div className="mb-2 font-medium text-yellow-400">
-        ⚠️ Permission Required
-      </div>
+      <div className="mb-2 font-medium text-yellow-400">⚠️ Permission Required</div>
       <div className="mb-2 text-sm text-gray-300">
         Tool: <span className="font-mono text-yellow-300">{request.tool}</span>
       </div>

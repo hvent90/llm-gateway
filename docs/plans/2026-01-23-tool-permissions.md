@@ -15,6 +15,7 @@
 ### Task 1: Add minimatch dependency
 
 **Files:**
+
 - Modify: `package.json`
 
 **Step 1: Install minimatch**
@@ -38,6 +39,7 @@ git commit -m "chore: add minimatch for glob pattern matching"
 ### Task 2: Add permission types
 
 **Files:**
+
 - Modify: `packages/ai/types.ts`
 
 **Step 1: Add ToolPermission and Permissions types**
@@ -101,6 +103,7 @@ git commit -m "feat: add permission types to harness interface"
 ### Task 3: Create permissions module with glob matching
 
 **Files:**
+
 - Create: `packages/ai/permissions.ts`
 - Create: `packages/ai/permissions.test.ts`
 
@@ -117,7 +120,7 @@ describe("permissions", () => {
     it("matches tool name only", () => {
       const result = matchesPermission(
         { name: "get_weather", arguments: { city: "London" } },
-        { tool: "get_weather" }
+        { tool: "get_weather" },
       );
       expect(result).toBe(true);
     });
@@ -125,7 +128,7 @@ describe("permissions", () => {
     it("rejects different tool name", () => {
       const result = matchesPermission(
         { name: "get_weather", arguments: { city: "London" } },
-        { tool: "calculator" }
+        { tool: "calculator" },
       );
       expect(result).toBe(false);
     });
@@ -133,7 +136,7 @@ describe("permissions", () => {
     it("matches with glob pattern", () => {
       const result = matchesPermission(
         { name: "bash", arguments: { command: "ls -la" } },
-        { tool: "bash", params: { command: "ls *" } }
+        { tool: "bash", params: { command: "ls *" } },
       );
       expect(result).toBe(true);
     });
@@ -141,7 +144,7 @@ describe("permissions", () => {
     it("rejects non-matching glob pattern", () => {
       const result = matchesPermission(
         { name: "bash", arguments: { command: "rm -rf /" } },
-        { tool: "bash", params: { command: "ls *" } }
+        { tool: "bash", params: { command: "ls *" } },
       );
       expect(result).toBe(false);
     });
@@ -149,7 +152,7 @@ describe("permissions", () => {
     it("allows unspecified params when some params have patterns", () => {
       const result = matchesPermission(
         { name: "file_write", arguments: { path: "/tmp/foo.txt", content: "hello" } },
-        { tool: "file_write", params: { path: "/tmp/*" } }
+        { tool: "file_write", params: { path: "/tmp/*" } },
       );
       expect(result).toBe(true);
     });
@@ -157,7 +160,7 @@ describe("permissions", () => {
     it("handles missing arguments gracefully", () => {
       const result = matchesPermission(
         { name: "bash", arguments: undefined },
-        { tool: "bash", params: { command: "ls *" } }
+        { tool: "bash", params: { command: "ls *" } },
       );
       expect(result).toBe(false);
     });
@@ -167,7 +170,7 @@ describe("permissions", () => {
     it("returns true if any allowlist entry matches", () => {
       const result = matchesPermissions(
         { name: "get_weather", arguments: { city: "London" } },
-        { allowlist: [{ tool: "calculator" }, { tool: "get_weather" }] }
+        { allowlist: [{ tool: "calculator" }, { tool: "get_weather" }] },
       );
       expect(result).toBe(true);
     });
@@ -175,7 +178,7 @@ describe("permissions", () => {
     it("returns true if any allowOnce entry matches", () => {
       const result = matchesPermissions(
         { name: "bash", arguments: { command: "ls -la" } },
-        { allowOnce: [{ tool: "bash", params: { command: "ls *" } }] }
+        { allowOnce: [{ tool: "bash", params: { command: "ls *" } }] },
       );
       expect(result).toBe(true);
     });
@@ -183,24 +186,18 @@ describe("permissions", () => {
     it("returns false if no entries match", () => {
       const result = matchesPermissions(
         { name: "dangerous_tool", arguments: {} },
-        { allowlist: [{ tool: "safe_tool" }], allowOnce: [] }
+        { allowlist: [{ tool: "safe_tool" }], allowOnce: [] },
       );
       expect(result).toBe(false);
     });
 
     it("returns false for empty permissions", () => {
-      const result = matchesPermissions(
-        { name: "any_tool", arguments: {} },
-        {}
-      );
+      const result = matchesPermissions({ name: "any_tool", arguments: {} }, {});
       expect(result).toBe(false);
     });
 
     it("returns false for undefined permissions", () => {
-      const result = matchesPermissions(
-        { name: "any_tool", arguments: {} },
-        undefined
-      );
+      const result = matchesPermissions({ name: "any_tool", arguments: {} }, undefined);
       expect(result).toBe(false);
     });
   });
@@ -225,10 +222,7 @@ interface ToolCallLike {
   arguments?: Record<string, unknown>;
 }
 
-export function matchesPermission(
-  toolCall: ToolCallLike,
-  permission: ToolPermission
-): boolean {
+export function matchesPermission(toolCall: ToolCallLike, permission: ToolPermission): boolean {
   if (toolCall.name !== permission.tool) {
     return false;
   }
@@ -252,12 +246,9 @@ export function matchesPermission(
 
 export function matchesPermissions(
   toolCall: ToolCallLike,
-  permissions?: Pick<Permissions, "allowlist" | "allowOnce">
+  permissions?: Pick<Permissions, "allowlist" | "allowOnce">,
 ): boolean {
-  const allAllowed = [
-    ...(permissions?.allowlist ?? []),
-    ...(permissions?.allowOnce ?? []),
-  ];
+  const allAllowed = [...(permissions?.allowlist ?? []), ...(permissions?.allowOnce ?? [])];
   return allAllowed.some((p) => matchesPermission(toolCall, p));
 }
 ```
@@ -279,6 +270,7 @@ git commit -m "feat: add permission matching with glob patterns"
 ### Task 4: Update OpenRouter harness to check permissions
 
 **Files:**
+
 - Modify: `packages/ai/harness/openrouter.ts`
 - Modify: `packages/ai/harness/openrouter.test.ts`
 
@@ -374,65 +366,71 @@ import { matchesPermissions } from "../permissions";
 Update the invoke function to extract permissions and check before tool execution. Replace the tool execution loop (lines 100-131) with:
 
 ```typescript
-        // Execute tools if they have executors
-        for (const tc of toolCalls) {
-          const toolDef = params.tools?.find((t) => t.name === tc.name);
+// Execute tools if they have executors
+for (const tc of toolCalls) {
+  const toolDef = params.tools?.find((t) => t.name === tc.name);
 
-          // Check deny list first
-          const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
-          if (denial) {
-            taggedEmit({
-              type: "tool_result",
-              runId,
-              id: tc.id,
-              name: tc.name,
-              output: { status: "denied", reason: denial.reason },
-            });
-            continue;
-          }
+  // Check deny list first
+  const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
+  if (denial) {
+    taggedEmit({
+      type: "tool_result",
+      runId,
+      id: tc.id,
+      name: tc.name,
+      output: { status: "denied", reason: denial.reason },
+    });
+    continue;
+  }
 
-          // Check if allowed (allowlist or allowOnce)
-          if (params.permissions && !matchesPermissions({ name: tc.name, arguments: tc.arguments }, params.permissions)) {
-            taggedEmit({
-              type: "permission_required",
-              runId,
-              id: v7(),
-              toolCallId: tc.id,
-              tool: tc.name,
-              params: tc.arguments ?? {},
-            });
-            continue;
-          }
+  // Check if allowed (allowlist or allowOnce)
+  if (
+    params.permissions &&
+    !matchesPermissions({ name: tc.name, arguments: tc.arguments }, params.permissions)
+  ) {
+    taggedEmit({
+      type: "permission_required",
+      runId,
+      id: v7(),
+      toolCallId: tc.id,
+      tool: tc.name,
+      params: tc.arguments ?? {},
+    });
+    continue;
+  }
 
-          if (!toolDef?.execute) {
-            // No executor - that's ok, caller may process tool_call events directly
-            continue;
-          }
+  if (!toolDef?.execute) {
+    // No executor - that's ok, caller may process tool_call events directly
+    continue;
+  }
 
-          const toolCtx: ToolContext = {
-            emit: taggedEmit,
-            parentId: tc.id, // This tool_call becomes parent for nested events
-          };
+  const toolCtx: ToolContext = {
+    emit: taggedEmit,
+    parentId: tc.id, // This tool_call becomes parent for nested events
+  };
 
-          try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
-            // Emit tool_result with context for agent loop (context goes into messages)
-            // and result for application consumption
-            taggedEmit({
-              type: "tool_result",
-              runId,
-              name: tc.name,
-              id: tc.id,
-              output: { context: toolContext, result: toolResult },
-            });
-          } catch (error) {
-            taggedEmit({
-              type: "error",
-              runId,
-              error: error instanceof Error ? error : new Error(String(error)),
-            });
-          }
-        }
+  try {
+    const { context: toolContext, result: toolResult } = await toolDef.execute(
+      tc.arguments,
+      toolCtx,
+    );
+    // Emit tool_result with context for agent loop (context goes into messages)
+    // and result for application consumption
+    taggedEmit({
+      type: "tool_result",
+      runId,
+      name: tc.name,
+      id: tc.id,
+      output: { context: toolContext, result: toolResult },
+    });
+  } catch (error) {
+    taggedEmit({
+      type: "error",
+      runId,
+      error: error instanceof Error ? error : new Error(String(error)),
+    });
+  }
+}
 ```
 
 Also update the destructuring at the start of invoke (line 42) to include permissions:
@@ -459,6 +457,7 @@ git commit -m "feat: add permission checking to OpenRouter harness"
 ### Task 5: Update agent harness to stop on permission_required
 
 **Files:**
+
 - Modify: `packages/ai/harness/agent.ts`
 - Modify: `packages/ai/harness/agent.test.ts`
 
@@ -505,96 +504,96 @@ Expected: FAIL (agent keeps looping)
 Update the invoke function in `packages/ai/harness/agent.ts`. Add a flag to track permission_required:
 
 ```typescript
-  return {
-    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
-      const runId = context?.runId ?? uuidv7();
-      const parentId = context?.parentId;
+return {
+  async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
+    const runId = context?.runId ?? uuidv7();
+    const parentId = context?.parentId;
 
-      // Wrap emit to add parentId to events
-      const taggedEmit = (event: HarnessEvent) => {
-        emit(parentId ? { ...event, parentId } : event);
-      };
+    // Wrap emit to add parentId to events
+    const taggedEmit = (event: HarnessEvent) => {
+      emit(parentId ? { ...event, parentId } : event);
+    };
 
-      const messages = [...params.messages];
-      let iterations = 0;
+    const messages = [...params.messages];
+    let iterations = 0;
 
-      while (iterations++ < maxIterations) {
-        const toolCalls: ToolCall[] = [];
-        const toolResults: Map<string, ToolResultOutput> = new Map();
-        let textContent = "";
-        let permissionRequired = false;
+    while (iterations++ < maxIterations) {
+      const toolCalls: ToolCall[] = [];
+      const toolResults: Map<string, ToolResultOutput> = new Map();
+      let textContent = "";
+      let permissionRequired = false;
 
-        await harness.invoke({
-          ...params,
-          messages,
-          context: { runId, parentId },
-          emit: (event) => {
-            taggedEmit(event);
-            if (event.type === "tool_call") {
-              toolCalls.push({ id: event.id, name: event.name, arguments: event.input });
-            }
-            if (event.type === "text") {
-              textContent += event.content;
-            }
-            if (event.type === "tool_result") {
-              // Collect tool results for building messages
-              toolResults.set(event.id, event.output as ToolResultOutput);
-            }
-            if (event.type === "permission_required") {
-              permissionRequired = true;
-            }
-          },
-        });
+      await harness.invoke({
+        ...params,
+        messages,
+        context: { runId, parentId },
+        emit: (event) => {
+          taggedEmit(event);
+          if (event.type === "tool_call") {
+            toolCalls.push({ id: event.id, name: event.name, arguments: event.input });
+          }
+          if (event.type === "text") {
+            textContent += event.content;
+          }
+          if (event.type === "tool_result") {
+            // Collect tool results for building messages
+            toolResults.set(event.id, event.output as ToolResultOutput);
+          }
+          if (event.type === "permission_required") {
+            permissionRequired = true;
+          }
+        },
+      });
 
-        // Stop looping if permission is needed
-        if (permissionRequired) {
-          return;
-        }
+      // Stop looping if permission is needed
+      if (permissionRequired) {
+        return;
+      }
 
-        if (toolCalls.length === 0) break;
+      if (toolCalls.length === 0) break;
 
-        messages.push({
-          role: "assistant",
-          content: textContent || null,
-          tool_calls: toolCalls,
-        });
+      messages.push({
+        role: "assistant",
+        content: textContent || null,
+        tool_calls: toolCalls,
+      });
 
-        // Build tool messages from collected results
-        for (const tc of toolCalls) {
-          const resultOutput = toolResults.get(tc.id);
-          if (!resultOutput) {
-            // No result for this tool call - check if tool has no executor
-            const toolDef = params.tools?.find((t) => t.name === tc.name);
-            if (!toolDef?.execute) {
-              taggedEmit({
-                type: "error",
-                runId,
-                error: new Error(`No executor for tool: ${tc.name}`),
-              });
-              return;
-            }
-            // Executor exists but no result emitted - this is a bug
+      // Build tool messages from collected results
+      for (const tc of toolCalls) {
+        const resultOutput = toolResults.get(tc.id);
+        if (!resultOutput) {
+          // No result for this tool call - check if tool has no executor
+          const toolDef = params.tools?.find((t) => t.name === tc.name);
+          if (!toolDef?.execute) {
             taggedEmit({
               type: "error",
               runId,
-              error: new Error(`Tool executor for '${tc.name}' did not emit a result`),
+              error: new Error(`No executor for tool: ${tc.name}`),
             });
             return;
           }
+          // Executor exists but no result emitted - this is a bug
+          taggedEmit({
+            type: "error",
+            runId,
+            error: new Error(`Tool executor for '${tc.name}' did not emit a result`),
+          });
+          return;
+        }
 
-          if (resultOutput.context !== undefined) {
-            messages.push({
-              role: "tool",
-              tool_call_id: tc.id,
-              content: resultOutput.context,
-            });
-          }
+        if (resultOutput.context !== undefined) {
+          messages.push({
+            role: "tool",
+            tool_call_id: tc.id,
+            content: resultOutput.context,
+          });
         }
       }
-    },
+    }
+  },
 
-    supportedModels: () => harness.supportedModels(),
-  };
+  supportedModels: () => harness.supportedModels(),
+};
 ```
 
 **Step 4: Run test to verify it passes**
@@ -614,6 +613,7 @@ git commit -m "feat: stop agent loop on permission_required"
 ### Task 6: Update server to pass through permissions
 
 **Files:**
+
 - Modify: `server/index.ts`
 
 **Step 1: Update ChatRequest interface**
@@ -635,12 +635,12 @@ interface ChatRequest {
 Update the invoke call (around line 51):
 
 ```typescript
-      await openRouterHarness.invoke({
-        model: body.model,
-        messages: body.messages,
-        emit,
-        permissions: body.permissions,
-      });
+await openRouterHarness.invoke({
+  model: body.model,
+  messages: body.messages,
+  emit,
+  permissions: body.permissions,
+});
 ```
 
 **Step 3: Verify server starts**
@@ -685,14 +685,14 @@ git commit -m "chore: format code" || echo "Nothing to commit"
 
 ## Summary of Changes
 
-| File | Change |
-|------|--------|
-| `package.json` | Add minimatch dependency |
-| `packages/ai/types.ts` | Add ToolPermission, Permissions, permission_required event, update InvokeParams |
-| `packages/ai/permissions.ts` | New file with glob matching functions |
-| `packages/ai/permissions.test.ts` | Tests for permission matching |
-| `packages/ai/harness/openrouter.ts` | Check permissions before tool execution |
-| `packages/ai/harness/openrouter.test.ts` | Tests for permission behavior |
-| `packages/ai/harness/agent.ts` | Stop loop on permission_required |
-| `packages/ai/harness/agent.test.ts` | Test for agent stopping |
-| `server/index.ts` | Pass permissions through API |
+| File                                     | Change                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| `package.json`                           | Add minimatch dependency                                                        |
+| `packages/ai/types.ts`                   | Add ToolPermission, Permissions, permission_required event, update InvokeParams |
+| `packages/ai/permissions.ts`             | New file with glob matching functions                                           |
+| `packages/ai/permissions.test.ts`        | Tests for permission matching                                                   |
+| `packages/ai/harness/openrouter.ts`      | Check permissions before tool execution                                         |
+| `packages/ai/harness/openrouter.test.ts` | Tests for permission behavior                                                   |
+| `packages/ai/harness/agent.ts`           | Stop loop on permission_required                                                |
+| `packages/ai/harness/agent.test.ts`      | Test for agent stopping                                                         |
+| `server/index.ts`                        | Pass permissions through API                                                    |

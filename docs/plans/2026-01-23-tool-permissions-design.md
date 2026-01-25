@@ -6,16 +6,16 @@ A permission system that allows clients to control which tools can be executed, 
 
 ## Key Decisions
 
-| Aspect | Decision |
-|--------|----------|
-| Permission responses | allow-once, allow-always, deny (with reason) |
-| State location | Client-side (sends permissions with each request) |
-| Permission check | Server-side in harness, before tool execution |
-| When not allowed | Emit `permission_required`, continue checking other tools |
-| Stream behavior | All events emitted, then stream closes |
-| Denial handling | `tool_result` with `status: "denied"`, agent continues |
-| Allowlist structure | Tool name + glob patterns for params |
-| API shape | `permissions: { allowlist, allowOnce, deny }` |
+| Aspect               | Decision                                                  |
+| -------------------- | --------------------------------------------------------- |
+| Permission responses | allow-once, allow-always, deny (with reason)              |
+| State location       | Client-side (sends permissions with each request)         |
+| Permission check     | Server-side in harness, before tool execution             |
+| When not allowed     | Emit `permission_required`, continue checking other tools |
+| Stream behavior      | All events emitted, then stream closes                    |
+| Denial handling      | `tool_result` with `status: "denied"`, agent continues    |
+| Allowlist structure  | Tool name + glob patterns for params                      |
+| API shape            | `permissions: { allowlist, allowOnce, deny }`             |
 
 ## Types
 
@@ -23,8 +23,8 @@ A permission system that allows clients to control which tools can be executed, 
 
 ```typescript
 type ToolPermission = {
-  tool: string;                     // tool name (exact match)
-  params?: Record<string, string>;  // param name → glob pattern
+  tool: string; // tool name (exact match)
+  params?: Record<string, string>; // param name → glob pattern
 };
 ```
 
@@ -42,6 +42,7 @@ Examples:
 ```
 
 Matching logic:
+
 - If `params` is omitted, tool is allowed with any parameters
 - If `params` is present, each specified param must match its glob
 - Unspecified params are allowed (only check what's listed)
@@ -50,9 +51,10 @@ Matching logic:
 
 ```typescript
 type Permissions = {
-  allowlist?: ToolPermission[];    // always allowed
-  allowOnce?: ToolPermission[];    // allowed this request only
-  deny?: Array<{                   // denied tool calls
+  allowlist?: ToolPermission[]; // always allowed
+  allowOnce?: ToolPermission[]; // allowed this request only
+  deny?: Array<{
+    // denied tool calls
     toolCallId: string;
     reason?: string;
   }>;
@@ -177,7 +179,7 @@ for (const tc of toolCalls) {
   const toolDef = params.tools?.find((t) => t.name === tc.name);
 
   // Check deny list first
-  const denial = params.permissions?.deny?.find(d => d.toolCallId === tc.id);
+  const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
   if (denial) {
     taggedEmit({
       type: "tool_result",
@@ -257,7 +259,7 @@ export type Permissions = {
 
 export function matchesPermission(
   toolCall: { name: string; arguments?: Record<string, unknown> },
-  permission: ToolPermission
+  permission: ToolPermission,
 ): boolean {
   if (toolCall.name !== permission.tool) {
     return false;
@@ -279,12 +281,9 @@ export function matchesPermission(
 
 export function matchesPermissions(
   toolCall: { name: string; arguments?: Record<string, unknown> },
-  permissions?: Pick<Permissions, "allowlist" | "allowOnce">
+  permissions?: Pick<Permissions, "allowlist" | "allowOnce">,
 ): boolean {
-  const allAllowed = [
-    ...(permissions?.allowlist ?? []),
-    ...(permissions?.allowOnce ?? []),
-  ];
+  const allAllowed = [...(permissions?.allowlist ?? []), ...(permissions?.allowOnce ?? [])];
   return allAllowed.some((p) => matchesPermission(toolCall, p));
 }
 ```

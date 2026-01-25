@@ -4,15 +4,15 @@ Validation web client for the LLM Gateway harness and API.
 
 ## Technology Stack
 
-| Layer | Technology |
-|-------|------------|
-| Runtime | Bun |
-| Build | Vite |
-| Framework | React |
-| Components | Base UI |
-| Styling | Tailwind CSS |
+| Layer       | Technology          |
+| ----------- | ------------------- |
+| Runtime     | Bun                 |
+| Build       | Vite                |
+| Framework   | React               |
+| Components  | Base UI             |
+| Styling     | Tailwind CSS        |
 | State/Async | Effect + @effect/rx |
-| Formatting | oxfmt |
+| Formatting  | oxfmt               |
 
 ## Project Structure
 
@@ -32,6 +32,7 @@ clients/web/
 ```
 
 **Commands** (root package.json):
+
 - `bun run web` → `cd clients/web && bunx vite`
 - `bun run web:build` → `cd clients/web && bunx vite build`
 
@@ -86,6 +87,7 @@ App
 ```
 
 **Base UI Components:**
+
 - `@base-ui/react/input` - Text input
 - `@base-ui/react/button` - Send and permission buttons
 - `@base-ui/react/scroll-area` - Conversation thread
@@ -118,28 +120,28 @@ interface MessageNode {
 const sendMessage = (content: string, permissions: Permission[]) =>
   Effect.gen(function* () {
     const response = yield* HttpClient.post("/chat", {
-      body: { messages, permissions }
+      body: { messages, permissions },
     });
 
     return yield* response.stream.pipe(
       Stream.decodeText,
       parseSSE,
-      Stream.tap(event => Rx.set(conversationStore, handleEvent(event)))
+      Stream.tap((event) => Rx.set(conversationStore, handleEvent(event))),
     );
   });
 ```
 
 **Event Handling:**
 
-| Event | Action |
-|-------|--------|
-| `text` | Append to current agent's content |
-| `reasoning` | Append to reasoning array |
-| `tool_call` | Add to toolCalls array |
-| `tool_result` | Attach result to matching tool_call |
+| Event                 | Action                                      |
+| --------------------- | ------------------------------------------- |
+| `text`                | Append to current agent's content           |
+| `reasoning`           | Append to reasoning array                   |
+| `tool_call`           | Add to toolCalls array                      |
+| `tool_result`         | Attach result to matching tool_call         |
 | `permission_required` | Set pendingPermission, pause for user input |
-| `error` | Display error, re-enable input |
-| `done` | Clear isStreaming, re-enable input |
+| `error`               | Display error, re-enable input              |
+| `done`                | Clear isStreaming, re-enable input          |
 
 ## Permission Handling
 
@@ -154,17 +156,18 @@ POST /chat {
 
 **Permission Actions:**
 
-| Button | Behavior |
-|--------|----------|
-| Allow | Grant one-time permission for this specific call |
-| Allow All | Add to granted set, include in future requests |
-| Deny | Reject the tool call |
+| Button    | Behavior                                         |
+| --------- | ------------------------------------------------ |
+| Allow     | Grant one-time permission for this specific call |
+| Allow All | Add to granted set, include in future requests   |
+| Deny      | Reject the tool call                             |
 
 Server only emits `permission_required` for tools not in the permissions array.
 
 ## Testing
 
 **Development:**
+
 ```bash
 # Terminal 1: Gateway server
 bun run dev
@@ -176,6 +179,7 @@ bun run web
 Vite proxies `/chat` to gateway server.
 
 **Validation Checklist:**
+
 - [ ] Text streaming renders incrementally
 - [ ] Reasoning appears dimmed with 💭
 - [ ] Tool calls show name + input
