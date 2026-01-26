@@ -1,6 +1,6 @@
 import { v7 } from "uuid";
 import type { HarnessEvent, GeneratorInvokeParams, GeneratorHarnessModule } from "./types";
-import { createGeneratorHarness } from "./harness/openrouter-generator";
+import { createGeneratorHarness } from "./harness/openrouter";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 
 /**
