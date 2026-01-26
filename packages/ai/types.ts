@@ -86,7 +86,6 @@ export interface InvokeParams {
   tools?: ToolDefinition[];
   emit: (event: HarnessEvent) => void;
   context?: {
-    runId?: string;
     parentId?: string;
   };
   permissions?: Permissions;
@@ -98,7 +97,6 @@ export interface GeneratorInvokeParams {
   messages: Message[];
   tools?: ToolDefinition[];
   context?: {
-    runId?: string;
     parentId?: string;
   };
   permissions?: Permissions;
