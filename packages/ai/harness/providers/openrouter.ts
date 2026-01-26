@@ -64,7 +64,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
 
   return {
     async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
-      const runId = context?.runId ?? v7();
+      const runId = v7(); // Provider always creates its own ID
       const parentId = context?.parentId;
       const tools = params.tools ? convertTools(params.tools) : undefined;
 

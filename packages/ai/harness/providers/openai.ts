@@ -107,11 +107,11 @@ function createHarness(apiKey?: string): HarnessModule {
   });
 
   return {
-    async invoke({ emit, runId: providedRunId, context, ...params }: InvokeParams): Promise<void> {
+    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
       const { instructions, input } = convertMessages(params.messages);
       const tools = params.tools ? convertTools(params.tools) : undefined;
 
-      const runId = providedRunId ?? v7();
+      const runId = v7(); // Provider always creates its own ID
       const parentId = context?.parentId;
       const reasoningId = v7();
       const textId = v7();

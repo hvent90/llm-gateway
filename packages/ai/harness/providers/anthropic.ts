@@ -158,7 +158,7 @@ function createHarness(apiKey?: string): HarnessModule {
   });
 
   return {
-    async invoke({ emit, runId: providedRunId, context, ...params }: InvokeParams): Promise<void> {
+    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
       const messages = convertMessages(params.messages);
       const system = getSystemMessage(params.messages);
       const tools = params.tools
@@ -169,7 +169,7 @@ function createHarness(apiKey?: string): HarnessModule {
           }))
         : undefined;
 
-      const runId = providedRunId ?? v7();
+      const runId = v7(); // Provider always creates its own ID
       const parentId = context?.parentId;
 
       // Wrap emit to add parentId to events

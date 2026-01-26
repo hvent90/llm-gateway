@@ -162,4 +162,40 @@ describe("OpenRouter Generator Harness", () => {
     },
     { timeout: 30000 },
   );
+
+  test(
+    "provider assigns its own runId, not from context",
+    async () => {
+      const events: HarnessEvent[] = [];
+
+      for await (const event of openRouterHarness.invoke({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "Say hi" }],
+        context: { parentId: "agent-run-123" },
+      })) {
+        events.push(event);
+      }
+
+      // All events should have provider's self-assigned runId
+      const textEvents = events.filter((e) => e.type === "text");
+      expect(textEvents.length).toBeGreaterThan(0);
+
+      const runId = textEvents[0]!.runId;
+      expect(runId).toBeDefined();
+      expect(runId).not.toBe("agent-run-123"); // Should NOT use parent's id
+
+      // All events from same provider invocation share the same runId
+      for (const event of events) {
+        if ("runId" in event) {
+          expect(event.runId).toBe(runId);
+        }
+      }
+
+      // parentId should be passed through
+      for (const event of textEvents) {
+        expect(event.parentId).toBe("agent-run-123");
+      }
+    },
+    { timeout: 30000 },
+  );
 });
