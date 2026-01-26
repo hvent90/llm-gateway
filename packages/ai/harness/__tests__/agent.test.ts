@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { z } from "zod";
-import type { HarnessEvent, ToolDefinition } from "../../types.ts";
+import type { GeneratorHarnessModule, HarnessEvent, ToolDefinition } from "../../types.ts";
 import { openRouterHarness, createGeneratorHarness } from "../providers/openrouter.ts";
 import { createAgentHarness } from "../agent.ts";
 
@@ -365,4 +365,34 @@ describe("Agent Harness", () => {
     },
     { timeout: 60000 },
   );
+
+  test("agent assigns its own runId, passes it as parentId to provider", async () => {
+    const capturedContexts: Array<{ parentId?: string }> = [];
+
+    // Create a mock harness that captures the context it receives
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke(params) {
+        capturedContexts.push({ parentId: params.context?.parentId });
+        yield { type: "text", runId: "provider-run", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    // Agent should have passed its own runId as parentId to provider
+    expect(capturedContexts.length).toBe(1);
+    expect(capturedContexts[0].parentId).toBeDefined();
+    expect(typeof capturedContexts[0].parentId).toBe("string");
+    expect(capturedContexts[0].parentId!.length).toBeGreaterThan(0);
+  });
 });
