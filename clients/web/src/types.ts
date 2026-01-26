@@ -44,14 +44,18 @@ export interface ToolCall {
   output?: unknown;
 }
 
+// Content blocks for ordered rendering
+export type ContentBlock =
+  | { type: "reasoning"; content: string }
+  | { type: "tool_call"; toolCall: ToolCall }
+  | { type: "text"; content: string };
+
 // Message node for tree display
 export interface MessageNode {
   id: string;
   agentId: string;
   role: "user" | "assistant";
-  content: string;
-  reasoning: string[];
-  toolCalls: ToolCall[];
+  contentBlocks: ContentBlock[];
   children: MessageNode[];
 }
 

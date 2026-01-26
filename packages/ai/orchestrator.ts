@@ -1,6 +1,7 @@
 import { v7 } from "uuid";
 import type { HarnessEvent, GeneratorInvokeParams, GeneratorHarnessModule } from "./types";
 import { createGeneratorHarness } from "./harness/providers/openrouter";
+import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 
 /**
@@ -63,10 +64,10 @@ export class AgentOrchestrator {
 
   /**
    * Create a new orchestrator.
-   * @param harness Optional harness module (defaults to OpenRouter generator harness)
+   * @param harness Optional harness module (defaults to agent harness wrapping OpenRouter)
    */
   constructor(harness?: GeneratorHarnessModule) {
-    this.harness = harness ?? createGeneratorHarness();
+    this.harness = harness ?? createAgentHarness({ harness: createGeneratorHarness() });
   }
 
   /**

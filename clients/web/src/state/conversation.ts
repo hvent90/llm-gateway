@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import type { ConversationState, MessageNode, ServerEvent, ToolCall } from "../types";
+import type { ContentBlock, ConversationState, MessageNode, ServerEvent, ToolCall } from "../types";
 
 export function createInitialState(): ConversationState {
   return {
@@ -16,9 +16,7 @@ export function addUserMessage(state: ConversationState, content: string): Conve
     id: uuidv4(),
     agentId: "user",
     role: "user",
-    content,
-    reasoning: [],
-    toolCalls: [],
+    contentBlocks: [{ type: "text", content }],
     children: [],
   };
   return {
@@ -32,15 +30,20 @@ export function addErrorMessage(state: ConversationState, error: string): Conver
     id: uuidv4(),
     agentId: "system",
     role: "assistant",
-    content: `Error: ${error}`,
-    reasoning: [],
-    toolCalls: [],
+    contentBlocks: [{ type: "text", content: `Error: ${error}` }],
     children: [],
   };
   return {
     ...state,
     messages: [...state.messages, errorNode],
   };
+}
+
+// Helper to check if a node contains a tool call with given id
+function hasToolCall(node: MessageNode, toolCallId: string): boolean {
+  return node.contentBlocks.some(
+    (block) => block.type === "tool_call" && block.toolCall.id === toolCallId,
+  );
 }
 
 export function findOrCreateAgentNode(
@@ -66,9 +69,7 @@ export function findOrCreateAgentNode(
     id: runId,
     agentId: runId,
     role: "assistant",
-    content: "",
-    reasoning: [],
-    toolCalls: [],
+    contentBlocks: [],
     children: [],
   };
 
@@ -76,7 +77,7 @@ export function findOrCreateAgentNode(
   if (parentId) {
     const addChild = (nodes: MessageNode[]): MessageNode[] =>
       nodes.map((node) => {
-        if (node.id === parentId || node.toolCalls.some((tc) => tc.id === parentId)) {
+        if (node.id === parentId || hasToolCall(node, parentId)) {
           return { ...node, children: [...node.children, newNode] };
         }
         return { ...node, children: addChild(node.children) };
@@ -97,6 +98,24 @@ export function updateAgentNode(
     if (node.id === runId) return updater(node);
     return { ...node, children: updateAgentNode(node.children, runId, updater) };
   });
+}
+
+// Helper to append to last block if same type, or create new block
+function appendOrCreateBlock(
+  blocks: ContentBlock[],
+  blockType: "text" | "reasoning",
+  content: string,
+): ContentBlock[] {
+  const lastBlock = blocks[blocks.length - 1];
+  if (lastBlock && lastBlock.type === blockType) {
+    // Append to existing block
+    return [
+      ...blocks.slice(0, -1),
+      { ...lastBlock, content: lastBlock.content + content },
+    ];
+  }
+  // Create new block
+  return [...blocks, { type: blockType, content }];
 }
 
 export function handleEvent(state: ConversationState, event: ServerEvent): ConversationState {
@@ -124,7 +143,7 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         ...state,
         messages: updateAgentNode(messages, runId, (node) => ({
           ...node,
-          content: node.content + event.content,
+          contentBlocks: appendOrCreateBlock(node.contentBlocks, "text", event.content),
         })),
       };
     }
@@ -135,7 +154,7 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         ...state,
         messages: updateAgentNode(messages, runId, (node) => ({
           ...node,
-          reasoning: [...node.reasoning, event.content],
+          contentBlocks: appendOrCreateBlock(node.contentBlocks, "reasoning", event.content),
         })),
       };
     }
@@ -147,7 +166,7 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         ...state,
         messages: updateAgentNode(messages, runId, (node) => ({
           ...node,
-          toolCalls: [...node.toolCalls, toolCall],
+          contentBlocks: [...node.contentBlocks, { type: "tool_call", toolCall }],
         })),
       };
     }
@@ -157,8 +176,10 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         ...state,
         messages: updateAgentNode(state.messages, runId, (node) => ({
           ...node,
-          toolCalls: node.toolCalls.map((tc) =>
-            tc.id === event.id ? { ...tc, output: event.output } : tc,
+          contentBlocks: node.contentBlocks.map((block) =>
+            block.type === "tool_call" && block.toolCall.id === event.id
+              ? { ...block, toolCall: { ...block.toolCall, output: event.output } }
+              : block,
           ),
         })),
       };
@@ -181,7 +202,7 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         ...state,
         messages: updateAgentNode(messages, runId, (node) => ({
           ...node,
-          content: node.content + `\n\nError: ${event.message}`,
+          contentBlocks: appendOrCreateBlock(node.contentBlocks, "text", `\n\nError: ${event.message}`),
         })),
       };
     }

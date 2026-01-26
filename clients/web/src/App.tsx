@@ -23,7 +23,14 @@ export default function App() {
       const messages: Message[] = [];
       const traverse = (nodes: typeof state.messages) => {
         for (const node of nodes) {
-          messages.push({ role: node.role, content: node.content });
+          // Extract text content from contentBlocks
+          const textContent = node.contentBlocks
+            .filter((block) => block.type === "text")
+            .map((block) => block.content)
+            .join("");
+          if (textContent) {
+            messages.push({ role: node.role, content: textContent });
+          }
           traverse(node.children);
         }
       };

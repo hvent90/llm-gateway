@@ -1,4 +1,4 @@
-import type { MessageNode as MessageNodeType, ToolCall } from "../types";
+import type { ContentBlock, MessageNode as MessageNodeType, ToolCall } from "../types";
 
 interface MessageNodeProps {
   node: MessageNodeType;
@@ -30,6 +30,25 @@ function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
   );
 }
 
+function ContentBlockView({ block, index }: { block: ContentBlock; index: number }) {
+  switch (block.type) {
+    case "reasoning":
+      return (
+        <div key={index} className="mt-1 text-sm italic text-gray-500">
+          💭 {block.content}
+        </div>
+      );
+    case "tool_call":
+      return <ToolCallBlock key={block.toolCall.id} toolCall={block.toolCall} />;
+    case "text":
+      return (
+        <div key={index} className="mt-1 whitespace-pre-wrap text-gray-200">
+          {block.content}
+        </div>
+      );
+  }
+}
+
 // Tailwind needs static class names for purge - can't use dynamic `ml-${n}`
 // Use smaller indentation on mobile (ml-2) and larger on desktop (sm:ml-4)
 const indentClasses = [
@@ -51,18 +70,10 @@ export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
         {isUser ? "You" : `Agent-${node.agentId.slice(0, 8)}`}
       </div>
 
-      {/* Reasoning */}
-      {node.reasoning.length > 0 && (
-        <div className="mt-1 text-sm italic text-gray-500">💭 {node.reasoning.join("")}</div>
-      )}
-
-      {/* Tool calls */}
-      {node.toolCalls.map((tc) => (
-        <ToolCallBlock key={tc.id} toolCall={tc} />
+      {/* Content blocks in order */}
+      {node.contentBlocks.map((block, index) => (
+        <ContentBlockView key={index} block={block} index={index} />
       ))}
-
-      {/* Content */}
-      {node.content && <div className="mt-1 whitespace-pre-wrap text-gray-200">{node.content}</div>}
 
       {/* Children (subagents) */}
       {node.children.length > 0 && (

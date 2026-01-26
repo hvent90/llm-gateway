@@ -6,7 +6,7 @@
   "scripts": {
     "dev:server": "bun run --hot server/index.ts",
     "dev:web": "bunx vite --config clients/web/vite.config.ts",
-    "dev:cli": "bun run clients/cli/index.tsx",
+    "dev:cli": "cd clients/cli && bun run index.tsx",
     "build:web": "bunx vite build --config clients/web/vite.config.ts",
     "format": "bunx oxfmt src packages clients server"
   },
@@ -15,6 +15,7 @@
     "@effect/platform": "^0.94.2",
     "@openrouter/sdk": "^0.3.16",
     "@opentui/core": "^0.1.74",
+    "@opentui/react": "^0.1.75",
     "@opentui/solid": "^0.1.75",
     "@tailwindcss/vite": "^4.1.18",
     "@vitejs/plugin-react": "^5.1.2",
