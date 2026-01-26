@@ -54,9 +54,7 @@ function convertMessages(messages: Message[]): {
             call_id: tc.id,
             name: tc.name,
             arguments:
-              typeof tc.arguments === "string"
-                ? tc.arguments
-                : JSON.stringify(tc.arguments ?? {}),
+              typeof tc.arguments === "string" ? tc.arguments : JSON.stringify(tc.arguments ?? {}),
           });
         }
       } else if (msg.content) {

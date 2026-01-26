@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
+import { AgentMultiplexer, type MultiplexedEvent } from "../multiplexer";
 
 /**
  * Helper to create a simple async generator from an array of values.

@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { z } from "zod";
-import type { HarnessEvent, ToolDefinition } from "../types.ts";
-import { openRouterHarness, createGeneratorHarness } from "./providers/openrouter.ts";
-import { createAgentHarness } from "./agent.ts";
+import type { HarnessEvent, ToolDefinition } from "../../types.ts";
+import { openRouterHarness, createGeneratorHarness } from "../providers/openrouter.ts";
+import { createAgentHarness } from "../agent.ts";
 
 const TEST_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 

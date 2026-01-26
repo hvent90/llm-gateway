@@ -17,13 +17,12 @@ import type {
 } from "../../types";
 
 // Models that support extended thinking
-const THINKING_MODELS = [
-  "claude-sonnet-4-5-20250929",
-  "claude-3-7-sonnet-20250219",
-];
+const THINKING_MODELS = ["claude-sonnet-4-5-20250929", "claude-3-7-sonnet-20250219"];
 
 function supportsThinking(model: string): boolean {
-  return THINKING_MODELS.some((m) => model.includes(m) || model.startsWith(m.split("-").slice(0, 3).join("-")));
+  return THINKING_MODELS.some(
+    (m) => model.includes(m) || model.startsWith(m.split("-").slice(0, 3).join("-")),
+  );
 }
 
 function convertMessages(messages: Message[]): MessageParam[] {
@@ -112,12 +111,15 @@ function zodToJsonSchema(schema: ToolDefinition["schema"]): Tool["input_schema"]
       const required: string[] = [];
 
       for (const [key, value] of Object.entries(shape)) {
-        const fieldDef = (value as { _def?: { typeName?: string; description?: string; innerType?: unknown } })._def;
+        const fieldDef = (
+          value as { _def?: { typeName?: string; description?: string; innerType?: unknown } }
+        )._def;
         if (fieldDef) {
           const isOptional = fieldDef.typeName === "ZodOptional";
-          const innerType = isOptional && fieldDef.innerType
-            ? (fieldDef.innerType as { _def?: { typeName?: string } })._def
-            : fieldDef;
+          const innerType =
+            isOptional && fieldDef.innerType
+              ? (fieldDef.innerType as { _def?: { typeName?: string } })._def
+              : fieldDef;
 
           if (!isOptional) {
             required.push(key);
@@ -159,11 +161,13 @@ function createHarness(apiKey?: string): HarnessModule {
     async invoke({ emit, runId: providedRunId, context, ...params }: InvokeParams): Promise<void> {
       const messages = convertMessages(params.messages);
       const system = getSystemMessage(params.messages);
-      const tools = params.tools ? params.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: zodToJsonSchema(t.schema),
-      })) : undefined;
+      const tools = params.tools
+        ? params.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: zodToJsonSchema(t.schema),
+          }))
+        : undefined;
 
       const runId = providedRunId ?? v7();
       const parentId = context?.parentId;
@@ -246,7 +250,10 @@ function createHarness(apiKey?: string): HarnessModule {
           };
 
           try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(tc.arguments, toolCtx);
+            const { context: toolContext, result: toolResult } = await toolDef.execute(
+              tc.arguments,
+              toolCtx,
+            );
             // Emit tool_result with context for agent loop (context goes into messages)
             // and result for application consumption
             taggedEmit({

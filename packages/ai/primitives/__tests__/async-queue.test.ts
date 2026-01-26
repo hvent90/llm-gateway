@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { AsyncQueue } from "./async-queue";
+import { AsyncQueue } from "../async-queue";
 
 describe("AsyncQueue", () => {
   describe("ordering guarantees", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { matchesPermission, matchesPermissions } from "./permissions";
+import { matchesPermission, matchesPermissions } from "../permissions";
 
 describe("permissions", () => {
   describe("matchesPermission", () => {

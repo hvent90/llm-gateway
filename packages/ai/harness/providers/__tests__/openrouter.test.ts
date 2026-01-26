@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { z } from "zod";
-import type { HarnessEvent, ToolDefinition } from "../../types";
-import { createGeneratorHarness, openRouterHarness } from "./openrouter";
+import type { HarnessEvent, ToolDefinition } from "../../../types";
+import { createGeneratorHarness, openRouterHarness } from "../openrouter";
 
 const TEST_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 

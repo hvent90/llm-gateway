@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { deferred } from "./deferred";
+import { deferred } from "../deferred";
 
 describe("deferred", () => {
   it("returns a promise that can be resolved externally", async () => {
