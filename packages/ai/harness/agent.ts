@@ -1,104 +1,183 @@
 import { v7 as uuidv7 } from "uuid";
-import type { HarnessModule, HarnessEvent, InvokeParams, ToolCall } from "../types";
-
-interface ToolResultOutput {
-  context?: string;
-  result?: unknown;
-}
+import type {
+  GeneratorHarnessModule,
+  GeneratorInvokeParams,
+  HarnessEvent,
+  Message,
+  ToolCall,
+  ToolContext,
+} from "../types";
+import { matchesPermissions } from "../permissions";
+import { deferred } from "../primitives";
 
 interface AgentHarnessOptions {
-  harness: HarnessModule;
+  harness: GeneratorHarnessModule;
   maxIterations?: number;
 }
 
-function createAgentHarness(options: AgentHarnessOptions): HarnessModule {
+/**
+ * Creates an agent harness that wraps a single-iteration provider harness.
+ *
+ * The agent harness provides:
+ * - Agentic loop: continues calling LLM until no tool calls or maxIterations reached
+ * - Permission handling: checks allowlist, yields permission_required events, waits for respond()
+ * - Tool execution: executes tools with proper context, yields tool_result events
+ * - Message history: builds up messages array with assistant responses and tool results
+ */
+function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModule {
   const { harness, maxIterations = 10 } = options;
 
   return {
-    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
-      const runId = context?.runId ?? uuidv7();
-      const parentId = context?.parentId;
+    async *invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const runId = params.context?.runId ?? uuidv7();
+      const parentId = params.context?.parentId;
 
-      // Wrap emit to add parentId to events
-      const taggedEmit = (event: HarnessEvent) => {
-        emit(parentId ? { ...event, parentId } : event);
-      };
+      const tag = <T extends object>(event: T): T & { parentId?: string } =>
+        parentId ? { ...event, parentId } : event;
 
-      const messages = [...params.messages];
+      // Mutable messages array for the agent loop
+      const messages: Message[] = [...params.messages];
       let iterations = 0;
 
       while (iterations++ < maxIterations) {
         const toolCalls: ToolCall[] = [];
-        const toolResults: Map<string, ToolResultOutput> = new Map();
-        let textContent = "";
-        let permissionRequired = false;
+        let assistantText = "";
 
-        await harness.invoke({
+        // Single iteration - collect events from provider harness
+        for await (const event of harness.invoke({
           ...params,
           messages,
           context: { runId, parentId },
-          emit: (event) => {
-            taggedEmit(event);
-            if (event.type === "tool_call") {
-              toolCalls.push({ id: event.id, name: event.name, arguments: event.input });
-            }
-            if (event.type === "text") {
-              textContent += event.content;
-            }
-            if (event.type === "tool_result") {
-              // Collect tool results for building messages
-              toolResults.set(event.id, event.output as ToolResultOutput);
-            }
-            if (event.type === "permission_required") {
-              permissionRequired = true;
-            }
-          },
-        });
+        })) {
+          // Pass through text, reasoning, and error events
+          if (event.type === "text") {
+            yield tag(event);
+            assistantText += event.content;
+          } else if (event.type === "reasoning") {
+            yield tag(event);
+          } else if (event.type === "error") {
+            yield tag(event);
+            return; // Stop on error
+          } else if (event.type === "tool_call") {
+            // Collect tool calls for processing after iteration
+            toolCalls.push({
+              id: event.id,
+              name: event.name,
+              arguments: event.input as Record<string, unknown>,
+            });
+          }
+          // Note: provider harness should not emit tool_result or permission_required
+          // Those are handled by this agent wrapper
+        }
 
-        // Stop loop when permission is required - client should handle the permission request
-        if (permissionRequired) {
+        // No tool calls - we're done
+        if (toolCalls.length === 0) {
           return;
         }
 
-        if (toolCalls.length === 0) break;
-
+        // Add assistant message with tool calls to history
         messages.push({
           role: "assistant",
-          content: textContent || null,
+          content: assistantText || null,
           tool_calls: toolCalls,
         });
 
-        // Build tool messages from collected results
+        // Process each tool call
         for (const tc of toolCalls) {
-          const resultOutput = toolResults.get(tc.id);
-          if (!resultOutput) {
-            // No result for this tool call - check if tool has no executor
-            const toolDef = params.tools?.find((t) => t.name === tc.name);
-            if (!toolDef?.execute) {
-              taggedEmit({
-                type: "error",
-                runId,
-                error: new Error(`No executor for tool: ${tc.name}`),
+          const toolDef = params.tools?.find((t) => t.name === tc.name);
+          const args = (tc.arguments ?? {}) as Record<string, unknown>;
+
+          // Check deny list first
+          const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
+          if (denial) {
+            const output = { status: "denied", reason: denial.reason };
+            yield tag({ type: "tool_result", runId, id: tc.id, name: tc.name, output });
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: JSON.stringify(output),
+            });
+            continue;
+          }
+
+          // Check if allowed (allowlist or allowOnce)
+          const isAllowed =
+            params.permissions &&
+            matchesPermissions({ name: tc.name, arguments: args }, params.permissions);
+
+          if (!isAllowed) {
+            // Need permission - create deferred and yield permission_required
+            const { promise, resolve } = deferred<{ approved: boolean; reason?: string }>();
+            yield tag({
+              type: "permission_required",
+              runId,
+              id: uuidv7(),
+              toolCallId: tc.id,
+              tool: tc.name,
+              params: args,
+              respond: (approved, reason) => resolve({ approved, reason }),
+            });
+
+            // Generator pauses here until respond() is called
+            const decision = await promise;
+
+            if (!decision.approved) {
+              const output = { status: "denied", reason: decision.reason };
+              yield tag({ type: "tool_result", runId, id: tc.id, name: tc.name, output });
+              messages.push({
+                role: "tool",
+                tool_call_id: tc.id,
+                content: JSON.stringify(output),
               });
-              return;
+              continue;
             }
-            // Executor exists but no result emitted - this is a bug
-            taggedEmit({
+          }
+
+          // Permission granted or in allowlist - yield tool_call and execute
+          yield tag({ type: "tool_call", runId, name: tc.name, id: tc.id, input: args });
+
+          if (!toolDef?.execute) {
+            // No executor - yield error and return
+            yield tag({
               type: "error",
               runId,
-              error: new Error(`Tool executor for '${tc.name}' did not emit a result`),
+              error: new Error(`No executor for tool: ${tc.name}`),
             });
             return;
           }
 
-          if (resultOutput.context !== undefined) {
+          const toolCtx: ToolContext = {
+            parentId: tc.id, // This tool_call becomes parent for nested events
+          };
+
+          try {
+            const { context: toolContext, result: toolResult } = await toolDef.execute(
+              tc.arguments,
+              toolCtx,
+            );
+            const output = { context: toolContext, result: toolResult };
+            yield tag({ type: "tool_result", runId, name: tc.name, id: tc.id, output });
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
-              content: resultOutput.context,
+              content: toolContext ?? JSON.stringify(output),
+            });
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            yield tag({
+              type: "error",
+              runId,
+              error: error instanceof Error ? error : new Error(errorMsg),
+            });
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: JSON.stringify({ error: errorMsg }),
             });
           }
         }
+
+        // Loop continues - will call LLM again with tool results
       }
     },
 

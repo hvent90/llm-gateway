@@ -14,7 +14,7 @@ import type {
   ToolDefinition,
   ToolContext,
   ToolCall,
-} from "../types";
+} from "../../types";
 
 // Models that support extended thinking
 const THINKING_MODELS = [

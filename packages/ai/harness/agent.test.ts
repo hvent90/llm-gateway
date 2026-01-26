@@ -1,17 +1,17 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { z } from "zod";
 import type { HarnessEvent, ToolDefinition } from "../types.ts";
-import { openRouterHarness, createHarness } from "./openrouter.ts";
+import { openRouterHarness, createGeneratorHarness } from "./providers/openrouter.ts";
 import { createAgentHarness } from "./agent.ts";
 
 const TEST_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 
-function collectEvents() {
+async function collectEvents(iterable: AsyncIterable<HarnessEvent>): Promise<HarnessEvent[]> {
   const events: HarnessEvent[] = [];
-  return {
-    emit: (e: HarnessEvent) => events.push(e),
-    events,
-  };
+  for await (const event of iterable) {
+    events.push(event);
+  }
+  return events;
 }
 
 describe("Agent Harness", () => {
@@ -21,7 +21,7 @@ describe("Agent Harness", () => {
     }
   });
 
-  test("implements HarnessModule interface", () => {
+  test("implements GeneratorHarnessModule interface", () => {
     const agentHarness = createAgentHarness({ harness: openRouterHarness });
     expect(typeof agentHarness.invoke).toBe("function");
     expect(typeof agentHarness.supportedModels).toBe("function");
@@ -51,13 +51,16 @@ describe("Agent Harness", () => {
 
       const agentHarness = createAgentHarness({ harness: openRouterHarness });
 
-      const { emit, events } = collectEvents();
-      await agentHarness.invoke({
-        model: TEST_MODEL,
-        messages: [{ role: "user", content: "Please greet Bob using the greet tool." }],
-        tools: [greetTool],
-        emit,
-      });
+      const events = await collectEvents(
+        agentHarness.invoke({
+          model: TEST_MODEL,
+          messages: [{ role: "user", content: "Please greet Bob using the greet tool." }],
+          tools: [greetTool],
+          permissions: {
+            allowlist: [{ tool: "greet" }],
+          },
+        }),
+      );
 
       const toolCallEvents = events.filter((e) => e.type === "tool_call");
       const toolResultEvents = events.filter((e) => e.type === "tool_result");
@@ -94,19 +97,22 @@ describe("Agent Harness", () => {
 
       const agentHarness = createAgentHarness({ harness: openRouterHarness });
 
-      const { emit, events } = collectEvents();
-      await agentHarness.invoke({
-        model: TEST_MODEL,
-        messages: [
-          {
-            role: "user",
-            content:
-              "Use the add tool twice: first add 2 and 3, then add 10 and 20. Report both results.",
+      const events = await collectEvents(
+        agentHarness.invoke({
+          model: TEST_MODEL,
+          messages: [
+            {
+              role: "user",
+              content:
+                "Use the add tool twice: first add 2 and 3, then add 10 and 20. Report both results.",
+            },
+          ],
+          tools: [addTool],
+          permissions: {
+            allowlist: [{ tool: "add" }],
           },
-        ],
-        tools: [addTool],
-        emit,
-      });
+        }),
+      );
 
       const toolResultEvents = events.filter((e) => e.type === "tool_result");
       // Should have at least 2 tool results (might be in same or different iterations)
@@ -129,13 +135,16 @@ describe("Agent Harness", () => {
 
       const agentHarness = createAgentHarness({ harness: openRouterHarness });
 
-      const { emit, events } = collectEvents();
-      await agentHarness.invoke({
-        model: TEST_MODEL,
-        messages: [{ role: "user", content: "Use the no_exec tool with value 'test'." }],
-        tools: [noExecTool],
-        emit,
-      });
+      const events = await collectEvents(
+        agentHarness.invoke({
+          model: TEST_MODEL,
+          messages: [{ role: "user", content: "Use the no_exec tool with value 'test'." }],
+          tools: [noExecTool],
+          permissions: {
+            allowlist: [{ tool: "no_exec" }],
+          },
+        }),
+      );
 
       const errorEvents = events.filter((e) => e.type === "error");
       expect(errorEvents.length).toBe(1);
@@ -168,13 +177,16 @@ describe("Agent Harness", () => {
         maxIterations: 2,
       });
 
-      const { emit } = collectEvents();
-      await agentHarness.invoke({
-        model: TEST_MODEL,
-        messages: [{ role: "user", content: "Keep calling the loop tool repeatedly." }],
-        tools: [loopTool],
-        emit,
-      });
+      await collectEvents(
+        agentHarness.invoke({
+          model: TEST_MODEL,
+          messages: [{ role: "user", content: "Keep calling the loop tool repeatedly." }],
+          tools: [loopTool],
+          permissions: {
+            allowlist: [{ tool: "loop" }],
+          },
+        }),
+      );
 
       // Should stop after maxIterations even if model wants more tool calls
       expect(executionCount).toBeLessThanOrEqual(2);
@@ -187,12 +199,12 @@ describe("Agent Harness", () => {
     async () => {
       const agentHarness = createAgentHarness({ harness: openRouterHarness });
 
-      const { emit, events } = collectEvents();
-      await agentHarness.invoke({
-        model: TEST_MODEL,
-        messages: [{ role: "user", content: "Say hello without using any tools." }],
-        emit,
-      });
+      const events = await collectEvents(
+        agentHarness.invoke({
+          model: TEST_MODEL,
+          messages: [{ role: "user", content: "Say hello without using any tools." }],
+        }),
+      );
 
       const textEvents = events.filter((e) => e.type === "text");
       const toolCallEvents = events.filter((e) => e.type === "tool_call");
@@ -204,7 +216,7 @@ describe("Agent Harness", () => {
   );
 
   test(
-    "stops iterating when permission_required is emitted",
+    "yields permission_required and pauses until respond() called",
     async () => {
       const calculatorSchema = z.object({ a: z.number(), b: z.number() });
 
@@ -218,34 +230,138 @@ describe("Agent Harness", () => {
         }),
       };
 
-      const events: HarnessEvent[] = [];
-      const emit = (event: HarnessEvent) => events.push(event);
-
       const agentHarness = createAgentHarness({
-        harness: createHarness(),
+        harness: createGeneratorHarness(),
         maxIterations: 5,
       });
 
-      await agentHarness.invoke({
+      const events: HarnessEvent[] = [];
+      let permissionCount = 0;
+
+      const stream = agentHarness.invoke({
         model: TEST_MODEL,
         messages: [{ role: "user", content: "What is 2+2? Use the calculator tool." }],
         tools: [calculatorTool],
-        emit,
         permissions: {
           allowlist: [], // Nothing allowed - will trigger permission_required
         },
       });
 
-      const permissionEvents = events.filter((e) => e.type === "permission_required");
-      expect(permissionEvents.length).toBeGreaterThan(0);
+      for await (const event of stream) {
+        events.push(event);
+        if (event.type === "permission_required") {
+          permissionCount++;
+          // Approve the permission to continue
+          event.respond(true);
+        }
+      }
 
-      // Should only have one iteration's worth of events (not multiple loops)
+      // Should have seen at least one permission request
+      expect(permissionCount).toBeGreaterThanOrEqual(1);
+
+      // After approval, should have tool_call and tool_result
       const toolCallEvents = events.filter((e) => e.type === "tool_call");
-      expect(toolCallEvents.length).toBe(permissionEvents.length);
+      const toolResultEvents = events.filter((e) => e.type === "tool_result");
 
-      // Should stop cleanly without error
+      expect(toolCallEvents.length).toBeGreaterThan(0);
+      expect(toolResultEvents.length).toBeGreaterThan(0);
+
+      // Should complete without error
       const errorEvents = events.filter((e) => e.type === "error");
       expect(errorEvents.length).toBe(0);
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "denial via respond(false) yields denied tool_result",
+    async () => {
+      const calculatorSchema = z.object({ a: z.number(), b: z.number() });
+
+      const calculatorTool: ToolDefinition<typeof calculatorSchema, number> = {
+        name: "calculator",
+        description: "Add two numbers. Always use this tool for math.",
+        schema: calculatorSchema,
+        execute: async ({ a, b }) => ({
+          context: `${a} + ${b} = ${a + b}`,
+          result: a + b,
+        }),
+      };
+
+      const agentHarness = createAgentHarness({
+        harness: createGeneratorHarness(),
+        maxIterations: 5,
+      });
+
+      const events: HarnessEvent[] = [];
+
+      const stream = agentHarness.invoke({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "What is 2+2? Use the calculator tool." }],
+        tools: [calculatorTool],
+        permissions: {
+          allowlist: [], // Nothing allowed - will trigger permission_required
+        },
+      });
+
+      for await (const event of stream) {
+        events.push(event);
+        if (event.type === "permission_required") {
+          // Deny the permission
+          event.respond(false, "User denied");
+        }
+      }
+
+      // Should have tool_result with denied status
+      const toolResultEvents = events.filter((e) => e.type === "tool_result");
+      expect(toolResultEvents.length).toBeGreaterThan(0);
+
+      const deniedResult = toolResultEvents.find(
+        (e) => e.type === "tool_result" && (e.output as { status?: string })?.status === "denied",
+      );
+      expect(deniedResult).toBeDefined();
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "executes tool automatically when in allowlist",
+    async () => {
+      const calculatorSchema = z.object({ a: z.number(), b: z.number() });
+
+      const calculatorTool: ToolDefinition<typeof calculatorSchema, number> = {
+        name: "calculator",
+        description: "Add two numbers. Always use this tool for math.",
+        schema: calculatorSchema,
+        execute: async ({ a, b }) => ({
+          context: `${a} + ${b} = ${a + b}`,
+          result: a + b,
+        }),
+      };
+
+      const agentHarness = createAgentHarness({
+        harness: createGeneratorHarness(),
+        maxIterations: 5,
+      });
+
+      const events = await collectEvents(
+        agentHarness.invoke({
+          model: TEST_MODEL,
+          messages: [{ role: "user", content: "What is 2+2? Use the calculator tool." }],
+          tools: [calculatorTool],
+          permissions: {
+            allowlist: [{ tool: "calculator" }],
+          },
+        }),
+      );
+
+      // Should NOT have any permission_required events
+      const permissionEvents = events.filter((e) => e.type === "permission_required");
+      expect(permissionEvents.length).toBe(0);
+
+      // Should have tool execution
+      const toolResultEvents = events.filter((e) => e.type === "tool_result");
+      expect(toolResultEvents.length).toBeGreaterThan(0);
     },
     { timeout: 60000 },
   );

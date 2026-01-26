@@ -7,7 +7,7 @@ import type {
   ToolDefinition,
   ToolContext,
   ToolCall,
-} from "../types";
+} from "../../types";
 
 type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
 
