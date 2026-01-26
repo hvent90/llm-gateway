@@ -60,7 +60,7 @@ app.post("/chat", async (c) => {
       // Send connected event with session ID
       await stream.writeSSE({
         event: "connected",
-        data: JSON.stringify({ sessionId }),
+        data: JSON.stringify({ type: "connected", sessionId }),
       });
 
       // Spawn the agent

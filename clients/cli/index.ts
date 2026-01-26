@@ -35,11 +35,26 @@ interface Message {
 
 // Server event types
 type ServerEvent =
+  | { type: "connected"; sessionId: string }
   | { type: "text"; runId: string; id: string; content: string }
   | { type: "reasoning"; runId: string; id: string; content: string }
   | { type: "tool_call"; runId: string; id: string; name: string; input: unknown }
   | { type: "tool_result"; runId: string; id: string; output: unknown }
+  | {
+      type: "permission_required";
+      runId: string;
+      toolCallId: string;
+      tool: string;
+      params: Record<string, unknown>;
+    }
   | { type: "error"; runId: string; message: string };
+
+// Permission request
+interface PermissionRequest {
+  toolCallId: string;
+  tool: string;
+  params: Record<string, unknown>;
+}
 
 // Conversation state
 interface ConversationState {
@@ -47,6 +62,8 @@ interface ConversationState {
   isStreaming: boolean;
   currentAssistantContent: string;
   isInReasoning: boolean;
+  sessionId: string | null;
+  pendingPermission: PermissionRequest | null;
 }
 
 /**
@@ -64,6 +81,8 @@ class CliClient {
     isStreaming: false,
     currentAssistantContent: "",
     isInReasoning: false,
+    sessionId: null,
+    pendingPermission: null,
   };
 
   private contentSegments: Array<{ text: string; isReasoning: boolean }> = [
@@ -209,13 +228,30 @@ class CliClient {
    * Handle user submission
    */
   private async handleSubmit(): Promise<void> {
-    if (!this.inputField || this.state.isStreaming) return;
+    if (!this.inputField) return;
 
     const userInput = this.inputField.value.trim();
     if (!userInput) return;
 
     // Clear input
     this.inputField.value = "";
+
+    // Handle permission response if pending
+    if (this.state.pendingPermission) {
+      const normalized = userInput.toLowerCase();
+      const isApprove = ["y", "yes", "allow", "a"].includes(normalized);
+      const isDeny = ["n", "no", "deny", "d"].includes(normalized);
+
+      if (isApprove || isDeny) {
+        await this.resolvePermission(isApprove);
+        return;
+      }
+      // Invalid response, prompt again
+      this.appendToConversation(`\n⚠️ Please enter 'y' to allow or 'n' to deny.\n`);
+      return;
+    }
+
+    if (this.state.isStreaming) return;
 
     // Add user message to state
     this.state.messages.push({ role: "user", content: userInput });
@@ -356,6 +392,10 @@ class CliClient {
    */
   private handleEvent(event: ServerEvent, isFirstText: boolean): void {
     switch (event.type) {
+      case "connected":
+        this.state.sessionId = event.sessionId;
+        break;
+
       case "text":
         // Start assistant response on first text
         if (isFirstText) {
@@ -387,9 +427,67 @@ class CliClient {
         break;
       }
 
+      case "permission_required":
+        this.state.pendingPermission = {
+          toolCallId: event.toolCallId,
+          tool: event.tool,
+          params: event.params,
+        };
+        this.showPermissionPrompt(event.tool, event.params);
+        break;
+
       case "error":
         this.appendToConversation(`\n❌ Error: ${event.message}\n`);
         break;
+    }
+  }
+
+  /**
+   * Show permission prompt in the conversation
+   */
+  private showPermissionPrompt(tool: string, params: Record<string, unknown>): void {
+    const paramsStr = JSON.stringify(params, null, 2);
+    this.appendToConversation(`\n⚠️  Permission Required\n`);
+    this.appendToConversation(`   Tool: ${tool}\n`);
+    this.appendToConversation(`   Params: ${paramsStr}\n`);
+    this.appendToConversation(`   Enter 'y' to allow, 'n' to deny\n`);
+    this.updateStatus("⚠️ Permission required - awaiting response");
+    this.inputField?.focus();
+  }
+
+  /**
+   * Resolve a pending permission request
+   */
+  private async resolvePermission(approved: boolean): Promise<void> {
+    if (!this.state.pendingPermission || !this.state.sessionId) {
+      this.appendToConversation(`\n❌ No pending permission or session\n`);
+      return;
+    }
+
+    const { toolCallId } = this.state.pendingPermission;
+    const reason = approved ? undefined : "User denied";
+
+    try {
+      const response = await fetch(`${SERVER_URL}/chat/permission/${toolCallId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: this.state.sessionId,
+          approved,
+          reason,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      this.appendToConversation(`\n${approved ? "✅ Allowed" : "❌ Denied"}\n`);
+      this.state.pendingPermission = null;
+      this.updateStatus("Streaming...");
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.appendToConversation(`\n❌ Failed to resolve permission: ${errorMsg}\n`);
     }
   }
 
