@@ -6,13 +6,13 @@ Bring the CLI client up to spec with the backend and web client after the callba
 
 The CLI client needs these changes to match the backend/web client:
 
-| Current CLI | Updated CLI |
-|-------------|-------------|
-| No session tracking | sessionId from server |
-| 5 event types | 7 event types |
-| No permission handling | Interactive prompts |
-| Inline SSE parsing | Extracted chat service |
-| Simple Message type | Full Message union |
+| Current CLI            | Updated CLI            |
+| ---------------------- | ---------------------- |
+| No session tracking    | sessionId from server  |
+| 5 event types          | 7 event types          |
+| No permission handling | Interactive prompts    |
+| Inline SSE parsing     | Extracted chat service |
+| Simple Message type    | Full Message union     |
 
 ## New State
 
@@ -22,9 +22,9 @@ interface ConversationState {
   isStreaming: boolean;
   currentAssistantContent: string;
   isInReasoning: boolean;
-  sessionId: string | null;                    // NEW
+  sessionId: string | null; // NEW
   pendingPermission: PermissionRequest | null; // NEW
-  grantedTools: Set<string>;                   // NEW
+  grantedTools: Set<string>; // NEW
 }
 ```
 
@@ -36,11 +36,43 @@ Updated `ServerEvent` type (matching web client):
 type ServerEvent =
   | { type: "connected"; sessionId: string }
   | { type: "text"; runId: string; id: string; agentId: string; parentId?: string; content: string }
-  | { type: "reasoning"; runId: string; id: string; agentId: string; parentId?: string; content: string }
-  | { type: "tool_call"; runId: string; id: string; agentId: string; parentId?: string; name: string; input: unknown }
-  | { type: "tool_result"; runId: string; id: string; agentId: string; parentId?: string; name: string; output: unknown }
+  | {
+      type: "reasoning";
+      runId: string;
+      id: string;
+      agentId: string;
+      parentId?: string;
+      content: string;
+    }
+  | {
+      type: "tool_call";
+      runId: string;
+      id: string;
+      agentId: string;
+      parentId?: string;
+      name: string;
+      input: unknown;
+    }
+  | {
+      type: "tool_result";
+      runId: string;
+      id: string;
+      agentId: string;
+      parentId?: string;
+      name: string;
+      output: unknown;
+    }
   | { type: "error"; runId: string; agentId: string; parentId?: string; message: string }
-  | { type: "permission_required"; runId: string; id: string; agentId: string; parentId?: string; toolCallId: string; tool: string; params: Record<string, unknown> };
+  | {
+      type: "permission_required";
+      runId: string;
+      id: string;
+      agentId: string;
+      parentId?: string;
+      toolCallId: string;
+      tool: string;
+      params: Record<string, unknown>;
+    };
 ```
 
 New `PermissionRequest` type:
@@ -88,6 +120,7 @@ export async function resolvePermission(
 ```
 
 Key differences from web client:
+
 - Takes `serverUrl` as parameter (CLI uses env var, not relative paths)
 - Same async generator pattern for streaming
 - Same permission resolution endpoint
