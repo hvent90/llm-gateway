@@ -5,21 +5,22 @@ import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 
 /**
- * A pending permission request, stashed until resolved.
+ * A pending relay request, stashed until resolved.
  */
-export interface PendingPermission {
+export interface PendingRelay {
   agentId: string;
-  respond: (approved: boolean, reason?: string) => void;
+  respond: (response: any) => void;
 }
 
 /**
  * HarnessEvent without the respond callback (for consumers).
- * Permission events have respond stripped - use resolvePermission() instead.
+ * Relay events have respond stripped - use resolveRelay() instead.
  */
 export type ConsumerHarnessEvent =
-  | Exclude<HarnessEvent, { type: "permission_required" }>
+  | Exclude<HarnessEvent, { type: "relay" }>
   | {
-      type: "permission_required";
+      type: "relay";
+      kind: "permission";
       runId: string;
       id: string;
       parentId?: string;
@@ -29,13 +30,13 @@ export type ConsumerHarnessEvent =
     };
 
 /**
- * Orchestrates multiple AI agents, managing their lifecycle and permission flow.
+ * Orchestrates multiple AI agents, managing their lifecycle and relay flow.
  *
  * The orchestrator:
  * 1. Creates agents via the generator harness
  * 2. Registers them with a multiplexer for concurrent event streaming
- * 3. Manages permissions: stashes respond callbacks, strips them from events
- * 4. Allows consumers to resolve permissions via resolvePermission()
+ * 3. Manages relays: stashes respond callbacks, strips them from events
+ * 4. Allows consumers to resolve relays via resolveRelay()
  *
  * @example
  * ```ts
@@ -48,9 +49,9 @@ export type ConsumerHarnessEvent =
  * });
  *
  * for await (const { agentId, event } of orchestrator.events()) {
- *   if (event.type === "permission_required") {
- *     // Handle permission request
- *     orchestrator.resolvePermission(event.toolCallId, true);
+ *   if (event.type === "relay") {
+ *     // Handle relay request
+ *     orchestrator.resolveRelay(event.id, { approved: true });
  *   } else {
  *     console.log(agentId, event);
  *   }
@@ -60,7 +61,7 @@ export type ConsumerHarnessEvent =
 export class AgentOrchestrator {
   private harness: GeneratorHarnessModule;
   private mux = new AgentMultiplexer<HarnessEvent>();
-  private pendingPermissions = new Map<string, PendingPermission>();
+  private pendingRelays = new Map<string, PendingRelay>();
 
   /**
    * Create a new orchestrator.
@@ -87,56 +88,55 @@ export class AgentOrchestrator {
    * Kill an agent by ID.
    *
    * Unregisters the agent from the multiplexer and cleans up any
-   * pending permission requests for this agent.
+   * pending relay requests for this agent.
    */
   kill(agentId: string): void {
     this.mux.unregister(agentId);
-    // Clean up any pending permissions for this agent
-    for (const [toolCallId, pending] of this.pendingPermissions) {
+    // Clean up any pending relays for this agent
+    for (const [relayId, pending] of this.pendingRelays) {
       if (pending.agentId === agentId) {
-        this.pendingPermissions.delete(toolCallId);
+        this.pendingRelays.delete(relayId);
       }
     }
   }
 
   /**
-   * Resolve a pending permission request.
+   * Resolve a pending relay request.
    *
-   * @param toolCallId The ID of the tool call awaiting permission
-   * @param approved Whether the permission is granted
-   * @param reason Optional reason for the decision
-   * @returns true if the permission was found and resolved, false otherwise
+   * @param relayId The ID of the relay awaiting resolution
+   * @param response The response to send back to the relay
+   * @returns true if the relay was found and resolved, false otherwise
    */
-  resolvePermission(toolCallId: string, approved: boolean, reason?: string): boolean {
-    const pending = this.pendingPermissions.get(toolCallId);
+  resolveRelay(relayId: string, response: unknown): boolean {
+    const pending = this.pendingRelays.get(relayId);
     if (!pending) return false;
 
-    pending.respond(approved, reason);
+    pending.respond(response);
     this.mux.resume(pending.agentId);
-    this.pendingPermissions.delete(toolCallId);
+    this.pendingRelays.delete(relayId);
     return true;
   }
 
   /**
    * Stream all events from all agents.
    *
-   * Permission events have their `respond` callback stripped - use
-   * `resolvePermission()` to respond to permission requests.
+   * Relay events have their `respond` callback stripped - use
+   * `resolveRelay()` to respond to relay requests.
    *
-   * When a permission_required event is yielded:
+   * When a relay event is yielded:
    * 1. The agent is paused (won't produce more events)
    * 2. The respond callback is stashed internally
    * 3. The event is yielded without the respond callback
-   * 4. Call resolvePermission() to resume the agent
+   * 4. Call resolveRelay() to resume the agent
    */
   async *events(): AsyncIterable<MultiplexedEvent<ConsumerHarnessEvent>> {
     for await (const { agentId, event } of this.mux.events()) {
-      if (event.type === "permission_required") {
-        // Pause this agent until permission resolved
+      if (event.type === "relay") {
+        // Pause this agent until relay resolved
         this.mux.pause(agentId);
 
         // Stash the responder
-        this.pendingPermissions.set(event.toolCallId, {
+        this.pendingRelays.set(event.id, {
           agentId,
           respond: event.respond,
         });
