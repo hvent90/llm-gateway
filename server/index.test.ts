@@ -123,41 +123,41 @@ describe("Server /chat endpoint", () => {
   });
 });
 
-describe("Server /chat/permission/:toolCallId endpoint", () => {
+describe("Server /chat/relay/:relayId endpoint", () => {
   it("should return 400 when sessionId is missing", async () => {
-    const response = await fetch(`${BASE_URL}/chat/permission/test-tool-call-id`, {
+    const response = await fetch(`${BASE_URL}/chat/relay/test-relay-id`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approved: true }),
+      body: JSON.stringify({ response: { approved: true } }),
     });
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
-    expect(body.error).toBe("sessionId and approved are required");
+    expect(body.error).toBe("sessionId and response are required");
   });
 
-  it("should return 400 when approved is missing", async () => {
-    const response = await fetch(`${BASE_URL}/chat/permission/test-tool-call-id`, {
+  it("should return 400 when response is missing", async () => {
+    const response = await fetch(`${BASE_URL}/chat/relay/test-relay-id`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: "test-session" }),
     });
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
-    expect(body.error).toBe("sessionId and approved are required");
+    expect(body.error).toBe("sessionId and response are required");
   });
 
   it("should return 404 when sessionId does not exist", async () => {
-    const response = await fetch(`${BASE_URL}/chat/permission/test-tool-call-id`, {
+    const response = await fetch(`${BASE_URL}/chat/relay/test-relay-id`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: "nonexistent", approved: true }),
+      body: JSON.stringify({ sessionId: "nonexistent", response: { approved: true } }),
     });
     expect(response.status).toBe(404);
     const body = (await response.json()) as { error: string };
-    expect(body.error).toBe("Session not found or permission request not found");
+    expect(body.error).toBe("Session not found");
   });
 
-  it("should complete permission round-trip: permission_required -> approve -> tool executes", async () => {
+  it("should complete relay round-trip: relay -> approve -> tool executes", async () => {
     // Start a chat with empty allowlist so all tools require permission
     const response = await fetch(`${BASE_URL}/chat`, {
       method: "POST",
@@ -180,7 +180,7 @@ describe("Server /chat/permission/:toolCallId endpoint", () => {
 
     const events: Array<{ event: string; data: unknown }> = [];
     let sessionId: string | undefined;
-    let toolCallId: string | undefined;
+    let relayId: string | undefined;
     let permissionApproved = false;
 
     // Create a reader to manually control reading
@@ -223,7 +223,7 @@ describe("Server /chat/permission/:toolCallId endpoint", () => {
       return newEvents;
     };
 
-    // Read events until we get permission_required or the stream ends
+    // Read events until we get relay or the stream ends
     let maxIterations = 50; // Safety limit
     while (maxIterations-- > 0) {
       const newEvents = await readNextEvents();
@@ -237,16 +237,16 @@ describe("Server /chat/permission/:toolCallId endpoint", () => {
           sessionId = (e.data as { sessionId: string }).sessionId;
         }
 
-        // When we get permission_required, approve it
-        if (e.event === "permission_required" && !permissionApproved) {
-          const data = e.data as { toolCallId: string; tool: string };
-          toolCallId = data.toolCallId;
+        // When we get relay, approve it
+        if (e.event === "relay" && !permissionApproved) {
+          const data = e.data as { id: string; tool: string };
+          relayId = data.id;
 
           // POST approval
-          const approvalResponse = await fetch(`${BASE_URL}/chat/permission/${toolCallId}`, {
+          const approvalResponse = await fetch(`${BASE_URL}/chat/relay/${relayId}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId, approved: true }),
+            body: JSON.stringify({ sessionId, response: { approved: true } }),
           });
 
           expect(approvalResponse.status).toBe(200);
@@ -261,17 +261,17 @@ describe("Server /chat/permission/:toolCallId endpoint", () => {
 
     // Verify we got the expected events
     expect(sessionId).toBeDefined();
-    expect(toolCallId).toBeDefined();
+    expect(relayId).toBeDefined();
     expect(permissionApproved).toBe(true);
 
     // Should have connected event
     const connectedEvent = events.find((e) => e.event === "connected");
     expect(connectedEvent).toBeDefined();
 
-    // Should have permission_required event for bash tool
-    const permissionEvent = events.find((e) => e.event === "permission_required");
-    expect(permissionEvent).toBeDefined();
-    expect((permissionEvent!.data as { tool: string }).tool).toBe("bash");
+    // Should have relay event for bash tool
+    const relayEvent = events.find((e) => e.event === "relay");
+    expect(relayEvent).toBeDefined();
+    expect((relayEvent!.data as { tool: string }).tool).toBe("bash");
 
     // After approval, should have tool_call event
     const toolCallEvent = events.find((e) => e.event === "tool_call");
