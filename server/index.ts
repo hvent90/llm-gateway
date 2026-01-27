@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { v7 } from "uuid";
 import { AgentOrchestrator, type ConsumerHarnessEvent } from "../packages/ai/orchestrator.ts";
-import { bashTool } from "../packages/ai/tools/index.ts";
+import { bashTool } from "../packages/ai/tools";
 import type { Message, Permissions } from "../packages/ai/types.ts";
 
 const app = new Hono();
@@ -16,10 +16,9 @@ interface ChatRequest {
   permissions?: Permissions;
 }
 
-interface PermissionRequest {
+interface RelayRequest {
   sessionId: string;
-  approved: boolean;
-  reason?: string;
+  response: unknown;
 }
 
 // Serialize a ConsumerHarnessEvent to JSON-safe format, adding agentId
@@ -93,29 +92,28 @@ app.post("/chat", async (c) => {
   });
 });
 
-// Permission resolution endpoint
-app.post("/chat/permission/:toolCallId", async (c) => {
-  let body: PermissionRequest;
+app.post("/chat/relay/:relayId", async (c) => {
+  let body: RelayRequest;
   try {
-    body = await c.req.json<PermissionRequest>();
+    body = await c.req.json<RelayRequest>();
   } catch {
     return c.json({ error: "Invalid JSON body" }, 400);
   }
 
-  const toolCallId = c.req.param("toolCallId");
+  const relayId = c.req.param("relayId");
 
-  if (!body.sessionId || body.approved === undefined) {
-    return c.json({ error: "sessionId and approved are required" }, 400);
+  if (!body.sessionId || body.response === undefined) {
+    return c.json({ error: "sessionId and response are required" }, 400);
   }
 
   const orchestrator = orchestrators.get(body.sessionId);
   if (!orchestrator) {
-    return c.json({ error: "Session not found or permission request not found" }, 404);
+    return c.json({ error: "Session not found" }, 404);
   }
 
-  const resolved = orchestrator.resolvePermission(toolCallId, body.approved, body.reason);
+  const resolved = orchestrator.resolveRelay(relayId, body.response);
   if (!resolved) {
-    return c.json({ error: "Session not found or permission request not found" }, 404);
+    return c.json({ error: "Relay not found" }, 404);
   }
 
   return c.json({ success: true });
