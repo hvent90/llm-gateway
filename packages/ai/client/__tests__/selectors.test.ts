@@ -1,6 +1,14 @@
 import { describe, test, expect } from "bun:test";
 import { createInitialState, reduceEvent } from "../graph";
-import { getRoots, getChildren, getText, getToolCalls, getStatus } from "../selectors";
+import {
+  getRoots,
+  getChildren,
+  getText,
+  getToolCalls,
+  getStatus,
+  getContentBlocks,
+  getRole,
+} from "../selectors";
 
 describe("Selectors", () => {
   test("getRoots returns nodes with no parentId", () => {
@@ -9,12 +17,14 @@ describe("Selectors", () => {
       type: "text",
       runId: "root-1",
       id: "e1",
+      agentId: "a1",
       content: "Hello",
     });
     state = reduceEvent(state, {
       type: "text",
       runId: "child-1",
       id: "e2",
+      agentId: "a1",
       parentId: "root-1",
       content: "World",
     });
@@ -29,12 +39,14 @@ describe("Selectors", () => {
       type: "text",
       runId: "parent",
       id: "e1",
+      agentId: "a1",
       content: "Hello",
     });
     state = reduceEvent(state, {
       type: "text",
       runId: "child-1",
       id: "e2",
+      agentId: "a1",
       parentId: "parent",
       content: "A",
     });
@@ -42,6 +54,7 @@ describe("Selectors", () => {
       type: "text",
       runId: "child-2",
       id: "e3",
+      agentId: "a1",
       parentId: "parent",
       content: "B",
     });
@@ -56,12 +69,14 @@ describe("Selectors", () => {
       type: "text",
       runId: "run-1",
       id: "e1",
+      agentId: "a1",
       content: "Hello ",
     });
     state = reduceEvent(state, {
       type: "text",
       runId: "run-1",
       id: "e2",
+      agentId: "a1",
       content: "world",
     });
 
@@ -74,12 +89,14 @@ describe("Selectors", () => {
       type: "reasoning",
       runId: "run-1",
       id: "r1",
+      agentId: "a1",
       content: "Thinking...",
     });
     state = reduceEvent(state, {
       type: "text",
       runId: "run-1",
       id: "t1",
+      agentId: "a1",
       content: "Answer",
     });
 
@@ -92,6 +109,7 @@ describe("Selectors", () => {
       type: "tool_call",
       runId: "run-1",
       id: "tc-1",
+      agentId: "a1",
       name: "bash",
       input: { command: "ls" },
     });
@@ -99,6 +117,7 @@ describe("Selectors", () => {
       type: "tool_call",
       runId: "run-1",
       id: "tc-2",
+      agentId: "a1",
       name: "read",
       input: { path: "/tmp" },
     });
@@ -115,6 +134,7 @@ describe("Selectors", () => {
       type: "text",
       runId: "run-1",
       id: "e1",
+      agentId: "a1",
       content: "Hello",
     });
 
@@ -126,7 +146,8 @@ describe("Selectors", () => {
     state = reduceEvent(state, {
       type: "error",
       runId: "run-1",
-      error: new Error("Failed"),
+      agentId: "a1",
+      message: "Failed",
     });
 
     expect(getStatus(state, "run-1")).toBe("error");
@@ -135,5 +156,224 @@ describe("Selectors", () => {
   test("getStatus returns complete for unknown runId", () => {
     const state = createInitialState();
     expect(getStatus(state, "nonexistent")).toBe("complete");
+  });
+});
+
+describe("getContentBlocks", () => {
+  test("returns text blocks from text events", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "e1",
+      agentId: "a1",
+      content: "Hello ",
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "e2",
+      agentId: "a1",
+      content: "world",
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks).toEqual([{ type: "text", content: "Hello world" }]);
+  });
+
+  test("merges consecutive text events into one block", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "e1",
+      agentId: "a1",
+      content: "A",
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "e2",
+      agentId: "a1",
+      content: "B",
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toEqual({ type: "text", content: "AB" });
+  });
+
+  test("merges consecutive reasoning events into one block", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "reasoning",
+      runId: "run-1",
+      id: "r1",
+      agentId: "a1",
+      content: "Thinking",
+    });
+    state = reduceEvent(state, {
+      type: "reasoning",
+      runId: "run-1",
+      id: "r2",
+      agentId: "a1",
+      content: "...",
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toEqual({ type: "reasoning", content: "Thinking..." });
+  });
+
+  test("creates separate blocks when type switches", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "reasoning",
+      runId: "run-1",
+      id: "r1",
+      agentId: "a1",
+      content: "Hmm",
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "t1",
+      agentId: "a1",
+      content: "Answer",
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks.length).toBe(2);
+    expect(blocks[0]).toEqual({ type: "reasoning", content: "Hmm" });
+    expect(blocks[1]).toEqual({ type: "text", content: "Answer" });
+  });
+
+  test("creates tool_call blocks with output from tool_result", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "tool_call",
+      runId: "run-1",
+      id: "tc-1",
+      agentId: "a1",
+      name: "bash",
+      input: { command: "ls" },
+    });
+    state = reduceEvent(state, {
+      type: "tool_result",
+      runId: "run-1",
+      id: "tc-1",
+      agentId: "a1",
+      name: "bash",
+      output: { stdout: "file.txt" },
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toEqual({
+      type: "tool_call",
+      id: "tc-1",
+      name: "bash",
+      input: { command: "ls" },
+      output: { stdout: "file.txt" },
+    });
+  });
+
+  test("tool_call without result has no output", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "tool_call",
+      runId: "run-1",
+      id: "tc-1",
+      agentId: "a1",
+      name: "bash",
+      input: { command: "ls" },
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks[0]).toEqual({
+      type: "tool_call",
+      id: "tc-1",
+      name: "bash",
+      input: { command: "ls" },
+    });
+  });
+
+  test("handles mixed event sequence", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "reasoning",
+      runId: "run-1",
+      id: "r1",
+      agentId: "a1",
+      content: "Let me think",
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "t1",
+      agentId: "a1",
+      content: "I'll use a tool",
+    });
+    state = reduceEvent(state, {
+      type: "tool_call",
+      runId: "run-1",
+      id: "tc-1",
+      agentId: "a1",
+      name: "bash",
+      input: { command: "ls" },
+    });
+    state = reduceEvent(state, {
+      type: "tool_result",
+      runId: "run-1",
+      id: "tc-1",
+      agentId: "a1",
+      name: "bash",
+      output: "files",
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "t2",
+      agentId: "a1",
+      content: "Here are the files",
+    });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks.length).toBe(4);
+    expect(blocks[0].type).toBe("reasoning");
+    expect(blocks[1]).toEqual({ type: "text", content: "I'll use a tool" });
+    expect(blocks[2].type).toBe("tool_call");
+    expect(blocks[3]).toEqual({ type: "text", content: "Here are the files" });
+  });
+
+  test("returns empty array for unknown runId", () => {
+    const state = createInitialState();
+    expect(getContentBlocks(state, "nonexistent")).toEqual([]);
+  });
+
+  test("skips error and relay events in content blocks", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "t1",
+      agentId: "a1",
+      content: "Hello",
+    });
+    state = reduceEvent(state, { type: "error", runId: "run-1", agentId: "a1", message: "oops" });
+    const blocks = getContentBlocks(state, "run-1");
+    expect(blocks).toEqual([{ type: "text", content: "Hello" }]);
+  });
+});
+
+describe("getRole", () => {
+  test("returns assistant for server event nodes", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "e1",
+      agentId: "a1",
+      content: "Hi",
+    });
+    expect(getRole(state, "run-1")).toBe("assistant");
+  });
+
+  test("returns undefined for unknown runId", () => {
+    const state = createInitialState();
+    expect(getRole(state, "nonexistent")).toBeUndefined();
   });
 });
