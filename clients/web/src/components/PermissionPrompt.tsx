@@ -1,7 +1,7 @@
-import type { RelayRequest } from "../types";
+import type { PendingRelay } from "../types";
 
 interface PermissionPromptProps {
-  request: RelayRequest;
+  request: PendingRelay;
   onAllow: () => void;
   onAllowAll: () => void;
   onDeny: () => void;

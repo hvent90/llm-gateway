@@ -1,29 +1,31 @@
-import type { ContentBlock, MessageNode as MessageNodeType, ToolCall } from "../types";
+import { getContentBlocks, getChildren, getRole } from "../../../../packages/ai/client";
+import type { ContentBlock, GraphState } from "../types";
 
 interface MessageNodeProps {
-  node: MessageNodeType;
+  graph: GraphState;
+  runId: string;
   depth?: number;
 }
 
-function ToolCallBlock({ toolCall }: { toolCall: ToolCall }) {
+function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: "tool_call" }> }) {
   const inputStr =
-    typeof toolCall.input === "string" ? toolCall.input : JSON.stringify(toolCall.input, null, 2);
+    typeof block.input === "string" ? block.input : JSON.stringify(block.input, null, 2);
 
   const outputStr =
-    toolCall.output !== undefined
-      ? typeof toolCall.output === "string"
-        ? toolCall.output
-        : JSON.stringify(toolCall.output, null, 2)
+    block.output !== undefined
+      ? typeof block.output === "string"
+        ? block.output
+        : JSON.stringify(block.output, null, 2)
       : null;
 
   return (
     <div className="my-2 rounded border border-gray-700 bg-gray-800 p-2 text-sm">
-      <div className="font-mono text-yellow-400">🔧 {toolCall.name}</div>
-      <pre className="mt-1 overflow-x-auto text-gray-400">{inputStr}</pre>
+      <div className="font-mono text-yellow-400">🔧 {block.name}</div>
+      <pre className="mt-1 whitespace-pre-wrap break-words text-gray-400">{inputStr}</pre>
       {outputStr && (
         <div className="mt-2 border-t border-gray-700 pt-2">
           <span className="text-gray-500">↳ </span>
-          <pre className="inline overflow-x-auto text-gray-300">{outputStr}</pre>
+          <pre className="whitespace-pre-wrap break-words text-gray-300">{outputStr}</pre>
         </div>
       )}
     </div>
@@ -39,7 +41,7 @@ function ContentBlockView({ block, index }: { block: ContentBlock; index: number
         </div>
       );
     case "tool_call":
-      return <ToolCallBlock key={block.toolCall.id} toolCall={block.toolCall} />;
+      return <ToolCallBlock key={block.id} block={block} />;
     case "text":
       return (
         <div key={index} className="mt-1 whitespace-pre-wrap text-gray-200">
@@ -59,27 +61,25 @@ const indentClasses = [
   "ml-8 sm:ml-16",
 ] as const;
 
-export function MessageNode({ node, depth = 0 }: MessageNodeProps) {
-  const isUser = node.role === "user";
+export function MessageNode({ graph, runId, depth = 0 }: MessageNodeProps) {
+  const role = getRole(graph, runId);
+  const blocks = getContentBlocks(graph, runId);
+  const children = getChildren(graph, runId);
+  const isUser = role === "user";
   const indent = indentClasses[Math.min(depth, 4)] ?? "ml-16";
 
   return (
     <div className={`${indent} mb-4`}>
-      {/* Header */}
       <div className={`font-medium ${isUser ? "text-blue-400" : "text-green-400"}`}>
-        {isUser ? "You" : `Agent-${node.agentId.slice(0, 8)}`}
+        {isUser ? "You" : `Agent-${runId.slice(0, 8)}`}
       </div>
-
-      {/* Content blocks in order */}
-      {node.contentBlocks.map((block, index) => (
+      {blocks.map((block, index) => (
         <ContentBlockView key={index} block={block} index={index} />
       ))}
-
-      {/* Children (subagents) */}
-      {node.children.length > 0 && (
+      {children.length > 0 && (
         <div className="mt-2 border-l-2 border-gray-700 pl-2 sm:pl-4">
-          {node.children.map((child) => (
-            <MessageNode key={child.id} node={child} depth={depth + 1} />
+          {children.map((childId) => (
+            <MessageNode key={childId} graph={graph} runId={childId} depth={depth + 1} />
           ))}
         </div>
       )}
