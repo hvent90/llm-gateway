@@ -14,8 +14,6 @@ export default defineConfig({
     proxy: {
       "/chat": backendUrl,
     },
-    allowedHosts: [
-      "mini.local"
-    ]
+    allowedHosts: ["mini.local"],
   },
 });

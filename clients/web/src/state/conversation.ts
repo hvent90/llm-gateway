@@ -109,10 +109,7 @@ function appendOrCreateBlock(
   const lastBlock = blocks[blocks.length - 1];
   if (lastBlock && lastBlock.type === blockType) {
     // Append to existing block
-    return [
-      ...blocks.slice(0, -1),
-      { ...lastBlock, content: lastBlock.content + content },
-    ];
+    return [...blocks.slice(0, -1), { ...lastBlock, content: lastBlock.content + content }];
   }
   // Create new block
   return [...blocks, { type: blockType, content }];
@@ -202,7 +199,11 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
         ...state,
         messages: updateAgentNode(messages, runId, (node) => ({
           ...node,
-          contentBlocks: appendOrCreateBlock(node.contentBlocks, "text", `\n\nError: ${event.message}`),
+          contentBlocks: appendOrCreateBlock(
+            node.contentBlocks,
+            "text",
+            `\n\nError: ${event.message}`,
+          ),
         })),
       };
     }

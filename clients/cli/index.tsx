@@ -68,7 +68,11 @@ function MessageView(props: { message: Message }) {
         }
       >
         <box paddingLeft={2} borderLeft borderColor="gray">
-          <text wrapMode="word" fg="gray" attributes={createTextAttributes({ dim: true, italic: true })}>
+          <text
+            wrapMode="word"
+            fg="gray"
+            attributes={createTextAttributes({ dim: true, italic: true })}
+          >
             {props.message.content.trimEnd()}
           </text>
         </box>
