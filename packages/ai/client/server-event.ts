@@ -11,7 +11,14 @@ import type { Permissions } from "../types";
 export type ServerEvent =
   | { type: "connected"; sessionId: string }
   | { type: "text"; id: string; runId: string; agentId: string; parentId?: string; content: string }
-  | { type: "reasoning"; id: string; runId: string; agentId: string; parentId?: string; content: string }
+  | {
+      type: "reasoning";
+      id: string;
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      content: string;
+    }
   | {
       type: "tool_call";
       id: string;
