@@ -4,6 +4,7 @@ import type {
   GeneratorInvokeParams,
   HarnessEvent,
   Message,
+  PermissionResponse,
   ToolCall,
   ToolContext,
 } from "../types";
@@ -107,15 +108,16 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
           if (!isAllowed) {
             // Need permission - create deferred and yield permission_required
-            const { promise, resolve } = deferred<{ approved: boolean; reason?: string }>();
+            const { promise, resolve } = deferred<PermissionResponse>();
             yield tag({
-              type: "permission_required",
+              type: "relay",
+              kind: "permission",
               runId: myRunId,
               id: uuidv7(),
               toolCallId: tc.id,
               tool: tc.name,
               params: args,
-              respond: (approved, reason) => resolve({ approved, reason }),
+              respond: (response: PermissionResponse) => resolve(response),
             });
 
             // Generator pauses here until respond() is called
