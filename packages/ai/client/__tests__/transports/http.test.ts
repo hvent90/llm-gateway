@@ -34,7 +34,10 @@ describe("HTTP Transport", () => {
     expect(mockFetch).toHaveBeenCalledWith("http://test/chat/relay/relay-2", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: "sess-1", response: { approved: false, reason: "Denied" } }),
+      body: JSON.stringify({
+        sessionId: "sess-1",
+        response: { approved: false, reason: "Denied" },
+      }),
     });
   });
 

@@ -14,3 +14,7 @@ export type { UserMessage, ConversationState, ConversationEvent } from "./conver
 
 // Server event types
 export type { ServerEvent, StreamRequest } from "./server-event";
+
+// Transports
+export { createSSETransport } from "./transports/sse";
+export { createHTTPTransport } from "./transports/http";
