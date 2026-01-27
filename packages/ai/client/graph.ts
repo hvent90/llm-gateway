@@ -1,4 +1,4 @@
-import type { HarnessEvent } from "../types";
+import type { ServerEvent } from "./server-event";
 import type { GraphState, GraphNode } from "./types";
 
 /**
@@ -11,10 +11,12 @@ export function createInitialState(): GraphState {
 }
 
 /**
- * Pure reducer: apply a HarnessEvent to produce new GraphState.
+ * Pure reducer: apply a ServerEvent to produce new GraphState.
  */
-export function reduceEvent(state: GraphState, event: HarnessEvent): GraphState {
-  // Extract runId and parentId from event
+export function reduceEvent(state: GraphState, event: ServerEvent): GraphState {
+  // Skip connected events — no runId, handled by conversation layer
+  if (event.type === "connected") return state;
+
   const runId = event.runId;
   const parentId = "parentId" in event ? event.parentId : undefined;
 
@@ -22,7 +24,7 @@ export function reduceEvent(state: GraphState, event: HarnessEvent): GraphState 
   const existingNode = state.nodes.get(runId);
   const node: GraphNode = existingNode
     ? { ...existingNode, events: [...existingNode.events, event] }
-    : { runId, parentId, events: [event] };
+    : { runId, parentId, role: "assistant", events: [event] };
 
   // Create new Map with updated node
   const newNodes = new Map(state.nodes);

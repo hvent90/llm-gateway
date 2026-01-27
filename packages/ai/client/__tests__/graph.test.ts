@@ -7,11 +7,18 @@ describe("Graph State", () => {
     expect(state.nodes.size).toBe(0);
   });
 
+  test("reduceEvent ignores connected events", () => {
+    const state = createInitialState();
+    const newState = reduceEvent(state, { type: "connected", sessionId: "s-1" });
+    expect(newState.nodes.size).toBe(0);
+  });
+
   test("reduceEvent creates node for new runId", () => {
     const state = createInitialState();
     const newState = reduceEvent(state, {
       type: "text",
       runId: "run-1",
+      agentId: "agent-1",
       id: "evt-1",
       content: "Hello",
     });
@@ -30,12 +37,14 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "text",
       runId: "run-1",
+      agentId: "agent-1",
       id: "evt-1",
       content: "Hello ",
     });
     state = reduceEvent(state, {
       type: "text",
       runId: "run-1",
+      agentId: "agent-1",
       id: "evt-2",
       content: "world",
     });
@@ -50,6 +59,7 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "text",
       runId: "child-run",
+      agentId: "agent-1",
       id: "evt-1",
       parentId: "parent-run",
       content: "Hello",
@@ -64,6 +74,7 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "tool_call",
       runId: "run-1",
+      agentId: "agent-1",
       id: "tc-1",
       name: "bash",
       input: { command: "ls" },
@@ -79,6 +90,7 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "tool_result",
       runId: "run-1",
+      agentId: "agent-1",
       id: "tc-1",
       name: "bash",
       output: { stdout: "file.txt" },
@@ -93,7 +105,8 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "error",
       runId: "run-1",
-      error: new Error("Something went wrong"),
+      agentId: "agent-1",
+      message: "Something went wrong",
     });
 
     const node = state.nodes.get("run-1")!;
@@ -105,6 +118,7 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "reasoning",
       runId: "run-1",
+      agentId: "agent-1",
       id: "r-1",
       content: "Let me think...",
     });
@@ -118,12 +132,14 @@ describe("Graph State", () => {
     state = reduceEvent(state, {
       type: "text",
       runId: "run-1",
+      agentId: "agent-1",
       id: "evt-1",
       content: "Hello",
     });
     state = reduceEvent(state, {
       type: "text",
       runId: "run-2",
+      agentId: "agent-1",
       id: "evt-2",
       parentId: "run-1",
       content: "World",
@@ -139,6 +155,7 @@ describe("Graph State", () => {
     const state2 = reduceEvent(state1, {
       type: "text",
       runId: "run-1",
+      agentId: "agent-1",
       id: "evt-1",
       content: "Hello",
     });

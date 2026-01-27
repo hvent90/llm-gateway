@@ -1,4 +1,4 @@
-import type { HarnessEvent } from "../types";
+import type { ServerEvent } from "./server-event";
 
 /**
  * A node in the event graph, representing a single harness invocation.
@@ -6,7 +6,8 @@ import type { HarnessEvent } from "../types";
 export interface GraphNode {
   runId: string;
   parentId?: string;
-  events: HarnessEvent[];
+  role: "user" | "assistant";
+  events: ServerEvent[];
 }
 
 /**
