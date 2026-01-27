@@ -1,66 +1,185 @@
 import { describe, test, expect } from "bun:test";
 import { createInitialConversation, reduceConversation } from "../conversation";
+import type { ConversationEvent } from "../conversation";
+import { getRoots, getChildren, getContentBlocks, getRole } from "../selectors";
 
-describe("Conversation Layer", () => {
+describe("Conversation Reducer", () => {
   test("createInitialConversation returns empty state", () => {
     const state = createInitialConversation();
     expect(state.graph.nodes.size).toBe(0);
-    expect(state.userMessages.length).toBe(0);
-    expect(state.pending).toBe(null);
-    expect(state.nextMessageId).toBe(1);
+    expect(state.sessionId).toBe(null);
+    expect(state.pendingRelays).toEqual([]);
+    expect(state.grantedTools.size).toBe(0);
+    expect(state.activeStreams.size).toBe(0);
   });
 
-  test("reduceConversation handles user events", () => {
+  test("connected event sets sessionId", () => {
     let state = createInitialConversation();
-    state = reduceConversation(state, {
-      type: "user",
-      content: "Hello!",
-      timestamp: 1000,
-    });
-
-    expect(state.userMessages.length).toBe(1);
-    expect(state.userMessages[0].content).toBe("Hello!");
-    expect(state.userMessages[0].id).toBe("user-1");
-    expect(state.userMessages[0].timestamp).toBe(1000);
-    expect(state.nextMessageId).toBe(2);
+    state = reduceConversation(state, { type: "connected", sessionId: "s-1" });
+    expect(state.sessionId).toBe("s-1");
     expect(state.graph.nodes.size).toBe(0);
   });
 
-  test("reduceConversation handles harness events", () => {
+  test("user event creates user node in graph", () => {
     let state = createInitialConversation();
-    state = reduceConversation(state, {
-      type: "text",
-      runId: "run-1",
-      id: "e1",
-      content: "Hi there!",
-    });
-
-    expect(state.userMessages.length).toBe(0);
+    state = reduceConversation(state, { type: "user", runId: "user-1", content: "Hello" });
     expect(state.graph.nodes.size).toBe(1);
+    expect(getRole(state.graph, "user-1")).toBe("user");
+    expect(getContentBlocks(state.graph, "user-1")).toEqual([{ type: "text", content: "Hello" }]);
   });
 
-  test("reduceConversation interleaves user and harness events", () => {
+  test("user event with parentId creates child node", () => {
     let state = createInitialConversation();
-
-    state = reduceConversation(state, { type: "user", content: "Hello", timestamp: 1000 });
     state = reduceConversation(state, {
       type: "text",
-      runId: "run-1",
       id: "e1",
-      content: "Hi!",
+      runId: "run-1",
+      agentId: "a1",
+      content: "Hi",
     });
-    state = reduceConversation(state, { type: "user", content: "How are you?", timestamp: 2000 });
+    state = reduceConversation(state, {
+      type: "user",
+      runId: "user-1",
+      parentId: "run-1",
+      content: "Reply",
+    });
+    expect(getChildren(state.graph, "run-1")).toEqual(["user-1"]);
+  });
+
+  test("text events delegate to graph", () => {
+    let state = createInitialConversation();
     state = reduceConversation(state, {
       type: "text",
-      runId: "run-2",
-      id: "e2",
-      content: "Great!",
+      id: "e1",
+      runId: "run-1",
+      agentId: "a1",
+      content: "Hello",
     });
+    expect(state.graph.nodes.size).toBe(1);
+    expect(getRole(state.graph, "run-1")).toBe("assistant");
+  });
 
-    expect(state.userMessages.length).toBe(2);
-    expect(state.userMessages[0].id).toBe("user-1");
-    expect(state.userMessages[1].id).toBe("user-2");
-    expect(state.nextMessageId).toBe(3);
-    expect(state.graph.nodes.size).toBe(2);
+  test("relay event appends to pendingRelays", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: { command: "rm -rf" },
+    });
+    expect(state.pendingRelays.length).toBe(1);
+    expect(state.pendingRelays[0].relayId).toBe("r-1");
+    expect(state.pendingRelays[0].tool).toBe("bash");
+  });
+
+  test("multiple relays accumulate", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: {},
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-2",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-2",
+      tool: "read",
+      params: {},
+    });
+    expect(state.pendingRelays.length).toBe(2);
+  });
+
+  test("relay_resolved removes relay and grants tool if approved", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: {},
+    });
+    state = reduceConversation(state, {
+      type: "relay_resolved",
+      relayId: "r-1",
+      tool: "bash",
+      approved: true,
+    });
+    expect(state.pendingRelays.length).toBe(0);
+    expect(state.grantedTools.has("bash")).toBe(true);
+  });
+
+  test("relay_resolved with denied does not grant tool", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: {},
+    });
+    state = reduceConversation(state, {
+      type: "relay_resolved",
+      relayId: "r-1",
+      tool: "bash",
+      approved: false,
+    });
+    expect(state.pendingRelays.length).toBe(0);
+    expect(state.grantedTools.has("bash")).toBe(false);
+  });
+
+  test("stream_start adds to activeStreams", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
+    expect(state.activeStreams.has("run-1")).toBe(true);
+  });
+
+  test("stream_end removes from activeStreams", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
+    state = reduceConversation(state, { type: "stream_end", runId: "run-1" });
+    expect(state.activeStreams.has("run-1")).toBe(false);
+  });
+
+  test("full conversation flow", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, { type: "connected", sessionId: "s-1" });
+    state = reduceConversation(state, { type: "user", runId: "user-1", content: "Hello" });
+    state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
+    state = reduceConversation(state, {
+      type: "text",
+      id: "e1",
+      runId: "run-1",
+      agentId: "a1",
+      parentId: "user-1",
+      content: "Hi there!",
+    });
+    state = reduceConversation(state, { type: "stream_end", runId: "run-1" });
+
+    expect(state.sessionId).toBe("s-1");
+    expect(getRoots(state.graph)).toEqual(["user-1"]);
+    expect(getChildren(state.graph, "user-1")).toEqual(["run-1"]);
+    expect(getContentBlocks(state.graph, "user-1")).toEqual([{ type: "text", content: "Hello" }]);
+    expect(getContentBlocks(state.graph, "run-1")).toEqual([
+      { type: "text", content: "Hi there!" },
+    ]);
+    expect(state.activeStreams.size).toBe(0);
   });
 });

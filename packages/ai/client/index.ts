@@ -2,7 +2,16 @@
 export { createInitialState, reduceEvent } from "./graph";
 
 // Selectors
-export { getRoots, getChildren, getText, getToolCalls, getStatus } from "./selectors";
+export {
+  getRoots,
+  getChildren,
+  getText,
+  getToolCalls,
+  getStatus,
+  getContentBlocks,
+  getRole,
+} from "./selectors";
+export type { ContentBlock } from "./selectors";
 
 // Conversation layer
 export { createInitialConversation, reduceConversation } from "./conversation";
@@ -10,7 +19,7 @@ export { createInitialConversation, reduceConversation } from "./conversation";
 // Types
 export type { GraphState, GraphNode } from "./types";
 
-export type { UserMessage, ConversationState, ConversationEvent } from "./conversation";
+export type { PendingRelay, ConversationState, ConversationEvent } from "./conversation";
 
 // Server event types
 export type { ServerEvent, StreamRequest } from "./server-event";
