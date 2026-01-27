@@ -216,7 +216,7 @@ describe("Agent Harness", () => {
   );
 
   test(
-    "yields permission_required and pauses until respond() called",
+    "yields relay permission and pauses until respond() called",
     async () => {
       const calculatorSchema = z.object({ a: z.number(), b: z.number() });
 
@@ -236,7 +236,7 @@ describe("Agent Harness", () => {
       });
 
       const events: HarnessEvent[] = [];
-      let permissionCount = 0;
+      let relayCount = 0;
 
       const stream = agentHarness.invoke({
         model: TEST_MODEL,
@@ -249,15 +249,15 @@ describe("Agent Harness", () => {
 
       for await (const event of stream) {
         events.push(event);
-        if (event.type === "permission_required") {
-          permissionCount++;
+        if (event.type === "relay") {
+          relayCount++;
           // Approve the permission to continue
-          event.respond(true);
+          event.respond({ approved: true });
         }
       }
 
       // Should have seen at least one permission request
-      expect(permissionCount).toBeGreaterThanOrEqual(1);
+      expect(relayCount).toBeGreaterThanOrEqual(1);
 
       // After approval, should have tool_call and tool_result
       const toolCallEvents = events.filter((e) => e.type === "tool_call");
@@ -274,7 +274,7 @@ describe("Agent Harness", () => {
   );
 
   test(
-    "denial via respond(false) yields denied tool_result",
+    "denial via relay respond yields denied tool_result",
     async () => {
       const calculatorSchema = z.object({ a: z.number(), b: z.number() });
 
@@ -306,9 +306,9 @@ describe("Agent Harness", () => {
 
       for await (const event of stream) {
         events.push(event);
-        if (event.type === "permission_required") {
+        if (event.type === "relay") {
           // Deny the permission
-          event.respond(false, "User denied");
+          event.respond({ approved: false, reason: "User denied" });
         }
       }
 
@@ -355,9 +355,9 @@ describe("Agent Harness", () => {
         }),
       );
 
-      // Should NOT have any permission_required events
-      const permissionEvents = events.filter((e) => e.type === "permission_required");
-      expect(permissionEvents.length).toBe(0);
+      // Should NOT have any relay events
+      const relayEvents = events.filter((e) => e.type === "relay");
+      expect(relayEvents.length).toBe(0);
 
       // Should have tool execution
       const toolResultEvents = events.filter((e) => e.type === "tool_result");
