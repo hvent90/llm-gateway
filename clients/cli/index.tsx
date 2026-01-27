@@ -9,8 +9,17 @@
 import { render, useRenderer } from "@opentui/solid";
 import { createTextAttributes } from "@opentui/core";
 import { createSignal, For, Show, onMount } from "solid-js";
-import { createSSETransport, createHTTPTransport } from "../../packages/ai/client";
-import type { ServerEvent } from "../../packages/ai/client/server-event";
+import {
+  createSSETransport,
+  createHTTPTransport,
+  createInitialConversation,
+  reduceConversation,
+  getRoots,
+  getChildren,
+  getContentBlocks,
+  getRole,
+} from "../../packages/ai/client";
+import type { ConversationState, ContentBlock } from "../../packages/ai/client";
 
 // Configuration from environment
 const MODEL = process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
@@ -19,48 +28,99 @@ const SERVER_URL = process.env.LLM_GATEWAY_URL ?? "http://localhost:4000";
 const sseTransport = createSSETransport({ baseUrl: SERVER_URL });
 const httpTransport = createHTTPTransport({ baseUrl: SERVER_URL });
 
-// Message types
-interface Message {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  isReasoning?: boolean;
+// Generate unique user message IDs
+let userIdCounter = 0;
+function nextUserId(): string {
+  return `user-${++userIdCounter}`;
 }
 
-// Generate unique IDs
-let idCounter = 0;
-function generateId(): string {
-  return `msg-${++idCounter}`;
+// Format tool output for display
+function formatOutput(output: unknown): string {
+  const str = typeof output === "string" ? output : JSON.stringify(output, null, 2);
+  const lines = str.split("\n");
+  if (lines.length <= 6) return str;
+  return lines.slice(0, 5).join("\n") + `\n... (${lines.length - 5} more lines)`;
 }
 
-// Message component - only re-renders when THIS message changes
-function MessageView(props: { message: Message }) {
-  // User messages get extra margin to separate conversation turns
-  const isUser = () => props.message.role === "user";
+// Block renderer for a single ContentBlock
+function BlockView(props: { block: ContentBlock; isUser: boolean }) {
+  return (
+    <Show
+      when={props.block.type === "reasoning"}
+      fallback={
+        <Show
+          when={props.block.type === "tool_call"}
+          fallback={
+            <text wrapMode="word">
+              {props.isUser ? "You: " : ""}
+              {(props.block as Extract<ContentBlock, { type: "text" }>).content.trimEnd()}
+            </text>
+          }
+        >
+          {(() => {
+            const tc = props.block as Extract<ContentBlock, { type: "tool_call" }>;
+            const inputStr = typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input);
+            const outputStr = tc.output !== undefined ? formatOutput(tc.output) : null;
+            return (
+              <box>
+                <text wrapMode="word">{`[tool] ${tc.name}: ${inputStr}`}</text>
+                <Show when={outputStr !== null}>
+                  <text wrapMode="word">{`   -> ${outputStr}`}</text>
+                </Show>
+              </box>
+            );
+          })()}
+        </Show>
+      }
+    >
+      <box paddingLeft={2} borderLeft borderColor="gray">
+        <text
+          wrapMode="word"
+          fg="gray"
+          attributes={createTextAttributes({ dim: true, italic: true })}
+        >
+          {(props.block as Extract<ContentBlock, { type: "reasoning" }>).content.trimEnd()}
+        </text>
+      </box>
+    </Show>
+  );
+}
+
+// Recursive node renderer — walks the conversation graph
+function NodeView(props: { graph: ConversationState["graph"]; runId: string }) {
+  const role = () => getRole(props.graph, props.runId);
+  const blocks = () => getContentBlocks(props.graph, props.runId);
+  const children = () => getChildren(props.graph, props.runId);
 
   return (
-    <box marginTop={isUser() ? 1 : 0} marginBottom={isUser() ? 1 : 0}>
-      <Show
-        when={props.message.isReasoning}
-        fallback={
-          <text wrapMode="word">
-            {isUser() ? "You: " : ""}
-            {props.message.content.trimEnd()}
-          </text>
-        }
-      >
-        <box paddingLeft={2} borderLeft borderColor="gray">
-          <text
-            wrapMode="word"
-            fg="gray"
-            attributes={createTextAttributes({ dim: true, italic: true })}
-          >
-            {props.message.content.trimEnd()}
-          </text>
-        </box>
-      </Show>
+    <box marginTop={role() === "user" ? 1 : 0} marginBottom={role() === "user" ? 1 : 0}>
+      <For each={blocks()}>{(block) => <BlockView block={block} isUser={role() === "user"} />}</For>
+      <For each={children()}>{(childId) => <NodeView graph={props.graph} runId={childId} />}</For>
     </box>
   );
+}
+
+// Build API messages from the conversation graph
+function buildApiMessages(
+  graph: ConversationState["graph"],
+): Array<{ role: string; content: string }> {
+  const messages: Array<{ role: string; content: string }> = [];
+  const traverse = (runIds: string[]) => {
+    for (const runId of runIds) {
+      const role = getRole(graph, runId);
+      const blocks = getContentBlocks(graph, runId);
+      const textContent = blocks
+        .filter((b) => b.type === "text")
+        .map((b) => b.content)
+        .join("");
+      if (textContent && role) {
+        messages.push({ role, content: textContent });
+      }
+      traverse(getChildren(graph, runId));
+    }
+  };
+  traverse(getRoots(graph));
+  return messages;
 }
 
 // Main App Component
@@ -72,132 +132,22 @@ function ChatApp() {
     renderer.auto();
   });
 
-  const [messages, setMessages] = createSignal<Message[]>([
-    {
-      id: generateId(),
-      role: "system",
-      content: "Welcome! Type a message and press Enter to start chatting.",
-    },
-  ]);
-  const [isStreaming, setIsStreaming] = createSignal(false);
+  const [conversation, setConversation] = createSignal<ConversationState>(
+    createInitialConversation(),
+  );
   const [inputValue, setInputValue] = createSignal("");
   const [statusText, setStatusText] = createSignal(`Connected to ${SERVER_URL}`);
-  const [sessionId, setSessionId] = createSignal<string | null>(null);
-  const [pendingRelay, setPendingRelay] = createSignal<{
-    relayId: string;
-    toolCallId: string;
-    tool: string;
-    params: Record<string, unknown>;
-  } | null>(null);
 
-  // Format tool output for display
-  function formatOutput(output: unknown): string {
-    const str = JSON.stringify(output, null, 2);
-    const lines = str.split("\n");
-    if (lines.length <= 6) return str;
-    return lines.slice(0, 5).join("\n") + `\n... (${lines.length - 5} more lines)`;
-  }
-
-  // Add a message to the conversation, returns the ID
-  function addMessage(role: Message["role"], content: string, isReasoning = false): string {
-    const id = generateId();
-    setMessages((prev) => [...prev, { id, role, content, isReasoning }]);
-    return id;
-  }
-
-  // Append content to a message by ID
-  function appendToMessage(id: string, content: string) {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, content: m.content + content } : m)),
-    );
-  }
-
-  // Handle a parsed server event
-  function handleEvent(
-    event: ServerEvent,
-    state: { currentMsgId: string | null; isReasoning: boolean },
-  ) {
-    switch (event.type) {
-      case "connected":
-        setSessionId(event.sessionId);
-        break;
-
-      case "text":
-        // If switching from reasoning to text, start a new message
-        if (state.isReasoning) {
-          state.currentMsgId = addMessage("assistant", event.content);
-          state.isReasoning = false;
-        } else if (state.currentMsgId) {
-          appendToMessage(state.currentMsgId, event.content);
-        } else {
-          state.currentMsgId = addMessage("assistant", event.content);
-        }
-        break;
-
-      case "reasoning":
-        // If switching from text to reasoning, start a new message
-        if (!state.isReasoning && state.currentMsgId) {
-          state.currentMsgId = addMessage("assistant", event.content, true);
-          state.isReasoning = true;
-        } else if (state.currentMsgId && state.isReasoning) {
-          appendToMessage(state.currentMsgId, event.content);
-        } else {
-          state.currentMsgId = addMessage("assistant", event.content, true);
-          state.isReasoning = true;
-        }
-        break;
-
-      case "tool_call": {
-        state.currentMsgId = null;
-        state.isReasoning = false;
-        const inputStr =
-          typeof event.input === "string" ? event.input : JSON.stringify(event.input);
-        addMessage("assistant", `[tool] ${event.name}: ${inputStr}`);
-        break;
-      }
-
-      case "tool_result": {
-        const outputStr = formatOutput(event.output);
-        addMessage("assistant", `   -> ${outputStr}`);
-        break;
-      }
-
-      case "relay":
-        state.currentMsgId = null;
-        state.isReasoning = false;
-        setPendingRelay({
-          relayId: event.id,
-          toolCallId: event.toolCallId,
-          tool: event.tool,
-          params: event.params,
-        });
-        showRelayPrompt(event.tool, event.params);
-        break;
-
-      case "error":
-        state.currentMsgId = null;
-        state.isReasoning = false;
-        addMessage("assistant", `[error] ${event.message}`);
-        break;
-    }
-  }
-
-  // Show permission prompt
-  function showRelayPrompt(tool: string, params: Record<string, unknown>) {
-    const paramsStr = JSON.stringify(params, null, 2);
-    addMessage(
-      "system",
-      `[!] Permission Required\n   Tool: ${tool}\n   Params: ${paramsStr}\n   Enter 'y' to allow, 'n' to deny`,
-    );
-    setStatusText("[!] Permission required - awaiting response");
-  }
+  const isStreaming = () => conversation().activeStreams.size > 0;
+  const pendingRelay = () => conversation().pendingRelays[0] ?? null;
+  const roots = () => getRoots(conversation().graph);
 
   // Resolve a pending relay request
   async function resolveRelay(approved: boolean) {
     const relay = pendingRelay();
-    const session = sessionId();
+    const session = conversation().sessionId;
     if (!relay || !session) {
-      addMessage("system", "[error] No pending relay or session");
+      setStatusText("[error] No pending relay or session");
       return;
     }
 
@@ -207,21 +157,31 @@ function ChatApp() {
         reason: approved ? undefined : "User denied",
       });
 
-      addMessage("system", approved ? "[ok] Allowed" : "[x] Denied");
-      setPendingRelay(null);
-      setStatusText("Streaming...");
+      setConversation((s) =>
+        reduceConversation(s, {
+          type: "relay_resolved",
+          relayId: relay.relayId,
+          tool: relay.tool,
+          approved,
+        }),
+      );
+      setStatusText(approved ? "Allowed - streaming..." : "Denied - streaming...");
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      addMessage("system", `[error] Failed to resolve relay: ${errorMsg}`);
+      setStatusText(`[error] Failed to resolve relay: ${errorMsg}`);
     }
   }
 
   // Stream chat from the server using SSE transport
   async function streamChat(userMessages: Array<{ role: string; content: string }>) {
-    const state = { currentMsgId: null as string | null, isReasoning: false };
+    setConversation((s) => reduceConversation(s, { type: "stream_start", runId: "current" }));
 
-    for await (const event of sseTransport.stream({ model: MODEL, messages: userMessages })) {
-      handleEvent(event, state);
+    try {
+      for await (const event of sseTransport.stream({ model: MODEL, messages: userMessages })) {
+        setConversation((s) => reduceConversation(s, event));
+      }
+    } finally {
+      setConversation((s) => reduceConversation(s, { type: "stream_end", runId: "current" }));
     }
   }
 
@@ -234,8 +194,8 @@ function ChatApp() {
     setInputValue("");
 
     // Handle permission response if pending
-    const permission = pendingRelay();
-    if (permission) {
+    const relay = pendingRelay();
+    if (relay) {
       const normalized = userInput.toLowerCase();
       const isApprove = ["y", "yes", "allow", "a"].includes(normalized);
       const isDeny = ["n", "no", "deny", "d"].includes(normalized);
@@ -245,32 +205,32 @@ function ChatApp() {
         return;
       }
       // Invalid response, prompt again
-      addMessage("system", "[!] Please enter 'y' to allow or 'n' to deny.");
+      setStatusText("[!] Please enter 'y' to allow or 'n' to deny.");
       return;
     }
 
     if (isStreaming()) return;
 
-    // Add user message to display
-    addMessage("user", userInput);
+    // Add user message to conversation graph
+    setConversation((s) =>
+      reduceConversation(s, { type: "user", runId: nextUserId(), content: userInput }),
+    );
 
     // Start streaming
-    setIsStreaming(true);
     setStatusText("Streaming...");
 
-    // Build messages array for API (excluding system messages and reasoning)
-    const apiMessages = messages()
-      .filter((m) => m.role !== "system" && !m.isReasoning)
-      .map((m) => ({ role: m.role, content: m.content }));
+    // Build messages array for API from the graph
+    const apiMessages = buildApiMessages(conversation().graph);
 
     try {
       await streamChat(apiMessages);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      addMessage("system", `[error] ${errorMsg}`);
+      setStatusText(`[error] ${errorMsg}`);
     } finally {
-      setIsStreaming(false);
-      setStatusText(`Connected to ${SERVER_URL}`);
+      if (!pendingRelay()) {
+        setStatusText(`Connected to ${SERVER_URL}`);
+      }
     }
   }
 
@@ -291,7 +251,25 @@ function ChatApp() {
       {/* Messages */}
       <box flexGrow={1} border borderStyle="single" borderColor="#6b7280">
         <scrollbox width="100%" height="100%" scrollY stickyScroll stickyStart="bottom">
-          <For each={messages()}>{(msg) => <MessageView message={msg} />}</For>
+          <Show when={roots().length === 0}>
+            <text wrapMode="word">Welcome! Type a message and press Enter to start chatting.</text>
+          </Show>
+          <For each={roots()}>
+            {(runId) => <NodeView graph={conversation().graph} runId={runId} />}
+          </For>
+          <Show when={pendingRelay() !== null}>
+            {(() => {
+              const relay = pendingRelay()!;
+              const paramsStr = JSON.stringify(relay.params, null, 2);
+              return (
+                <box marginTop={1}>
+                  <text wrapMode="word" fg="yellow">
+                    {`[!] Permission Required\n   Tool: ${relay.tool}\n   Params: ${paramsStr}\n   Enter 'y' to allow, 'n' to deny`}
+                  </text>
+                </box>
+              );
+            })()}
+          </Show>
         </scrollbox>
       </box>
 
