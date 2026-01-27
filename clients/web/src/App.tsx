@@ -10,7 +10,7 @@ import {
   getContentBlocks,
   getRole,
 } from "../../../packages/ai/client";
-import { createInitialState, reduceConversation } from "./state/conversation";
+import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
 import type { ConversationState, Message, Permissions } from "./types";
 
 const MODEL = "nvidia/nemotron-nano-9b-v2:free";
@@ -24,7 +24,7 @@ function nextUserId(): string {
 }
 
 export default function App() {
-  const [state, setState] = useState<ConversationState>(createInitialState);
+  const [state, setState] = useState<ConversationState>(createInitialConversation);
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);

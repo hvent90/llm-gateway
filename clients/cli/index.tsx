@@ -86,15 +86,30 @@ function BlockView(props: { block: ContentBlock; isUser: boolean }) {
   );
 }
 
+// Extract error messages from a graph node's events
+function getErrorMessages(graph: ConversationState["graph"], runId: string): string[] {
+  const node = graph.nodes.get(runId);
+  if (!node) return [];
+  return node.events.filter((e) => e.type === "error").map((e) => e.message);
+}
+
 // Recursive node renderer — walks the conversation graph
 function NodeView(props: { graph: ConversationState["graph"]; runId: string }) {
   const role = () => getRole(props.graph, props.runId);
   const blocks = () => getContentBlocks(props.graph, props.runId);
   const children = () => getChildren(props.graph, props.runId);
+  const errors = () => getErrorMessages(props.graph, props.runId);
 
   return (
     <box marginTop={role() === "user" ? 1 : 0} marginBottom={role() === "user" ? 1 : 0}>
       <For each={blocks()}>{(block) => <BlockView block={block} isUser={role() === "user"} />}</For>
+      <For each={errors()}>
+        {(msg) => (
+          <text wrapMode="word" fg="red">
+            {`[error] ${msg}`}
+          </text>
+        )}
+      </For>
       <For each={children()}>{(childId) => <NodeView graph={props.graph} runId={childId} />}</For>
     </box>
   );
@@ -109,12 +124,25 @@ function buildApiMessages(
     for (const runId of runIds) {
       const role = getRole(graph, runId);
       const blocks = getContentBlocks(graph, runId);
-      const textContent = blocks
-        .filter((b) => b.type === "text")
-        .map((b) => b.content)
-        .join("");
-      if (textContent && role) {
-        messages.push({ role, content: textContent });
+
+      // Build content from all block types (text + tool calls)
+      const parts: string[] = [];
+      for (const b of blocks) {
+        if (b.type === "text") {
+          parts.push(b.content);
+        } else if (b.type === "tool_call") {
+          const inputStr = typeof b.input === "string" ? b.input : JSON.stringify(b.input);
+          parts.push(`[tool] ${b.name}: ${inputStr}`);
+          if (b.output !== undefined) {
+            parts.push(`   -> ${formatOutput(b.output)}`);
+          }
+        }
+        // Skip reasoning blocks — not sent to API
+      }
+
+      const content = parts.join("\n");
+      if (content && role) {
+        messages.push({ role, content });
       }
       traverse(getChildren(graph, runId));
     }
@@ -174,14 +202,15 @@ function ChatApp() {
 
   // Stream chat from the server using SSE transport
   async function streamChat(userMessages: Array<{ role: string; content: string }>) {
-    setConversation((s) => reduceConversation(s, { type: "stream_start", runId: "current" }));
+    const streamRunId = `stream-${Date.now()}`;
+    setConversation((s) => reduceConversation(s, { type: "stream_start", runId: streamRunId }));
 
     try {
       for await (const event of sseTransport.stream({ model: MODEL, messages: userMessages })) {
         setConversation((s) => reduceConversation(s, event));
       }
     } finally {
-      setConversation((s) => reduceConversation(s, { type: "stream_end", runId: "current" }));
+      setConversation((s) => reduceConversation(s, { type: "stream_end", runId: streamRunId }));
     }
   }
 
