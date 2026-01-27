@@ -1,7 +1,7 @@
-import type { PermissionRequest } from "../types";
+import type { RelayRequest } from "../types";
 
 interface PermissionPromptProps {
-  request: PermissionRequest;
+  request: RelayRequest;
   onAllow: () => void;
   onAllowAll: () => void;
   onDeny: () => void;

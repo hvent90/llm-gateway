@@ -4,37 +4,8 @@ export interface Message {
   content: string;
 }
 
-// Server event types
-export type ServerEvent =
-  | { type: "connected"; sessionId: string }
-  | { type: "text"; runId: string; id: string; parentId?: string; content: string }
-  | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
-  | {
-      type: "tool_call";
-      runId: string;
-      id: string;
-      parentId?: string;
-      name: string;
-      input: unknown;
-    }
-  | {
-      type: "tool_result";
-      runId: string;
-      id: string;
-      parentId?: string;
-      name: string;
-      output: unknown;
-    }
-  | { type: "error"; runId: string; parentId?: string; message: string }
-  | {
-      type: "permission_required";
-      runId: string;
-      id: string;
-      parentId?: string;
-      toolCallId: string;
-      tool: string;
-      params: Record<string, unknown>;
-    };
+// Server event types — re-exported from library
+export type { ServerEvent } from "../../../packages/ai/client/server-event";
 
 // Tool call display
 export interface ToolCall {
@@ -59,8 +30,9 @@ export interface MessageNode {
   children: MessageNode[];
 }
 
-// Permission request
-export interface PermissionRequest {
+// Relay request (pending relay requiring user input)
+export interface RelayRequest {
+  relayId: string;
   toolCallId: string;
   tool: string;
   params: Record<string, unknown>;
@@ -83,6 +55,6 @@ export interface ConversationState {
   sessionId: string | null;
   messages: MessageNode[];
   isStreaming: boolean;
-  pendingPermission: PermissionRequest | null;
+  pendingRelay: RelayRequest | null;
   grantedTools: Set<string>;
 }

@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import { PermissionPrompt } from "./components/PermissionPrompt";
-import { streamChat, resolvePermission } from "./services/chat";
+import { createSSETransport, createHTTPTransport } from "../../../packages/ai/client";
 import {
   createInitialState,
   addUserMessage,
@@ -12,6 +12,9 @@ import {
 import type { ConversationState, Message, Permissions } from "./types";
 
 const MODEL = "nvidia/nemotron-nano-9b-v2:free";
+
+const sseTransport = createSSETransport({ baseUrl: "" });
+const httpTransport = createHTTPTransport({ baseUrl: "" });
 
 export default function App() {
   const [state, setState] = useState<ConversationState>(createInitialState);
@@ -42,13 +45,16 @@ export default function App() {
 
   // Core streaming function - can be called with different permissions
   const sendChat = useCallback(async (messages: Message[], permissions: Permissions) => {
-    setState((s) => ({ ...s, isStreaming: true, pendingPermission: null }));
+    setState((s) => ({ ...s, isStreaming: true, pendingRelay: null }));
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
     try {
-      const stream = streamChat({ model: MODEL, messages, permissions }, controller.signal);
+      const stream = sseTransport.stream(
+        { model: MODEL, messages, permissions },
+        controller.signal,
+      );
 
       for await (const event of stream) {
         console.log("Received event:", event.type, event);
@@ -85,46 +91,48 @@ export default function App() {
   );
 
   const handleAllow = useCallback(async () => {
-    if (!state.pendingPermission || !state.sessionId) return;
+    if (!state.pendingRelay || !state.sessionId) return;
 
-    // Clear pending permission immediately
-    setState((s) => ({ ...s, pendingPermission: null }));
+    const relayId = state.pendingRelay.relayId;
 
-    // Resolve permission - stream continues automatically
-    await resolvePermission(state.sessionId, state.pendingPermission.toolCallId, true);
-  }, [state.sessionId, state.pendingPermission]);
+    // Clear pending relay immediately
+    setState((s) => ({ ...s, pendingRelay: null }));
+
+    // Resolve relay - stream continues automatically
+    await httpTransport.resolveRelay(state.sessionId, relayId, { approved: true });
+  }, [state.sessionId, state.pendingRelay]);
 
   const handleAllowAll = useCallback(async () => {
-    if (!state.pendingPermission || !state.sessionId) return;
+    if (!state.pendingRelay || !state.sessionId) return;
 
-    const tool = state.pendingPermission.tool;
-    const toolCallId = state.pendingPermission.toolCallId;
+    const tool = state.pendingRelay.tool;
+    const relayId = state.pendingRelay.relayId;
 
-    // Add to granted tools and clear pending permission
+    // Add to granted tools and clear pending relay
     setState((s) => ({
       ...s,
       grantedTools: new Set([...s.grantedTools, tool]),
-      pendingPermission: null,
+      pendingRelay: null,
     }));
 
-    // Resolve permission - stream continues automatically
-    await resolvePermission(state.sessionId, toolCallId, true);
-  }, [state.sessionId, state.pendingPermission]);
+    // Resolve relay - stream continues automatically
+    await httpTransport.resolveRelay(state.sessionId, relayId, { approved: true });
+  }, [state.sessionId, state.pendingRelay]);
 
   const handleDeny = useCallback(async () => {
-    if (!state.pendingPermission || !state.sessionId) return;
+    if (!state.pendingRelay || !state.sessionId) return;
 
-    // Clear pending permission immediately
-    setState((s) => ({ ...s, pendingPermission: null }));
+    const relayId = state.pendingRelay.relayId;
 
-    // Resolve permission with denial - stream continues automatically
-    await resolvePermission(
-      state.sessionId,
-      state.pendingPermission.toolCallId,
-      false,
-      "User denied",
-    );
-  }, [state.sessionId, state.pendingPermission]);
+    // Clear pending relay immediately
+    setState((s) => ({ ...s, pendingRelay: null }));
+
+    // Resolve relay with denial - stream continues automatically
+    await httpTransport.resolveRelay(state.sessionId, relayId, {
+      approved: false,
+      reason: "User denied",
+    });
+  }, [state.sessionId, state.pendingRelay]);
 
   return (
     <div className="flex h-dvh flex-col bg-gray-900 text-gray-100">
@@ -133,9 +141,9 @@ export default function App() {
       </header>
       <main className="flex-1 overflow-auto p-3 sm:p-4">
         <ConversationThread messages={state.messages} />
-        {state.pendingPermission && (
+        {state.pendingRelay && (
           <PermissionPrompt
-            request={state.pendingPermission}
+            request={state.pendingRelay}
             onAllow={handleAllow}
             onAllowAll={handleAllowAll}
             onDeny={handleDeny}
@@ -144,7 +152,7 @@ export default function App() {
       </main>
       <InputArea
         onSubmit={handleSubmit}
-        disabled={state.isStreaming || state.pendingPermission !== null}
+        disabled={state.isStreaming || state.pendingRelay !== null}
       />
     </div>
   );

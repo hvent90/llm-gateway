@@ -6,7 +6,7 @@ export function createInitialState(): ConversationState {
     sessionId: null,
     messages: [],
     isStreaming: false,
-    pendingPermission: null,
+    pendingRelay: null,
     grantedTools: new Set(),
   };
 }
@@ -182,10 +182,11 @@ export function handleEvent(state: ConversationState, event: ServerEvent): Conve
       };
     }
 
-    case "permission_required": {
+    case "relay": {
       return {
         ...state,
-        pendingPermission: {
+        pendingRelay: {
+          relayId: event.id,
           toolCallId: event.toolCallId,
           tool: event.tool,
           params: event.params,
