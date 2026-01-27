@@ -97,7 +97,7 @@ describe("AgentOrchestrator", () => {
 
   describe("events() and permission handling", () => {
     it(
-      "strips respond callback from permission_required events",
+      "strips respond callback from relay events",
       async () => {
         const greetSchema = z.object({ name: z.string() });
         const greetTool: ToolDefinition<typeof greetSchema, string> = {
@@ -122,26 +122,26 @@ describe("AgentOrchestrator", () => {
 
         const iterator = orchestrator.events()[Symbol.asyncIterator]();
 
-        // Find the permission_required event
-        let permissionEvent: ConsumerHarnessEvent | undefined;
+        // Find the relay event
+        let relayEvent: ConsumerHarnessEvent | undefined;
         while (true) {
           const { done, value } = await iterator.next();
           if (done) break;
-          if (value.event.type === "permission_required") {
-            permissionEvent = value.event;
+          if (value.event.type === "relay") {
+            relayEvent = value.event;
             break;
           }
         }
 
-        expect(permissionEvent).toBeDefined();
-        expect(permissionEvent!.type).toBe("permission_required");
+        expect(relayEvent).toBeDefined();
+        expect(relayEvent!.type).toBe("relay");
         // The respond callback should be stripped
-        expect("respond" in permissionEvent!).toBe(false);
+        expect("respond" in relayEvent!).toBe(false);
 
-        if (permissionEvent!.type === "permission_required") {
-          expect(permissionEvent!.tool).toBe("greet");
+        if (relayEvent!.type === "relay") {
+          expect(relayEvent!.tool).toBe("greet");
           // Resolve to let agent complete
-          orchestrator.resolvePermission(permissionEvent!.toolCallId, true);
+          orchestrator.resolveRelay(relayEvent!.id, { approved: true });
         }
 
         // Drain remaining events
@@ -151,7 +151,7 @@ describe("AgentOrchestrator", () => {
     );
 
     it(
-      "pauses the agent when permission_required is yielded until resolved",
+      "pauses the agent when relay is yielded until resolved",
       async () => {
         const echoSchema = z.object({ message: z.string() });
         const echoTool: ToolDefinition<typeof echoSchema, string> = {
@@ -175,19 +175,19 @@ describe("AgentOrchestrator", () => {
         });
 
         const events: ConsumerHarnessEvent[] = [];
-        let permissionToolCallId: string | undefined;
+        let relayId: string | undefined;
 
         for await (const { event } of orchestrator.events()) {
           events.push(event);
-          if (event.type === "permission_required") {
-            permissionToolCallId = event.toolCallId;
+          if (event.type === "relay") {
+            relayId = event.id;
             // Resolve permission to continue
-            orchestrator.resolvePermission(permissionToolCallId, true);
+            orchestrator.resolveRelay(relayId, { approved: true });
           }
         }
 
-        // Should have permission_required event
-        expect(events.some((e) => e.type === "permission_required")).toBe(true);
+        // Should have relay event
+        expect(events.some((e) => e.type === "relay")).toBe(true);
 
         // After approval, should have tool_call and tool_result
         expect(events.some((e) => e.type === "tool_call")).toBe(true);
@@ -217,13 +217,13 @@ describe("AgentOrchestrator", () => {
         expect(textEvents.length).toBeGreaterThan(0);
 
         // No permission events (no tools)
-        expect(events.some((e) => e.type === "permission_required")).toBe(false);
+        expect(events.some((e) => e.type === "relay")).toBe(false);
       },
       { timeout: 30000 },
     );
   });
 
-  describe("resolvePermission", () => {
+  describe("resolveRelay", () => {
     it(
       "approving permission allows tool execution",
       async () => {
@@ -251,8 +251,8 @@ describe("AgentOrchestrator", () => {
         const events: ConsumerHarnessEvent[] = [];
         for await (const { event } of orchestrator.events()) {
           events.push(event);
-          if (event.type === "permission_required") {
-            orchestrator.resolvePermission(event.toolCallId, true, "user approved");
+          if (event.type === "relay") {
+            orchestrator.resolveRelay(event.id, { approved: true, reason: "user approved" });
           }
         }
 
@@ -295,8 +295,8 @@ describe("AgentOrchestrator", () => {
         const events: ConsumerHarnessEvent[] = [];
         for await (const { event } of orchestrator.events()) {
           events.push(event);
-          if (event.type === "permission_required") {
-            orchestrator.resolvePermission(event.toolCallId, false, "too dangerous");
+          if (event.type === "relay") {
+            orchestrator.resolveRelay(event.id, { approved: false, reason: "too dangerous" });
           }
         }
 
@@ -312,11 +312,11 @@ describe("AgentOrchestrator", () => {
       { timeout: 60000 },
     );
 
-    it("returns false for unknown toolCallId", () => {
+    it("returns false for unknown relay id", () => {
       const harness = createAgentHarness({ harness: createGeneratorHarness() });
       const orchestrator = new AgentOrchestrator(harness);
 
-      const resolved = orchestrator.resolvePermission("nonexistent", true);
+      const resolved = orchestrator.resolveRelay("nonexistent", { approved: true });
       expect(resolved).toBe(false);
     });
 
@@ -345,25 +345,25 @@ describe("AgentOrchestrator", () => {
         });
 
         const iterator = orchestrator.events()[Symbol.asyncIterator]();
-        let toolCallId: string | undefined;
+        let relayId: string | undefined;
 
         // Find permission event
         while (true) {
           const { done, value } = await iterator.next();
           if (done) break;
-          if (value.event.type === "permission_required") {
-            toolCallId = value.event.toolCallId;
+          if (value.event.type === "relay") {
+            relayId = value.event.id;
             break;
           }
         }
 
-        expect(toolCallId).toBeDefined();
+        expect(relayId).toBeDefined();
 
         // First resolution should succeed
-        expect(orchestrator.resolvePermission(toolCallId!, true)).toBe(true);
+        expect(orchestrator.resolveRelay(relayId!, { approved: true })).toBe(true);
 
         // Second resolution should fail (already resolved)
-        expect(orchestrator.resolvePermission(toolCallId!, true)).toBe(false);
+        expect(orchestrator.resolveRelay(relayId!, { approved: true })).toBe(false);
 
         // Drain remaining events
         while (!(await iterator.next()).done) {}
@@ -401,7 +401,7 @@ describe("AgentOrchestrator", () => {
     );
 
     it(
-      "cleans up pending permissions for killed agent",
+      "cleans up pending relays for killed agent",
       async () => {
         const waitSchema = z.object({});
         const waitTool: ToolDefinition<typeof waitSchema, string> = {
@@ -425,25 +425,25 @@ describe("AgentOrchestrator", () => {
         });
 
         const iterator = orchestrator.events()[Symbol.asyncIterator]();
-        let toolCallId: string | undefined;
+        let relayId: string | undefined;
 
         // Find permission event
         while (true) {
           const { done, value } = await iterator.next();
           if (done) break;
-          if (value.event.type === "permission_required") {
-            toolCallId = value.event.toolCallId;
+          if (value.event.type === "relay") {
+            relayId = value.event.id;
             break;
           }
         }
 
-        expect(toolCallId).toBeDefined();
+        expect(relayId).toBeDefined();
 
         // Kill the agent
         orchestrator.kill(agentId);
 
         // Now resolving the permission should fail (cleaned up)
-        expect(orchestrator.resolvePermission(toolCallId!, true)).toBe(false);
+        expect(orchestrator.resolveRelay(relayId!, { approved: true })).toBe(false);
       },
       { timeout: 60000 },
     );
