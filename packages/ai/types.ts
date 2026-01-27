@@ -47,6 +47,22 @@ export interface Permissions {
   deny?: Array<{ toolCallId: string; reason?: string }>;
 }
 
+// Relay response types (one per relay kind)
+export type PermissionResponse = { approved: boolean; reason?: string };
+
+// Relay event — discriminated union on `kind`
+export type RelayEvent = {
+  type: "relay";
+  kind: "permission";
+  runId: string;
+  id: string;
+  parentId?: string;
+  toolCallId: string;
+  tool: string;
+  params: Record<string, unknown>;
+  respond: (response: PermissionResponse) => void;
+};
+
 // Events that a harness can yield during invocation
 export type HarnessEvent =
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
@@ -68,16 +84,7 @@ export type HarnessEvent =
       output: unknown;
     }
   | { type: "error"; runId: string; parentId?: string; error: Error }
-  | {
-      type: "permission_required";
-      runId: string;
-      id: string;
-      parentId?: string;
-      toolCallId: string;
-      tool: string;
-      params: Record<string, unknown>;
-      respond: (approved: boolean, reason?: string) => void;
-    };
+  | RelayEvent;
 
 // Parameters for invoking a harness
 export interface InvokeParams {
