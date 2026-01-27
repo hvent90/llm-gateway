@@ -75,17 +75,23 @@ export function findOrCreateAgentNode(
 
   // If parentId, find parent and add as child
   if (parentId) {
+    let parentFound = false;
     const addChild = (nodes: MessageNode[]): MessageNode[] =>
       nodes.map((node) => {
         if (node.id === parentId || hasToolCall(node, parentId)) {
+          parentFound = true;
           return { ...node, children: [...node.children, newNode] };
         }
         return { ...node, children: addChild(node.children) };
       });
-    return { messages: addChild(messages), node: newNode };
+    const updatedMessages = addChild(messages);
+    if (parentFound) {
+      return { messages: updatedMessages, node: newNode };
+    }
+    // Parent not found — fall back to root to avoid dropping the node
   }
 
-  // No parent, add to root
+  // No parent (or parent not found), add to root
   return { messages: [...messages, newNode], node: newNode };
 }
 
