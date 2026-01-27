@@ -11,3 +11,6 @@ export { createInitialConversation, reduceConversation } from "./conversation";
 export type { GraphState, GraphNode } from "./types";
 
 export type { UserMessage, ConversationState, ConversationEvent } from "./conversation";
+
+// Server event types
+export type { ServerEvent, StreamRequest } from "./server-event";
