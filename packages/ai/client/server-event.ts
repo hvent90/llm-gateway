@@ -10,12 +10,13 @@ import type { Permissions } from "../types";
  */
 export type ServerEvent =
   | { type: "connected"; sessionId: string }
-  | { type: "text"; id: string; runId: string; parentId?: string; content: string }
-  | { type: "reasoning"; id: string; runId: string; parentId?: string; content: string }
+  | { type: "text"; id: string; runId: string; agentId: string; parentId?: string; content: string }
+  | { type: "reasoning"; id: string; runId: string; agentId: string; parentId?: string; content: string }
   | {
       type: "tool_call";
       id: string;
       runId: string;
+      agentId: string;
       parentId?: string;
       name: string;
       input: unknown;
@@ -24,19 +25,23 @@ export type ServerEvent =
       type: "tool_result";
       id: string;
       runId: string;
+      agentId: string;
       parentId?: string;
       name: string;
       output: unknown;
     }
   | {
       type: "relay";
+      kind: "permission";
       id: string;
       runId: string;
+      agentId: string;
       parentId?: string;
-      kind: string;
-      [key: string]: unknown;
+      toolCallId: string;
+      tool: string;
+      params: Record<string, unknown>;
     }
-  | { type: "error"; runId: string; parentId?: string; message: string };
+  | { type: "error"; runId: string; agentId: string; parentId?: string; message: string };
 
 /**
  * Request body for initiating a chat stream.

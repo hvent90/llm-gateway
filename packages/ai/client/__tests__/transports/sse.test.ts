@@ -40,7 +40,7 @@ describe("SSE Transport", () => {
   test("yields parsed ServerEvents from SSE stream", async () => {
     restore = mockFetch([
       'data: {"type":"connected","sessionId":"s1"}\n\n',
-      'data: {"type":"text","id":"e1","runId":"r1","content":"hello"}\n\n',
+      'data: {"type":"text","id":"e1","runId":"r1","agentId":"a1","content":"hello"}\n\n',
     ]);
 
     const transport = createSSETransport({ baseUrl: "http://test" });
@@ -51,11 +51,11 @@ describe("SSE Transport", () => {
 
     expect(events).toHaveLength(2);
     expect(events[0]).toEqual({ type: "connected", sessionId: "s1" });
-    expect(events[1]).toEqual({ type: "text", id: "e1", runId: "r1", content: "hello" });
+    expect(events[1]).toEqual({ type: "text", id: "e1", runId: "r1", agentId: "a1", content: "hello" });
   });
 
   test("handles chunked SSE data split across reads", async () => {
-    restore = mockFetch(['data: {"type":"text","id":"e1","runId":"r1",', '"content":"split"}\n\n']);
+    restore = mockFetch(['data: {"type":"text","id":"e1","runId":"r1","agentId":"a1",', '"content":"split"}\n\n']);
 
     const transport = createSSETransport({ baseUrl: "http://test" });
     const events = [];
@@ -64,13 +64,13 @@ describe("SSE Transport", () => {
     }
 
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({ type: "text", id: "e1", runId: "r1", content: "split" });
+    expect(events[0]).toEqual({ type: "text", id: "e1", runId: "r1", agentId: "a1", content: "split" });
   });
 
   test("skips invalid JSON in SSE data", async () => {
     restore = mockFetch([
       "data: not-json\n\n",
-      'data: {"type":"text","id":"e1","runId":"r1","content":"ok"}\n\n',
+      'data: {"type":"text","id":"e1","runId":"r1","agentId":"a1","content":"ok"}\n\n',
     ]);
 
     const transport = createSSETransport({ baseUrl: "http://test" });
