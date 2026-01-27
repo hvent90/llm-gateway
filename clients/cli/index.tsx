@@ -67,9 +67,9 @@ function MessageView(props: { message: Message }) {
 function ChatApp() {
   const renderer = useRenderer();
 
-  // Start the render loop - required for SSH/remote terminals
+  // Use auto mode - renders on-demand when state changes, not continuously
   onMount(() => {
-    renderer.start();
+    renderer.auto();
   });
 
   const [messages, setMessages] = createSignal<Message[]>([
