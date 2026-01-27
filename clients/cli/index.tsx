@@ -9,10 +9,15 @@
 import { render, useRenderer } from "@opentui/solid";
 import { createTextAttributes } from "@opentui/core";
 import { createSignal, For, Show, onMount } from "solid-js";
+import { createSSETransport, createHTTPTransport } from "../../packages/ai/client";
+import type { ServerEvent } from "../../packages/ai/client/server-event";
 
 // Configuration from environment
 const MODEL = process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
 const SERVER_URL = process.env.LLM_GATEWAY_URL ?? "http://localhost:4000";
+
+const sseTransport = createSSETransport({ baseUrl: SERVER_URL });
+const httpTransport = createHTTPTransport({ baseUrl: SERVER_URL });
 
 // Message types
 interface Message {
@@ -20,29 +25,6 @@ interface Message {
   role: "user" | "assistant" | "system";
   content: string;
   isReasoning?: boolean;
-}
-
-// Server event types
-type ServerEvent =
-  | { type: "connected"; sessionId: string }
-  | { type: "text"; runId: string; id: string; content: string }
-  | { type: "reasoning"; runId: string; id: string; content: string }
-  | { type: "tool_call"; runId: string; id: string; name: string; input: unknown }
-  | { type: "tool_result"; runId: string; id: string; output: unknown }
-  | {
-      type: "permission_required";
-      runId: string;
-      toolCallId: string;
-      tool: string;
-      params: Record<string, unknown>;
-    }
-  | { type: "error"; runId: string; message: string };
-
-// Permission request
-interface PermissionRequest {
-  toolCallId: string;
-  tool: string;
-  params: Record<string, unknown>;
 }
 
 // Generate unique IDs
@@ -101,7 +83,12 @@ function ChatApp() {
   const [inputValue, setInputValue] = createSignal("");
   const [statusText, setStatusText] = createSignal(`Connected to ${SERVER_URL}`);
   const [sessionId, setSessionId] = createSignal<string | null>(null);
-  const [pendingPermission, setPendingPermission] = createSignal<PermissionRequest | null>(null);
+  const [pendingRelay, setPendingRelay] = createSignal<{
+    relayId: string;
+    toolCallId: string;
+    tool: string;
+    params: Record<string, unknown>;
+  } | null>(null);
 
   // Format tool output for display
   function formatOutput(output: unknown): string {
@@ -123,45 +110,6 @@ function ChatApp() {
     setMessages((prev) =>
       prev.map((m) => (m.id === id ? { ...m, content: m.content + content } : m)),
     );
-  }
-
-  // Parse SSE format from buffer
-  function parseSSE(buffer: string): { parsed: ServerEvent[]; remaining: string } {
-    const parsed: ServerEvent[] = [];
-    const lines = buffer.split("\n");
-    let data = "";
-    let remaining = "";
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!;
-
-      // Check if we have an incomplete event at the end
-      if (i === lines.length - 1 && line !== "") {
-        remaining = line;
-        continue;
-      }
-
-      if (line.startsWith("event: ")) {
-        // Event type line - just consume it
-      } else if (line.startsWith("data: ")) {
-        data = line.slice(6);
-      } else if (line === "" && data) {
-        try {
-          const event = JSON.parse(data) as ServerEvent;
-          parsed.push(event);
-        } catch {
-          // Skip invalid JSON
-        }
-        data = "";
-      }
-    }
-
-    // If we have partial data at the end, keep it
-    if (data) {
-      remaining = `data: ${data}\n`;
-    }
-
-    return { parsed, remaining };
   }
 
   // Handle a parsed server event
@@ -214,15 +162,16 @@ function ChatApp() {
         break;
       }
 
-      case "permission_required":
+      case "relay":
         state.currentMsgId = null;
         state.isReasoning = false;
-        setPendingPermission({
+        setPendingRelay({
+          relayId: event.id,
           toolCallId: event.toolCallId,
           tool: event.tool,
           params: event.params,
         });
-        showPermissionPrompt(event.tool, event.params);
+        showRelayPrompt(event.tool, event.params);
         break;
 
       case "error":
@@ -234,7 +183,7 @@ function ChatApp() {
   }
 
   // Show permission prompt
-  function showPermissionPrompt(tool: string, params: Record<string, unknown>) {
+  function showRelayPrompt(tool: string, params: Record<string, unknown>) {
     const paramsStr = JSON.stringify(params, null, 2);
     addMessage(
       "system",
@@ -243,83 +192,36 @@ function ChatApp() {
     setStatusText("[!] Permission required - awaiting response");
   }
 
-  // Resolve a pending permission request
-  async function resolvePermission(approved: boolean) {
-    const permission = pendingPermission();
+  // Resolve a pending relay request
+  async function resolveRelay(approved: boolean) {
+    const relay = pendingRelay();
     const session = sessionId();
-    if (!permission || !session) {
-      addMessage("system", "[error] No pending permission or session");
+    if (!relay || !session) {
+      addMessage("system", "[error] No pending relay or session");
       return;
     }
 
-    const { toolCallId } = permission;
-    const reason = approved ? undefined : "User denied";
-
     try {
-      const response = await fetch(`${SERVER_URL}/chat/permission/${toolCallId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: session,
-          approved,
-          reason,
-        }),
+      await httpTransport.resolveRelay(session, relay.relayId, {
+        approved,
+        reason: approved ? undefined : "User denied",
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
       addMessage("system", approved ? "[ok] Allowed" : "[x] Denied");
-      setPendingPermission(null);
+      setPendingRelay(null);
       setStatusText("Streaming...");
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      addMessage("system", `[error] Failed to resolve permission: ${errorMsg}`);
+      addMessage("system", `[error] Failed to resolve relay: ${errorMsg}`);
     }
   }
 
-  // Stream chat from the server using SSE
+  // Stream chat from the server using SSE transport
   async function streamChat(userMessages: Array<{ role: string; content: string }>) {
-    const response = await fetch(`${SERVER_URL}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: userMessages,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    if (!response.body) {
-      throw new Error("No response body");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     const state = { currentMsgId: null as string | null, isReasoning: false };
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        // Parse SSE events
-        const events = parseSSE(buffer);
-        buffer = events.remaining;
-
-        for (const event of events.parsed) {
-          handleEvent(event, state);
-        }
-      }
-    } finally {
-      reader.releaseLock();
+    for await (const event of sseTransport.stream({ model: MODEL, messages: userMessages })) {
+      handleEvent(event, state);
     }
   }
 
@@ -332,14 +234,14 @@ function ChatApp() {
     setInputValue("");
 
     // Handle permission response if pending
-    const permission = pendingPermission();
+    const permission = pendingRelay();
     if (permission) {
       const normalized = userInput.toLowerCase();
       const isApprove = ["y", "yes", "allow", "a"].includes(normalized);
       const isDeny = ["n", "no", "deny", "d"].includes(normalized);
 
       if (isApprove || isDeny) {
-        await resolvePermission(isApprove);
+        await resolveRelay(isApprove);
         return;
       }
       // Invalid response, prompt again
