@@ -33,8 +33,12 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
       const myRunId = uuidv7();
       const parentId = params.context?.parentId;
 
-      const tag = <T extends object>(event: T): T & { parentId?: string } =>
-        parentId ? { ...event, parentId } : event;
+      const tag = <T extends { runId: string }>(event: T): T & { parentId?: string } => {
+        const tagged = { ...event, runId: myRunId };
+        if (parentId) (tagged as T & { parentId?: string }).parentId = parentId;
+        else delete (tagged as T & { parentId?: string }).parentId;
+        return tagged;
+      };
 
       // Mutable messages array for the agent loop
       const messages: Message[] = [...params.messages];
