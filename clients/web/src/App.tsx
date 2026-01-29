@@ -14,7 +14,7 @@ import { reduceConversation, createInitialConversation } from "../../../packages
 import type { ConversationState, Message, PendingRelay, Permissions } from "./types";
 
 declare const __LLM_MODEL__: string | undefined;
-const MODEL = __LLM_MODEL__ ?? "big-pickle";
+const MODEL = __LLM_MODEL__ ?? "kimi-k2.5";
 
 const sseTransport = createSSETransport({ baseUrl: "" });
 const httpTransport = createHTTPTransport({ baseUrl: "" });

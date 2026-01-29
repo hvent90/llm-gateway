@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { v7 } from "uuid";
 import { AgentOrchestrator, type ConsumerHarnessEvent } from "../packages/ai/orchestrator.ts";
-import { bashTool } from "../packages/ai/tools";
+import { agentTool, bashTool } from "../packages/ai/tools";
 import type {
   GeneratorHarnessModule,
   Message,
@@ -42,7 +42,7 @@ function serializeEvent(event: ConsumerHarnessEvent, agentId: string): object {
 
 export function createApp(config?: AppConfig): Hono {
   const app = new Hono();
-  const tools = config?.tools ?? [bashTool];
+  const tools = config?.tools ?? [agentTool, bashTool];
 
   // Per-app orchestrator map for isolation
   const orchestrators = new Map<string, AgentOrchestrator>();
