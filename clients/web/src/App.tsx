@@ -26,6 +26,7 @@ function nextUserId(): string {
 
 export default function App() {
   const [state, setState] = useState<ConversationState>(createInitialConversation);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -70,6 +71,7 @@ export default function App() {
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
         console.error("Stream error:", error);
+        setStreamError(error instanceof Error ? error.message : "Connection failed");
       }
     } finally {
       setState((s) => reduceConversation(s, { type: "stream_end" }));
@@ -79,6 +81,7 @@ export default function App() {
 
   const handleSubmit = useCallback(
     async (content: string) => {
+      setStreamError(null);
       const userId = nextUserId();
 
       // Add user message to state
@@ -191,6 +194,11 @@ export default function App() {
           permissionHandlers={permissionHandlers}
           activeStreams={state.activeStreams}
         />
+        {streamError && (
+          <div className="mt-4 rounded border border-red-600 bg-red-900/20 p-3 text-sm text-red-400">
+            Connection error: {streamError}
+          </div>
+        )}
       </main>
       <InputArea
         onSubmit={handleSubmit}
