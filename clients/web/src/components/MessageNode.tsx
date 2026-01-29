@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { getContentBlocks, getChildren, getRole } from "../../../../packages/ai/client";
 import type { ContentBlock, GraphState, PendingRelay } from "../types";
 import { PermissionPrompt } from "./PermissionPrompt";
@@ -12,7 +13,26 @@ interface MessageNodeProps {
   activeStreams: Set<string>;
 }
 
-function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: "tool_call" }> }) {
+interface ToolCallBlockProps {
+  block: Extract<ContentBlock, { type: "tool_call" }>;
+  graph: GraphState;
+  depth: number;
+  pendingRelays: PendingRelay[];
+  permissionHandlers: PermissionHandlers;
+  activeStreams: Set<string>;
+}
+
+function ToolCallBlock({
+  block,
+  graph,
+  depth,
+  pendingRelays,
+  permissionHandlers,
+  activeStreams,
+}: ToolCallBlockProps) {
+  const [expanded, setExpanded] = useState(true);
+  const blockChildren = getChildren(graph, block.id);
+
   const inputStr =
     typeof block.input === "string" ? block.input : JSON.stringify(block.input, null, 2);
 
@@ -33,11 +53,56 @@ function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: "tool_c
           <pre className="whitespace-pre-wrap break-words text-gray-300">{outputStr}</pre>
         </div>
       )}
+      {blockChildren.length > 0 && (
+        <div className="mt-2 border-t border-gray-700 pt-2">
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="mb-1 text-xs text-gray-400 hover:text-gray-200"
+          >
+            {expanded ? "▼" : "▶"} {blockChildren.length} child
+            {blockChildren.length > 1 ? "ren" : ""}
+          </button>
+          {expanded && (
+            <div className="border-l-2 border-gray-700 pl-2 sm:pl-4">
+              {blockChildren.map((childId) => (
+                <MessageNode
+                  key={childId}
+                  graph={graph}
+                  runId={childId}
+                  depth={depth + 1}
+                  pendingRelays={pendingRelays}
+                  permissionHandlers={permissionHandlers}
+                  activeStreams={activeStreams}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function ContentBlockView({ block, index }: { block: ContentBlock; index: number }) {
+interface ContentBlockViewProps {
+  block: ContentBlock;
+  index: number;
+  graph: GraphState;
+  depth: number;
+  pendingRelays: PendingRelay[];
+  permissionHandlers: PermissionHandlers;
+  activeStreams: Set<string>;
+}
+
+function ContentBlockView({
+  block,
+  index,
+  graph,
+  depth,
+  pendingRelays,
+  permissionHandlers,
+  activeStreams,
+}: ContentBlockViewProps) {
   switch (block.type) {
     case "reasoning":
       return (
@@ -46,7 +111,17 @@ function ContentBlockView({ block, index }: { block: ContentBlock; index: number
         </div>
       );
     case "tool_call":
-      return <ToolCallBlock key={block.id} block={block} />;
+      return (
+        <ToolCallBlock
+          key={block.id}
+          block={block}
+          graph={graph}
+          depth={depth}
+          pendingRelays={pendingRelays}
+          permissionHandlers={permissionHandlers}
+          activeStreams={activeStreams}
+        />
+      );
     case "text":
       return (
         <div key={index} className="mt-1 whitespace-pre-wrap text-gray-200">
@@ -81,13 +156,27 @@ export function MessageNode({
   const indent = indentClasses[Math.min(depth, 4)] ?? "ml-16";
   const nodeRelays = pendingRelays.filter((r) => r.runId === runId);
 
+  const isStreaming = activeStreams.has(runId);
+
   return (
     <div className={`${indent} mb-4`}>
       <div className={`font-medium ${isUser ? "text-blue-400" : "text-green-400"}`}>
         {isUser ? "You" : `Agent-${runId.slice(0, 8)}`}
+        {isStreaming && (
+          <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
+        )}
       </div>
       {blocks.map((block, index) => (
-        <ContentBlockView key={index} block={block} index={index} />
+        <ContentBlockView
+          key={index}
+          block={block}
+          index={index}
+          graph={graph}
+          depth={depth}
+          pendingRelays={pendingRelays}
+          permissionHandlers={permissionHandlers}
+          activeStreams={activeStreams}
+        />
       ))}
       {nodeRelays.map((relay) => (
         <PermissionPrompt
