@@ -1,5 +1,11 @@
-import { useState } from "react";
-import { getContentBlocks, getChildren, getRole } from "../../../../packages/ai/client";
+import { useState, useRef, useEffect } from "react";
+import {
+  getContentBlocks,
+  getChildren,
+  getRole,
+  getUsage,
+  getToolCallCount,
+} from "../../../../packages/ai/client";
 import type { ContentBlock, GraphState, PendingRelay } from "../types";
 import { PermissionPrompt } from "./PermissionPrompt";
 import type { PermissionHandlers } from "./ConversationThread";
@@ -30,8 +36,16 @@ function ToolCallBlock({
   permissionHandlers,
   activeStreams,
 }: ToolCallBlockProps) {
-  const [expanded, setExpanded] = useState(true);
+  const [userExpanded, setUserExpanded] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const blockChildren = getChildren(graph, block.id);
+  const childrenStreaming = blockChildren.some((childId) => activeStreams.has(childId));
+
+  useEffect(() => {
+    if (!userExpanded && childrenStreaming) {
+      containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight });
+    }
+  });
 
   const inputStr =
     typeof block.input === "string" ? block.input : JSON.stringify(block.input, null, 2);
@@ -43,9 +57,41 @@ function ToolCallBlock({
         : JSON.stringify(block.output, null, 2)
       : null;
 
+  const totalToolCalls = blockChildren.reduce(
+    (sum, childId) => sum + getToolCallCount(graph, childId),
+    0,
+  );
+  const totalTokens = blockChildren.reduce((sum, childId) => {
+    const usage = getUsage(graph, childId);
+    return sum + usage.inputTokens + usage.outputTokens;
+  }, 0);
+
+  const childNodes = blockChildren.map((childId) => (
+    <MessageNode
+      key={childId}
+      graph={graph}
+      runId={childId}
+      depth={depth + 1}
+      pendingRelays={pendingRelays}
+      permissionHandlers={permissionHandlers}
+      activeStreams={activeStreams}
+    />
+  ));
+
   return (
     <div className="my-2 rounded border border-gray-700 bg-gray-800 p-2 text-sm">
-      <div className="font-mono text-yellow-400">🔧 {block.name}</div>
+      <div className="flex items-center justify-between font-mono text-yellow-400">
+        <span>🔧 {block.name}</span>
+        {blockChildren.length > 0 && userExpanded && (
+          <button
+            type="button"
+            onClick={() => setUserExpanded(false)}
+            className="text-xs text-gray-400 hover:text-gray-200"
+          >
+            Collapse
+          </button>
+        )}
+      </div>
       <pre className="mt-1 whitespace-pre-wrap break-words text-gray-400">{inputStr}</pre>
       {outputStr && (
         <div className="mt-2 border-t border-gray-700 pt-2">
@@ -55,28 +101,32 @@ function ToolCallBlock({
       )}
       {blockChildren.length > 0 && (
         <div className="mt-2 border-t border-gray-700 pt-2">
-          <button
-            type="button"
-            onClick={() => setExpanded(!expanded)}
-            className="mb-1 text-xs text-gray-400 hover:text-gray-200"
-          >
-            {expanded ? "▼" : "▶"} {blockChildren.length} child
-            {blockChildren.length > 1 ? "ren" : ""}
-          </button>
-          {expanded && (
-            <div className="border-l-2 border-gray-700 pl-2 sm:pl-4">
-              {blockChildren.map((childId) => (
-                <MessageNode
-                  key={childId}
-                  graph={graph}
-                  runId={childId}
-                  depth={depth + 1}
-                  pendingRelays={pendingRelays}
-                  permissionHandlers={permissionHandlers}
-                  activeStreams={activeStreams}
-                />
-              ))}
+          {userExpanded ? (
+            <div className="border-l-2 border-gray-700 pl-2 sm:pl-4">{childNodes}</div>
+          ) : childrenStreaming ? (
+            <div className="relative">
+              <div
+                ref={containerRef}
+                className="max-h-[100px] overflow-y-auto border-l-2 border-gray-700 pl-2 sm:pl-4"
+              >
+                {childNodes}
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserExpanded(true)}
+                className="absolute right-1 bottom-1 rounded bg-gray-700 px-2 py-0.5 text-xs text-gray-300 hover:bg-gray-600"
+              >
+                Expand
+              </button>
             </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setUserExpanded(true)}
+              className="w-full rounded bg-gray-750 px-2 py-1 text-left text-xs text-gray-400 hover:text-gray-200"
+            >
+              {totalToolCalls} tool call{totalToolCalls !== 1 ? "s" : ""} | {totalTokens} tokens
+            </button>
           )}
         </div>
       )}
