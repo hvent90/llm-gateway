@@ -10,6 +10,8 @@ import type { Permissions } from "../types";
  */
 export type ServerEvent =
   | { type: "connected"; sessionId: string }
+  | { type: "harness_start"; runId: string; agentId: string; parentId?: string }
+  | { type: "harness_end"; runId: string; agentId: string; parentId?: string }
   | { type: "text"; id: string; runId: string; agentId: string; parentId?: string; content: string }
   | {
       type: "reasoning";

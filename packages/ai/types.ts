@@ -66,6 +66,8 @@ export type RelayEvent = {
 
 // Events that a harness can yield during invocation
 export type HarnessEvent =
+  | { type: "harness_start"; runId: string; parentId?: string }
+  | { type: "harness_end"; runId: string; parentId?: string }
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
   | { type: "text"; runId: string; id: string; parentId?: string; content: string }
   | {

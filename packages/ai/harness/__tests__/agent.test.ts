@@ -424,6 +424,223 @@ describe("Agent Harness", () => {
   });
 });
 
+describe("harness_start / harness_end lifecycle events", () => {
+  test("emits harness_start as first event and harness_end as last event", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    expect(events.length).toBeGreaterThanOrEqual(3);
+    expect(events[0]!.type).toBe("harness_start");
+    expect(events[events.length - 1]!.type).toBe("harness_end");
+  });
+
+  test("harness_start and harness_end carry the agent's runId", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    const start = events[0]!;
+    const end = events[events.length - 1]!;
+
+    expect(start.type).toBe("harness_start");
+    expect(end.type).toBe("harness_end");
+    expect(start.runId).toBeDefined();
+    expect(start.runId).toBe(end.runId);
+
+    // The text events should also have the same runId (the agent's own runId)
+    const textEvent = events.find((e) => e.type === "text")!;
+    expect(textEvent.runId).toBe(start.runId);
+  });
+
+  test("harness_start and harness_end carry parentId when context.parentId is set", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        context: { parentId: "parent-xyz" },
+      }),
+    );
+
+    const start = events[0]!;
+    const end = events[events.length - 1]!;
+
+    expect(start.type).toBe("harness_start");
+    expect((start as { parentId?: string }).parentId).toBe("parent-xyz");
+    expect(end.type).toBe("harness_end");
+    expect((end as { parentId?: string }).parentId).toBe("parent-xyz");
+  });
+
+  test("harness_start and harness_end have no parentId when context.parentId is not set", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    const start = events[0]!;
+    const end = events[events.length - 1]!;
+
+    expect(start.type).toBe("harness_start");
+    expect("parentId" in start).toBe(false);
+    expect(end.type).toBe("harness_end");
+    expect("parentId" in end).toBe(false);
+  });
+
+  test("emits harness_end before return on provider error", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "before error" };
+        yield { type: "error", runId: "r1", error: new Error("provider failed") };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    expect(events[0]!.type).toBe("harness_start");
+    expect(events[events.length - 1]!.type).toBe("harness_end");
+
+    // Error should be second-to-last (before harness_end)
+    const errorIdx = events.findIndex((e) => e.type === "error");
+    expect(errorIdx).toBeGreaterThan(0);
+    expect(errorIdx).toBe(events.length - 2);
+  });
+
+  test("emits harness_end before return on no-executor error", async () => {
+    const noExecSchema = z.object({ value: z.string() });
+    const noExecTool: ToolDefinition<typeof noExecSchema> = {
+      name: "no_exec",
+      description: "A tool without an executor.",
+      schema: noExecSchema,
+      // No execute function
+    };
+
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield {
+          type: "tool_call",
+          runId: "r1",
+          id: "tc-1",
+          name: "no_exec",
+          input: { value: "x" },
+        };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Use no_exec" }],
+        tools: [noExecTool],
+        permissions: { allowlist: [{ tool: "no_exec" }] },
+      }),
+    );
+
+    expect(events[0]!.type).toBe("harness_start");
+    expect(events[events.length - 1]!.type).toBe("harness_end");
+
+    // Should have an error event about no executor
+    const errorEvents = events.filter((e) => e.type === "error");
+    expect(errorEvents.length).toBe(1);
+  });
+
+  test("emits harness_end on max iterations reached", async () => {
+    const loopSchema = z.object({});
+    const loopTool: ToolDefinition<typeof loopSchema, string> = {
+      name: "loop",
+      description: "Always loops.",
+      schema: loopSchema,
+      execute: async () => ({
+        context: "call again",
+        result: "looped",
+      }),
+    };
+
+    // Provider always emits a tool_call
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "tool_call", runId: "r1", id: `tc-${Date.now()}`, name: "loop", input: {} };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness, maxIterations: 2 });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        model: "test-model",
+        messages: [{ role: "user", content: "Loop" }],
+        tools: [loopTool],
+        permissions: { allowlist: [{ tool: "loop" }] },
+      }),
+    );
+
+    expect(events[0]!.type).toBe("harness_start");
+    expect(events[events.length - 1]!.type).toBe("harness_end");
+  });
+});
+
 test("passes spawn from context through to tool execute, wrapping with tool call ID", async () => {
   let receivedSpawn: ((task: string) => Promise<string>) | undefined;
   const spawnCalls: Array<{ task: string; parentId: string }> = [];

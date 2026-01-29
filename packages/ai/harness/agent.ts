@@ -41,6 +41,8 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         return tagged;
       };
 
+      yield tag({ type: "harness_start", runId: myRunId });
+
       // Mutable messages array for the agent loop
       const messages: Message[] = [...params.messages];
       let iterations = 0;
@@ -64,6 +66,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             yield tag(event);
           } else if (event.type === "error") {
             yield tag(event);
+            yield tag({ type: "harness_end", runId: myRunId });
             return assistantText; // Stop on error
           } else if (event.type === "tool_call") {
             // Collect tool calls for processing after iteration
@@ -79,6 +82,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
         // No tool calls - we're done
         if (toolCalls.length === 0) {
+          yield tag({ type: "harness_end", runId: myRunId });
           return assistantText;
         }
 
@@ -162,6 +166,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         }
 
         if (earlyReturn) {
+          yield tag({ type: "harness_end", runId: myRunId });
           return assistantText;
         }
 
@@ -221,6 +226,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         // Loop continues - will call LLM again with tool results
       }
 
+      yield tag({ type: "harness_end", runId: myRunId });
       return assistantText;
     },
 
