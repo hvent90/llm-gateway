@@ -1,4 +1,3 @@
-import { Input } from "@base-ui-components/react/input";
 import { useState, useRef, useEffect, type FormEvent } from "react";
 
 interface InputAreaProps {
@@ -10,7 +9,7 @@ interface InputAreaProps {
 
 export function InputArea({ onSubmit, onCancel, disabled, isStreaming }: InputAreaProps) {
   const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!disabled) {
@@ -25,6 +24,9 @@ export function InputArea({ onSubmit, onCancel, disabled, isStreaming }: InputAr
     if (trimmed && !disabled) {
       onSubmit(trimmed);
       setValue("");
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+      }
     }
   };
 
@@ -35,6 +37,9 @@ export function InputArea({ onSubmit, onCancel, disabled, isStreaming }: InputAr
       if (trimmed && !disabled) {
         onSubmit(trimmed);
         setValue("");
+        if (inputRef.current) {
+          inputRef.current.style.height = "auto";
+        }
       }
     }
   };
@@ -44,14 +49,20 @@ export function InputArea({ onSubmit, onCancel, disabled, isStreaming }: InputAr
       onSubmit={handleSubmit}
       className="flex gap-2 border-t border-gray-700 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
     >
-      <Input
+      <textarea
         ref={inputRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          // Auto-resize
+          e.target.style.height = "auto";
+          e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
+        }}
         onKeyDown={handleKeyDown}
         disabled={disabled}
+        rows={1}
         placeholder={disabled ? "Waiting..." : "Type a message..."}
-        className="flex-1 rounded border border-gray-600 bg-gray-800 px-3 py-2 text-base text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
+        className="flex-1 resize-none rounded border border-gray-600 bg-gray-800 px-3 py-2 text-base text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
       />
       {isStreaming ? (
         <button
