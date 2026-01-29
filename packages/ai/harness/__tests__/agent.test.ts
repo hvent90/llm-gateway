@@ -475,3 +475,53 @@ test("passes spawn from context through to tool execute", async () => {
 
   expect(receivedSpawn).toBe(spawnFn);
 });
+
+test("dispatches multiple tool calls concurrently", async () => {
+  const callOrder: string[] = [];
+  const slowSchema = z.object({ id: z.string() });
+
+  const slowTool: ToolDefinition<typeof slowSchema, string> = {
+    name: "slow",
+    description: "A slow tool",
+    schema: slowSchema,
+    execute: async ({ id }) => {
+      callOrder.push(`start-${id}`);
+      await new Promise((r) => setTimeout(r, 50));
+      callOrder.push(`end-${id}`);
+      return { context: `done-${id}`, result: id };
+    },
+  };
+
+  // Provider that emits two tool calls in one response
+  const mockHarness: GeneratorHarnessModule = {
+    async *invoke(params) {
+      const hasToolResult = params.messages.some((m) => m.role === "tool");
+      if (hasToolResult) {
+        yield { type: "text", runId: "r1", id: "t1", content: "All done" };
+      } else {
+        yield { type: "tool_call", runId: "r1", id: "tc-1", name: "slow", input: { id: "a" } };
+        yield { type: "tool_call", runId: "r1", id: "tc-2", name: "slow", input: { id: "b" } };
+      }
+    },
+    async supportedModels() {
+      return ["test-model"];
+    },
+  };
+
+  const agentHarness = createAgentHarness({ harness: mockHarness });
+
+  for await (const _ of agentHarness.invoke({
+    model: "test-model",
+    messages: [{ role: "user", content: "Run both" }],
+    tools: [slowTool],
+    permissions: { allowlist: [{ tool: "slow" }] },
+  })) {
+    // drain
+  }
+
+  // If concurrent: start-a, start-b, end-a, end-b (or end-b, end-a)
+  // If sequential: start-a, end-a, start-b, end-b
+  // Concurrent means both starts happen before any end
+  expect(callOrder[0]).toBe("start-a");
+  expect(callOrder[1]).toBe("start-b");
+});

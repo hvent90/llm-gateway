@@ -7,6 +7,7 @@ import type {
   PermissionResponse,
   ToolCall,
   ToolContext,
+  ToolDefinition,
 } from "../types";
 import { matchesPermissions } from "../permissions";
 import { deferred } from "../primitives";
@@ -88,7 +89,10 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           tool_calls: toolCalls,
         });
 
-        // Process each tool call
+        // Pass 1: permissions (sequential — must yield relays)
+        const approved: Array<{ tc: ToolCall; toolDef: ToolDefinition }> = [];
+        let earlyReturn = false;
+
         for (const tc of toolCalls) {
           const toolDef = params.tools?.find((t) => t.name === tc.name);
           const args = (tc.arguments ?? {}) as Record<string, unknown>;
@@ -140,7 +144,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             }
           }
 
-          // Permission granted or in allowlist - yield tool_call and execute
+          // Approved — yield tool_call event
           yield tag({ type: "tool_call", runId: myRunId, name: tc.name, id: tc.id, input: args });
 
           if (!toolDef?.execute) {
@@ -150,39 +154,66 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
               runId: myRunId,
               error: new Error(`No executor for tool: ${tc.name}`),
             });
-            return assistantText;
+            earlyReturn = true;
+            break;
           }
 
-          const toolCtx: ToolContext = {
-            parentId: tc.id, // This tool_call becomes parent for nested events
-            spawn: params.context?.spawn,
-          };
+          approved.push({ tc, toolDef: toolDef as ToolDefinition });
+        }
 
-          try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(
-              tc.arguments,
-              toolCtx,
-            );
-            const output = { context: toolContext, result: toolResult };
-            yield tag({ type: "tool_result", runId: myRunId, name: tc.name, id: tc.id, output });
-            messages.push({
-              role: "tool",
-              tool_call_id: tc.id,
-              content: toolContext ?? JSON.stringify(output),
-            });
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            yield tag({
-              type: "error",
-              runId: myRunId,
-              error: error instanceof Error ? error : new Error(errorMsg),
-            });
-            messages.push({
-              role: "tool",
-              tool_call_id: tc.id,
-              content: JSON.stringify({ error: errorMsg }),
-            });
-          }
+        if (earlyReturn) {
+          return assistantText;
+        }
+
+        // Pass 2: execute approved tools concurrently
+        const results = await Promise.all(
+          approved.map(async ({ tc, toolDef }) => {
+            const toolCtx: ToolContext = {
+              parentId: tc.id,
+              spawn: params.context?.spawn,
+            };
+            try {
+              const { context: toolContext, result: toolResult } = await toolDef.execute!(
+                tc.arguments,
+                toolCtx,
+              );
+              const output = { context: toolContext, result: toolResult };
+              return {
+                event: tag({
+                  type: "tool_result" as const,
+                  runId: myRunId,
+                  name: tc.name,
+                  id: tc.id,
+                  output,
+                }),
+                message: {
+                  role: "tool" as const,
+                  tool_call_id: tc.id,
+                  content: toolContext ?? JSON.stringify(output),
+                },
+              };
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : String(error);
+              return {
+                event: tag({
+                  type: "error" as const,
+                  runId: myRunId,
+                  error: error instanceof Error ? error : new Error(errorMsg),
+                }),
+                message: {
+                  role: "tool" as const,
+                  tool_call_id: tc.id,
+                  content: JSON.stringify({ error: errorMsg }),
+                },
+              };
+            }
+          }),
+        );
+
+        // Yield results and add to messages
+        for (const { event, message } of results) {
+          yield event;
+          messages.push(message);
         }
 
         // Loop continues - will call LLM again with tool results
