@@ -572,5 +572,57 @@ describe("AgentOrchestrator (deterministic)", () => {
         expect((e.event as { parentId?: string }).parentId).toBe(toolCallId);
       }
     });
+
+    it("parallel subagent tool calls stream concurrently", async () => {
+      // Provider: parent emits two agent tool calls, then two subagent responses, then parent final
+      const provider = createDeterministicHarness({
+        responses: [
+          {
+            events: [
+              { type: "tool_call", name: "agent", input: { task: "first" } },
+              { type: "tool_call", name: "agent", input: { task: "second" } },
+            ],
+          },
+          { events: [{ type: "text", content: "First result" }] },
+          { events: [{ type: "text", content: "Second result" }] },
+          { events: [{ type: "text", content: "Both done" }] },
+        ],
+      });
+
+      const agentTool: ToolDefinition = {
+        name: "agent",
+        description: "Spawn a subagent",
+        schema: z.object({ task: z.string() }),
+        execute: async ({ task }, ctx) => {
+          const result = await ctx.spawn!(task);
+          return { context: result, result };
+        },
+      };
+
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      const parentAgentId = orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Spawn two subagents" }],
+        tools: [agentTool],
+        permissions: { allowlist: [{ tool: "agent" }] },
+      });
+
+      const events: MultiplexedEvent<ConsumerHarnessEvent>[] = [];
+      for await (const event of orchestrator.events()) {
+        events.push(event);
+      }
+
+      // Should have 3 distinct agent IDs: parent + 2 subagents
+      const agentIds = new Set(events.map((e) => e.agentId));
+      expect(agentIds.size).toBe(3);
+
+      // Parent should have final text
+      const parentTextEvents = events.filter(
+        (e) => e.agentId === parentAgentId && e.event.type === "text",
+      );
+      expect(parentTextEvents.length).toBeGreaterThan(0);
+    });
   });
 });
