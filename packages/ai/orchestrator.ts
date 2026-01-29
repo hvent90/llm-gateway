@@ -84,7 +84,7 @@ export class AgentOrchestrator {
       ...params,
       context: {
         ...params.context,
-        spawn: (task: string) => this.spawnSubagent(task, params),
+        spawn: (task: string, parentId: string) => this.spawnSubagent(task, parentId, params),
       },
     });
     this.mux.register(agentId, stream);
@@ -101,6 +101,7 @@ export class AgentOrchestrator {
    */
   private async spawnSubagent(
     task: string,
+    parentId: string,
     parentParams: GeneratorInvokeParams,
   ): Promise<string> {
     const agentId = v7();
@@ -115,8 +116,8 @@ export class AgentOrchestrator {
       tools: parentParams.tools,
       permissions: parentParams.permissions,
       context: {
-        parentId: parentParams.context?.parentId,
-        spawn: (t: string) => this.spawnSubagent(t, parentParams),
+        parentId,
+        spawn: (t: string, pid: string) => this.spawnSubagent(t, pid, parentParams),
       },
     });
 

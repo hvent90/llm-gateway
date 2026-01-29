@@ -516,5 +516,61 @@ describe("AgentOrchestrator (deterministic)", () => {
       );
       expect(parentTextEvents.length).toBeGreaterThan(0);
     });
+
+    it("subagent events have parentId set to tool call ID", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "agent", input: { task: "say hello" } }] },
+          { events: [{ type: "text", content: "Hello from subagent" }] },
+          { events: [{ type: "text", content: "Done" }] },
+        ],
+      });
+
+      const agentTool: ToolDefinition = {
+        name: "agent",
+        description: "Spawn a subagent",
+        schema: z.object({ task: z.string() }),
+        execute: async ({ task }, ctx) => {
+          const result = await ctx.spawn!(task);
+          return { context: result, result };
+        },
+      };
+
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      const agentId = orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Spawn subagent" }],
+        tools: [agentTool],
+        permissions: { allowlist: [{ tool: "agent" }] },
+      });
+
+      const events: MultiplexedEvent<ConsumerHarnessEvent>[] = [];
+      for await (const event of orchestrator.events()) {
+        events.push(event);
+      }
+
+      // Find the parent's tool_call event to get the tool call ID
+      const parentToolCall = events.find(
+        (e) =>
+          e.agentId === agentId &&
+          e.event.type === "tool_call" &&
+          (e.event as any).name === "agent",
+      );
+      expect(parentToolCall).toBeDefined();
+      const toolCallId = (parentToolCall!.event as { id: string }).id;
+
+      // Find the subagent's text events
+      const subagentId = [...new Set(events.map((e) => e.agentId))].find((id) => id !== agentId)!;
+      const subagentTextEvents = events.filter(
+        (e) => e.agentId === subagentId && e.event.type === "text",
+      );
+
+      // Subagent events should have parentId = toolCallId
+      for (const e of subagentTextEvents) {
+        expect((e.event as { parentId?: string }).parentId).toBe(toolCallId);
+      }
+    });
   });
 });

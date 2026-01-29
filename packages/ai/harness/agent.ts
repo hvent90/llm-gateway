@@ -170,7 +170,9 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           approved.map(async ({ tc, toolDef }) => {
             const toolCtx: ToolContext = {
               parentId: tc.id,
-              spawn: params.context?.spawn,
+              spawn: params.context?.spawn
+                ? (task: string) => params.context!.spawn!(task, tc.id)
+                : undefined,
             };
             try {
               const { context: toolContext, result: toolResult } = await toolDef.execute!(

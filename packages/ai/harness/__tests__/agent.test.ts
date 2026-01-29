@@ -424,8 +424,9 @@ describe("Agent Harness", () => {
   });
 });
 
-test("passes spawn from context through to tool execute", async () => {
-  let receivedSpawn: unknown;
+test("passes spawn from context through to tool execute, wrapping with tool call ID", async () => {
+  let receivedSpawn: ((task: string) => Promise<string>) | undefined;
+  const spawnCalls: Array<{ task: string; parentId: string }> = [];
 
   const toolSchema = z.object({ value: z.string() });
   const captureTool: ToolDefinition<typeof toolSchema, string> = {
@@ -434,6 +435,7 @@ test("passes spawn from context through to tool execute", async () => {
     schema: toolSchema,
     execute: async (_input, ctx) => {
       receivedSpawn = ctx.spawn;
+      if (ctx.spawn) await ctx.spawn("sub-task");
       return { context: "captured", result: "ok" };
     },
   };
@@ -459,7 +461,10 @@ test("passes spawn from context through to tool execute", async () => {
     },
   };
 
-  const spawnFn = async (task: string) => task;
+  const spawnFn = async (task: string, parentId: string) => {
+    spawnCalls.push({ task, parentId });
+    return task;
+  };
 
   const agentHarness = createAgentHarness({ harness: mockHarness });
   const events: HarnessEvent[] = [];
@@ -473,7 +478,14 @@ test("passes spawn from context through to tool execute", async () => {
     events.push(event);
   }
 
-  expect(receivedSpawn).toBe(spawnFn);
+  // Tool should have received a spawn function (wrapped)
+  expect(receivedSpawn).toBeDefined();
+  expect(typeof receivedSpawn).toBe("function");
+
+  // The underlying spawn should have been called with the task and the tool call ID
+  expect(spawnCalls).toHaveLength(1);
+  expect(spawnCalls[0].task).toBe("sub-task");
+  expect(spawnCalls[0].parentId).toBe("tc-1");
 });
 
 test("dispatches multiple tool calls concurrently", async () => {

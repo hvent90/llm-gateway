@@ -106,7 +106,7 @@ export interface GeneratorInvokeParams {
   tools?: ToolDefinition[];
   context?: {
     parentId?: string;
-    spawn?: (task: string) => Promise<string>;
+    spawn?: (task: string, parentId: string) => Promise<string>;
   };
   permissions?: Permissions;
 }
