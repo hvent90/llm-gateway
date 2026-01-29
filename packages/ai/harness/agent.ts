@@ -155,6 +155,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
           const toolCtx: ToolContext = {
             parentId: tc.id, // This tool_call becomes parent for nested events
+            spawn: params.context?.spawn,
           };
 
           try {

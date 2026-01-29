@@ -423,3 +423,55 @@ describe("Agent Harness", () => {
     expect(capturedContexts[0].parentId!.length).toBeGreaterThan(0);
   });
 });
+
+test("passes spawn from context through to tool execute", async () => {
+  let receivedSpawn: unknown;
+
+  const toolSchema = z.object({ value: z.string() });
+  const captureTool: ToolDefinition<typeof toolSchema, string> = {
+    name: "capture",
+    description: "Captures context. Always use this tool.",
+    schema: toolSchema,
+    execute: async (_input, ctx) => {
+      receivedSpawn = ctx.spawn;
+      return { context: "captured", result: "ok" };
+    },
+  };
+
+  // Provider that emits a tool call
+  const mockHarness: GeneratorHarnessModule = {
+    async *invoke(params) {
+      const hasToolResult = params.messages.some((m) => m.role === "tool");
+      if (hasToolResult) {
+        yield { type: "text", runId: "r1", id: "t2", content: "Done" };
+      } else {
+        yield {
+          type: "tool_call",
+          runId: "r1",
+          id: "tc-1",
+          name: "capture",
+          input: { value: "test" },
+        };
+      }
+    },
+    async supportedModels() {
+      return ["test-model"];
+    },
+  };
+
+  const spawnFn = async (task: string) => task;
+
+  const agentHarness = createAgentHarness({ harness: mockHarness });
+  const events: HarnessEvent[] = [];
+  for await (const event of agentHarness.invoke({
+    model: "test-model",
+    messages: [{ role: "user", content: "Use capture tool" }],
+    tools: [captureTool],
+    permissions: { allowlist: [{ tool: "capture" }] },
+    context: { spawn: spawnFn },
+  })) {
+    events.push(event);
+  }
+
+  expect(receivedSpawn).toBe(spawnFn);
+});
