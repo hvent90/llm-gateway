@@ -1,3 +1,4 @@
+import { useRef, useEffect } from "react";
 import type { PendingRelay } from "../types";
 
 interface PermissionPromptProps {
@@ -8,10 +9,16 @@ interface PermissionPromptProps {
 }
 
 export function PermissionPrompt({ request, onAllow, onAllowAll, onDeny }: PermissionPromptProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   const paramsStr = JSON.stringify(request.params, null, 2);
 
   return (
-    <div className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
+    <div ref={ref} className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
       <div className="mb-2 font-medium text-yellow-400">⚠️ Permission Required</div>
       <div className="mb-2 text-sm text-gray-300">
         Tool: <span className="font-mono text-yellow-300">{request.tool}</span>
