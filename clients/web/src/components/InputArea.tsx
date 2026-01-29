@@ -3,10 +3,12 @@ import { useState, useRef, useEffect, type FormEvent } from "react";
 
 interface InputAreaProps {
   onSubmit: (content: string) => void;
+  onCancel: () => void;
   disabled: boolean;
+  isStreaming: boolean;
 }
 
-export function InputArea({ onSubmit, disabled }: InputAreaProps) {
+export function InputArea({ onSubmit, onCancel, disabled, isStreaming }: InputAreaProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -51,13 +53,23 @@ export function InputArea({ onSubmit, disabled }: InputAreaProps) {
         placeholder={disabled ? "Waiting..." : "Type a message..."}
         className="flex-1 rounded border border-gray-600 bg-gray-800 px-3 py-2 text-base text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none disabled:opacity-50"
       />
-      <button
-        type="submit"
-        disabled={disabled || !value.trim()}
-        className="rounded bg-blue-600 px-4 py-2 text-base font-medium text-white hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 disabled:hover:bg-blue-600"
-      >
-        Send
-      </button>
+      {isStreaming ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded bg-red-600 px-4 py-2 text-base font-medium text-white hover:bg-red-700 active:bg-red-800"
+        >
+          Stop
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={disabled || !value.trim()}
+          className="rounded bg-blue-600 px-4 py-2 text-base font-medium text-white hover:bg-blue-700 active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-600"
+        >
+          Send
+        </button>
+      )}
     </form>
   );
 }

@@ -164,6 +164,10 @@ export default function App() {
     [state.sessionId],
   );
 
+  const handleCancel = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
   const permissionHandlers: PermissionHandlers = useMemo(
     () => ({
       onAllow: handleAllow,
@@ -188,7 +192,12 @@ export default function App() {
           activeStreams={state.activeStreams}
         />
       </main>
-      <InputArea onSubmit={handleSubmit} disabled={isStreaming || state.pendingRelays.length > 0} />
+      <InputArea
+        onSubmit={handleSubmit}
+        onCancel={handleCancel}
+        disabled={isStreaming || state.pendingRelays.length > 0}
+        isStreaming={isStreaming}
+      />
     </div>
   );
 }
