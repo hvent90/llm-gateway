@@ -30,7 +30,7 @@ export function PermissionPrompt({ request, onAllow, onAllowAll, onDeny }: Permi
           onClick={onAllowAll}
           className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700"
         >
-          Allow All
+          Always Allow
         </button>
         <button
           onClick={onDeny}
