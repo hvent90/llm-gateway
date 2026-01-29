@@ -45,7 +45,7 @@ function ToolCallBlock({
     if (!userExpanded && childrenStreaming) {
       containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight });
     }
-  });
+  }, [blockChildren, childrenStreaming, userExpanded]);
 
   const inputStr =
     typeof block.input === "string" ? block.input : JSON.stringify(block.input, null, 2);
@@ -123,7 +123,7 @@ function ToolCallBlock({
             <button
               type="button"
               onClick={() => setUserExpanded(true)}
-              className="w-full rounded bg-gray-750 px-2 py-1 text-left text-xs text-gray-400 hover:text-gray-200"
+              className="w-full rounded bg-gray-700 px-2 py-1 text-left text-xs text-gray-400 hover:bg-gray-600 hover:text-gray-200"
             >
               {totalToolCalls} tool call{totalToolCalls !== 1 ? "s" : ""} | {totalTokens} tokens
             </button>
