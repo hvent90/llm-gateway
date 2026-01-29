@@ -43,10 +43,11 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
       // Mutable messages array for the agent loop
       const messages: Message[] = [...params.messages];
       let iterations = 0;
+      let assistantText = "";
 
       while (iterations++ < maxIterations) {
         const toolCalls: ToolCall[] = [];
-        let assistantText = "";
+        assistantText = "";
 
         // Single iteration - collect events from provider harness
         for await (const event of harness.invoke({
@@ -62,7 +63,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             yield tag(event);
           } else if (event.type === "error") {
             yield tag(event);
-            return; // Stop on error
+            return assistantText; // Stop on error
           } else if (event.type === "tool_call") {
             // Collect tool calls for processing after iteration
             toolCalls.push({
@@ -77,7 +78,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
         // No tool calls - we're done
         if (toolCalls.length === 0) {
-          return;
+          return assistantText;
         }
 
         // Add assistant message with tool calls to history
@@ -149,7 +150,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
               runId: myRunId,
               error: new Error(`No executor for tool: ${tc.name}`),
             });
-            return;
+            return assistantText;
           }
 
           const toolCtx: ToolContext = {
@@ -185,6 +186,8 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
         // Loop continues - will call LLM again with tool results
       }
+
+      return assistantText;
     },
 
     supportedModels: () => harness.supportedModels(),

@@ -366,6 +366,33 @@ describe("Agent Harness", () => {
     { timeout: 60000 },
   );
 
+  test("returns final assistant text as generator return value", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello " };
+        yield { type: "text", runId: "r1", id: "t2", content: "world" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+
+    const stream = agentHarness.invoke({
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+    });
+
+    const iterator = stream[Symbol.asyncIterator]();
+    let next = await iterator.next();
+    while (!next.done) {
+      next = await iterator.next();
+    }
+
+    expect(next.value).toBe("Hello world");
+  });
+
   test("agent assigns its own runId, passes it as parentId to provider", async () => {
     const capturedContexts: Array<{ parentId?: string }> = [];
 
