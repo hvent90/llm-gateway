@@ -123,14 +123,16 @@ export class AgentOrchestrator {
 
     // Iterate with .next() to capture return value
     const iterator = stream[Symbol.asyncIterator]();
-    let next = await iterator.next();
-    while (!next.done) {
-      passthrough.push(next.value);
-      next = await iterator.next();
+    try {
+      let next = await iterator.next();
+      while (!next.done) {
+        passthrough.push(next.value);
+        next = await iterator.next();
+      }
+      return next.value as string; // The final assistant text
+    } finally {
+      passthrough.end();
     }
-    passthrough.end();
-
-    return next.value as string; // The final assistant text
   }
 
   /**

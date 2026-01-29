@@ -66,6 +66,7 @@ export function createPassthrough<T>(): Passthrough<T> {
 
   return {
     push(value: T) {
+      if (done) return;
       if (resolve) {
         const r = resolve;
         resolve = null;
