@@ -16,7 +16,12 @@ export {
 export type { ContentBlock } from "./selectors";
 
 // Conversation layer
-export { createInitialConversation, reduceConversation } from "./conversation";
+export {
+  createInitialConversation,
+  reduceConversation,
+  getAutoApprovableRelays,
+  getSameToolRelays,
+} from "./conversation";
 
 // Types
 export type { GraphState, GraphNode } from "./types";

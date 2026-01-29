@@ -45,6 +45,16 @@ export function createInitialConversation(): ConversationState {
   };
 }
 
+/** Returns pending relays whose tool is already in grantedTools. */
+export function getAutoApprovableRelays(state: ConversationState): PendingRelay[] {
+  return state.pendingRelays.filter((r) => state.grantedTools.has(r.tool));
+}
+
+/** Returns all pending relays matching a given tool name. */
+export function getSameToolRelays(state: ConversationState, tool: string): PendingRelay[] {
+  return state.pendingRelays.filter((r) => r.tool === tool);
+}
+
 export function reduceConversation(
   state: ConversationState,
   event: ConversationEvent,

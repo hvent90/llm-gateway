@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import type { PermissionHandlers } from "./components/ConversationThread";
@@ -9,6 +9,8 @@ import {
   getChildren,
   getContentBlocks,
   getRole,
+  getAutoApprovableRelays,
+  getSameToolRelays,
 } from "../../../packages/ai/client";
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
 import type { ConversationState, Message, PendingRelay, Permissions } from "./types";
@@ -129,21 +131,32 @@ export default function App() {
     async (relay: PendingRelay) => {
       if (!state.sessionId) return;
 
-      // Grant tool and clear relay
-      setState((s) =>
-        reduceConversation(s, {
-          type: "relay_resolved",
-          relayId: relay.relayId,
-          tool: relay.tool,
-          approved: true,
-        }),
-      );
+      // Find all pending relays of the same tool type
+      const sameTypeRelays = getSameToolRelays(state, relay.tool);
 
-      await httpTransport.resolveRelay(state.sessionId, relay.relayId, {
-        approved: true,
+      // Grant tool on the clicked relay, resolve all siblings
+      setState((s) => {
+        let current = s;
+        for (const r of sameTypeRelays) {
+          current = reduceConversation(current, {
+            type: "relay_resolved",
+            relayId: r.relayId,
+            tool: r.tool,
+            approved: r.relayId === relay.relayId,
+          });
+        }
+        return current;
       });
+
+      // Approve all on the server in parallel
+      const sessionId = state.sessionId;
+      await Promise.all(
+        sameTypeRelays.map((r) =>
+          httpTransport.resolveRelay(sessionId, r.relayId, { approved: true }),
+        ),
+      );
     },
-    [state.sessionId],
+    [state.sessionId, state.pendingRelays],
   );
 
   const handleDeny = useCallback(
@@ -180,6 +193,32 @@ export default function App() {
     }),
     [handleAllow, handleAllowAll, handleDeny],
   );
+
+  // Auto-resolve incoming relays for tools already in grantedTools
+  useEffect(() => {
+    if (!state.sessionId) return;
+
+    const autoApprovable = getAutoApprovableRelays(state);
+    if (autoApprovable.length === 0) return;
+
+    setState((s) => {
+      let current = s;
+      for (const r of autoApprovable) {
+        current = reduceConversation(current, {
+          type: "relay_resolved",
+          relayId: r.relayId,
+          tool: r.tool,
+          approved: false,
+        });
+      }
+      return current;
+    });
+
+    const sessionId = state.sessionId;
+    for (const r of autoApprovable) {
+      httpTransport.resolveRelay(sessionId, r.relayId, { approved: true });
+    }
+  }, [state.pendingRelays, state.grantedTools, state.sessionId]);
 
   const isStreaming = state.isConnected;
 

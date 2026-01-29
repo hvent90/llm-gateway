@@ -1,5 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import { createInitialConversation, reduceConversation } from "../conversation";
+import {
+  createInitialConversation,
+  reduceConversation,
+  getAutoApprovableRelays,
+  getSameToolRelays,
+} from "../conversation";
 import { getRoots, getChildren, getContentBlocks, getRole } from "../selectors";
 
 describe("Conversation Reducer", () => {
@@ -225,6 +230,191 @@ describe("Conversation Reducer", () => {
     });
     expect(state.activeStreams.size).toBe(1);
     expect(state.activeStreams.has("run-2")).toBe(true);
+  });
+
+  test("resolving one relay leaves other same-type relays pending", () => {
+    let state = createInitialConversation();
+    // Add 3 read_file relays and 1 bash relay
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "read_file",
+      params: { path: "/a" },
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-2",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-2",
+      tool: "read_file",
+      params: { path: "/b" },
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-3",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-3",
+      tool: "read_file",
+      params: { path: "/c" },
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-4",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-4",
+      tool: "bash",
+      params: { command: "ls" },
+    });
+    expect(state.pendingRelays.length).toBe(4);
+
+    // Resolve r-1 with grant — grants read_file, removes r-1
+    state = reduceConversation(state, {
+      type: "relay_resolved",
+      relayId: "r-1",
+      tool: "read_file",
+      approved: true,
+    });
+    expect(state.grantedTools.has("read_file")).toBe(true);
+    expect(state.pendingRelays.length).toBe(3);
+    // r-2 and r-3 (read_file) still pending — reducer doesn't auto-resolve siblings
+    expect(state.pendingRelays.map((r) => r.relayId)).toEqual(["r-2", "r-3", "r-4"]);
+
+    // Resolve r-2 without granting (tool already granted)
+    state = reduceConversation(state, {
+      type: "relay_resolved",
+      relayId: "r-2",
+      tool: "read_file",
+      approved: false,
+    });
+    expect(state.pendingRelays.length).toBe(2);
+
+    // Resolve r-3
+    state = reduceConversation(state, {
+      type: "relay_resolved",
+      relayId: "r-3",
+      tool: "read_file",
+      approved: false,
+    });
+    expect(state.pendingRelays.length).toBe(1);
+    // bash relay still pending
+    expect(state.pendingRelays[0]!.relayId).toBe("r-4");
+    expect(state.pendingRelays[0]!.tool).toBe("bash");
+    // read_file still granted, bash not
+    expect(state.grantedTools.has("read_file")).toBe(true);
+    expect(state.grantedTools.has("bash")).toBe(false);
+  });
+
+  test("getAutoApprovableRelays returns relays whose tool is already granted", () => {
+    let state = createInitialConversation();
+    // Grant read_file
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-0",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-0",
+      tool: "read_file",
+      params: {},
+    });
+    state = reduceConversation(state, {
+      type: "relay_resolved",
+      relayId: "r-0",
+      tool: "read_file",
+      approved: true,
+    });
+    expect(state.grantedTools.has("read_file")).toBe(true);
+    expect(state.pendingRelays.length).toBe(0);
+
+    // Now add new relays — read_file should be auto-approvable, bash should not
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "read_file",
+      params: { path: "/a" },
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-2",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-2",
+      tool: "bash",
+      params: { command: "ls" },
+    });
+
+    const autoApprovable = getAutoApprovableRelays(state);
+    expect(autoApprovable.length).toBe(1);
+    expect(autoApprovable[0]!.relayId).toBe("r-1");
+    expect(autoApprovable[0]!.tool).toBe("read_file");
+  });
+
+  test("getAutoApprovableRelays returns empty when no tools granted", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: {},
+    });
+    expect(getAutoApprovableRelays(state)).toEqual([]);
+  });
+
+  test("getSameToolRelays returns all pending relays matching a tool type", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "read_file",
+      params: {},
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-2",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-2",
+      tool: "read_file",
+      params: {},
+    });
+    state = reduceConversation(state, {
+      type: "relay",
+      kind: "permission",
+      id: "r-3",
+      runId: "run-1",
+      agentId: "a1",
+      toolCallId: "tc-3",
+      tool: "bash",
+      params: {},
+    });
+
+    const sameType = getSameToolRelays(state, "read_file");
+    expect(sameType.length).toBe(2);
+    expect(sameType.map((r: any) => r.relayId)).toEqual(["r-1", "r-2"]);
   });
 
   test("full conversation flow", () => {
