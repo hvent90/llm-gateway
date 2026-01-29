@@ -72,7 +72,7 @@ export default function App() {
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
         console.error("Stream error:", error);
-        setStreamError(error instanceof Error ? error.message : "Connection failed");
+        setStreamError(error.message);
       }
     } finally {
       setState((s) => reduceConversation(s, { type: "stream_end" }));
