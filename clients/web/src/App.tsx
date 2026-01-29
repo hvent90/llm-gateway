@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
-import { PermissionPrompt } from "./components/PermissionPrompt";
+import type { PermissionHandlers } from "./components/ConversationThread";
 import {
   createSSETransport,
   createHTTPTransport,
@@ -11,9 +11,10 @@ import {
   getRole,
 } from "../../../packages/ai/client";
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
-import type { ConversationState, Message, Permissions } from "./types";
+import type { ConversationState, Message, PendingRelay, Permissions } from "./types";
 
-const MODEL = "nvidia/nemotron-nano-9b-v2:free";
+declare const __LLM_MODEL__: string | undefined;
+const MODEL = __LLM_MODEL__ ?? "big-pickle";
 
 const sseTransport = createSSETransport({ baseUrl: "" });
 const httpTransport = createHTTPTransport({ baseUrl: "" });
@@ -101,64 +102,80 @@ export default function App() {
     [sendChat],
   );
 
-  const pendingRelay = state.pendingRelays[0] ?? null;
+  const handleAllow = useCallback(
+    async (relay: PendingRelay) => {
+      if (!state.sessionId) return;
 
-  const handleAllow = useCallback(async () => {
-    if (!pendingRelay || !state.sessionId) return;
+      // Clear the relay without granting the tool permanently.
+      // We use approved: false in the reducer (to skip granting) even though
+      // we send approved: true to the server (to actually execute the tool).
+      setState((s) =>
+        reduceConversation(s, {
+          type: "relay_resolved",
+          relayId: relay.relayId,
+          tool: relay.tool,
+          approved: false,
+        }),
+      );
 
-    // Clear the relay without granting the tool permanently.
-    // We use approved: false in the reducer (to skip granting) even though
-    // we send approved: true to the server (to actually execute the tool).
-    setState((s) =>
-      reduceConversation(s, {
-        type: "relay_resolved",
-        relayId: pendingRelay.relayId,
-        tool: pendingRelay.tool,
-        approved: false,
-      }),
-    );
-
-    await httpTransport.resolveRelay(state.sessionId, pendingRelay.relayId, {
-      approved: true,
-    });
-  }, [state.sessionId, pendingRelay]);
-
-  const handleAllowAll = useCallback(async () => {
-    if (!pendingRelay || !state.sessionId) return;
-
-    // Grant tool and clear relay
-    setState((s) =>
-      reduceConversation(s, {
-        type: "relay_resolved",
-        relayId: pendingRelay.relayId,
-        tool: pendingRelay.tool,
+      await httpTransport.resolveRelay(state.sessionId, relay.relayId, {
         approved: true,
-      }),
-    );
+      });
+    },
+    [state.sessionId],
+  );
 
-    await httpTransport.resolveRelay(state.sessionId, pendingRelay.relayId, {
-      approved: true,
-    });
-  }, [state.sessionId, pendingRelay]);
+  const handleAllowAll = useCallback(
+    async (relay: PendingRelay) => {
+      if (!state.sessionId) return;
 
-  const handleDeny = useCallback(async () => {
-    if (!pendingRelay || !state.sessionId) return;
+      // Grant tool and clear relay
+      setState((s) =>
+        reduceConversation(s, {
+          type: "relay_resolved",
+          relayId: relay.relayId,
+          tool: relay.tool,
+          approved: true,
+        }),
+      );
 
-    // Clear relay with denial
-    setState((s) =>
-      reduceConversation(s, {
-        type: "relay_resolved",
-        relayId: pendingRelay.relayId,
-        tool: pendingRelay.tool,
+      await httpTransport.resolveRelay(state.sessionId, relay.relayId, {
+        approved: true,
+      });
+    },
+    [state.sessionId],
+  );
+
+  const handleDeny = useCallback(
+    async (relay: PendingRelay) => {
+      if (!state.sessionId) return;
+
+      // Clear relay with denial
+      setState((s) =>
+        reduceConversation(s, {
+          type: "relay_resolved",
+          relayId: relay.relayId,
+          tool: relay.tool,
+          approved: false,
+        }),
+      );
+
+      await httpTransport.resolveRelay(state.sessionId, relay.relayId, {
         approved: false,
-      }),
-    );
+        reason: "User denied",
+      });
+    },
+    [state.sessionId],
+  );
 
-    await httpTransport.resolveRelay(state.sessionId, pendingRelay.relayId, {
-      approved: false,
-      reason: "User denied",
-    });
-  }, [state.sessionId, pendingRelay]);
+  const permissionHandlers: PermissionHandlers = useMemo(
+    () => ({
+      onAllow: handleAllow,
+      onAllowAll: handleAllowAll,
+      onDeny: handleDeny,
+    }),
+    [handleAllow, handleAllowAll, handleDeny],
+  );
 
   const isStreaming = state.activeStreams.size > 0;
 
@@ -168,17 +185,13 @@ export default function App() {
         <h1 className="text-lg font-semibold">LLM Gateway</h1>
       </header>
       <main className="flex-1 overflow-auto p-3 sm:p-4">
-        <ConversationThread graph={state.graph} />
-        {pendingRelay && (
-          <PermissionPrompt
-            request={pendingRelay}
-            onAllow={handleAllow}
-            onAllowAll={handleAllowAll}
-            onDeny={handleDeny}
-          />
-        )}
+        <ConversationThread
+          graph={state.graph}
+          pendingRelays={state.pendingRelays}
+          permissionHandlers={permissionHandlers}
+        />
       </main>
-      <InputArea onSubmit={handleSubmit} disabled={isStreaming || pendingRelay !== null} />
+      <InputArea onSubmit={handleSubmit} disabled={isStreaming || state.pendingRelays.length > 0} />
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import { describe, test, expect } from "bun:test";
 import { createInitialConversation, reduceConversation } from "../conversation";
-import type { ConversationEvent } from "../conversation";
 import { getRoots, getChildren, getContentBlocks, getRole } from "../selectors";
 
 describe("Conversation Reducer", () => {
@@ -72,8 +71,8 @@ describe("Conversation Reducer", () => {
       params: { command: "rm -rf" },
     });
     expect(state.pendingRelays.length).toBe(1);
-    expect(state.pendingRelays[0].relayId).toBe("r-1");
-    expect(state.pendingRelays[0].tool).toBe("bash");
+    expect(state.pendingRelays[0]!.relayId).toBe("r-1");
+    expect(state.pendingRelays[0]!.tool).toBe("bash");
   });
 
   test("multiple relays accumulate", () => {

@@ -418,9 +418,9 @@ describe("Agent Harness", () => {
 
     // Agent should have passed its own runId as parentId to provider
     expect(capturedContexts.length).toBe(1);
-    expect(capturedContexts[0].parentId).toBeDefined();
-    expect(typeof capturedContexts[0].parentId).toBe("string");
-    expect(capturedContexts[0].parentId!.length).toBeGreaterThan(0);
+    expect(capturedContexts[0]!.parentId).toBeDefined();
+    expect(typeof capturedContexts[0]!.parentId).toBe("string");
+    expect(capturedContexts[0]!.parentId!.length).toBeGreaterThan(0);
   });
 });
 

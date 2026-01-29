@@ -20,7 +20,6 @@ import {
   getContentBlocks,
   getRole,
   getText,
-  getToolCalls,
 } from "../index";
 
 // --- Test tool ---
@@ -42,7 +41,7 @@ const echoTool: ToolDefinition<typeof echoSchema, string> = {
 function startTestServer(
   config: DeterministicHarnessConfig,
   tools?: ToolDefinition[],
-): { server: Server; baseUrl: string } {
+): { server: Server<unknown>; baseUrl: string } {
   const provider = createDeterministicHarness(config);
   const harness = createAgentHarness({ harness: provider });
   const app = createApp({ harness, tools });
@@ -80,7 +79,7 @@ async function streamToState(
 
 // --- Tests ---
 
-let server: Server | undefined;
+let server: Server<unknown> | undefined;
 
 afterEach(() => {
   if (server) {
@@ -141,7 +140,7 @@ describe("Conversation Reducer Integration", () => {
       if (fullText.includes("Hello world!")) {
         // getContentBlocks merges consecutive text events
         expect(textBlocks.length).toBe(1);
-        expect(textBlocks[0].content).toBe("Hello world!");
+        expect(textBlocks[0]!.content).toBe("Hello world!");
         found = true;
       }
     }
@@ -172,8 +171,8 @@ describe("Conversation Reducer Integration", () => {
       const reasoning = blocks.filter((b) => b.type === "reasoning");
       const text = blocks.filter((b) => b.type === "text");
       if (reasoning.length > 0 && text.length > 0) {
-        expect(reasoning[0].content).toContain("think");
-        expect(text[0].content).toContain("answer");
+        expect(reasoning[0]!.content).toContain("think");
+        expect(text[0]!.content).toContain("answer");
         found = true;
       }
     }
@@ -257,7 +256,7 @@ describe("Conversation Reducer Integration", () => {
       // When we hit a relay, verify pendingRelays then approve it
       if (event.type === "relay") {
         expect(state.pendingRelays.length).toBe(1);
-        expect(state.pendingRelays[0].tool).toBe("echo");
+        expect(state.pendingRelays[0]!.tool).toBe("echo");
 
         // Resolve relay via HTTP
         await httpTransport.resolveRelay(state.sessionId!, event.id, {
@@ -508,7 +507,6 @@ describe("Conversation Reducer Integration", () => {
     server = setup.server;
 
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
-    const httpT = createHTTPTransport({ baseUrl: setup.baseUrl });
     let state = createInitialConversation();
 
     for await (const event of transport.stream({

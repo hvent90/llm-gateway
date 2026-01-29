@@ -124,8 +124,8 @@ describe("Selectors", () => {
 
     const toolCalls = getToolCalls(state, "run-1");
     expect(toolCalls.length).toBe(2);
-    expect(toolCalls[0].name).toBe("bash");
-    expect(toolCalls[1].name).toBe("read");
+    expect(toolCalls[0]!.name).toBe("bash");
+    expect(toolCalls[1]!.name).toBe("read");
   });
 
   test("getStatus returns streaming when no terminal event", () => {
@@ -333,9 +333,9 @@ describe("getContentBlocks", () => {
     });
     const blocks = getContentBlocks(state, "run-1");
     expect(blocks.length).toBe(4);
-    expect(blocks[0].type).toBe("reasoning");
+    expect(blocks[0]!.type).toBe("reasoning");
     expect(blocks[1]).toEqual({ type: "text", content: "I'll use a tool" });
-    expect(blocks[2].type).toBe("tool_call");
+    expect(blocks[2]!.type).toBe("tool_call");
     expect(blocks[3]).toEqual({ type: "text", content: "Here are the files" });
   });
 

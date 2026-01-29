@@ -1,10 +1,14 @@
 import { getContentBlocks, getChildren, getRole } from "../../../../packages/ai/client";
-import type { ContentBlock, GraphState } from "../types";
+import type { ContentBlock, GraphState, PendingRelay } from "../types";
+import { PermissionPrompt } from "./PermissionPrompt";
+import type { PermissionHandlers } from "./ConversationThread";
 
 interface MessageNodeProps {
   graph: GraphState;
   runId: string;
   depth?: number;
+  pendingRelays: PendingRelay[];
+  permissionHandlers: PermissionHandlers;
 }
 
 function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: "tool_call" }> }) {
@@ -61,12 +65,19 @@ const indentClasses = [
   "ml-8 sm:ml-16",
 ] as const;
 
-export function MessageNode({ graph, runId, depth = 0 }: MessageNodeProps) {
+export function MessageNode({
+  graph,
+  runId,
+  depth = 0,
+  pendingRelays,
+  permissionHandlers,
+}: MessageNodeProps) {
   const role = getRole(graph, runId);
   const blocks = getContentBlocks(graph, runId);
   const children = getChildren(graph, runId);
   const isUser = role === "user";
   const indent = indentClasses[Math.min(depth, 4)] ?? "ml-16";
+  const nodeRelays = pendingRelays.filter((r) => r.runId === runId);
 
   return (
     <div className={`${indent} mb-4`}>
@@ -76,10 +87,26 @@ export function MessageNode({ graph, runId, depth = 0 }: MessageNodeProps) {
       {blocks.map((block, index) => (
         <ContentBlockView key={index} block={block} index={index} />
       ))}
+      {nodeRelays.map((relay) => (
+        <PermissionPrompt
+          key={relay.relayId}
+          request={relay}
+          onAllow={() => permissionHandlers.onAllow(relay)}
+          onAllowAll={() => permissionHandlers.onAllowAll(relay)}
+          onDeny={() => permissionHandlers.onDeny(relay)}
+        />
+      ))}
       {children.length > 0 && (
         <div className="mt-2 border-l-2 border-gray-700 pl-2 sm:pl-4">
           {children.map((childId) => (
-            <MessageNode key={childId} graph={graph} runId={childId} depth={depth + 1} />
+            <MessageNode
+              key={childId}
+              graph={graph}
+              runId={childId}
+              depth={depth + 1}
+              pendingRelays={pendingRelays}
+              permissionHandlers={permissionHandlers}
+            />
           ))}
         </div>
       )}

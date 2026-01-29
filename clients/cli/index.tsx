@@ -19,7 +19,7 @@ import {
   getContentBlocks,
   getRole,
 } from "../../packages/ai/client";
-import type { ConversationState, ContentBlock } from "../../packages/ai/client";
+import type { ConversationState, ContentBlock, PendingRelay } from "../../packages/ai/client";
 
 // Configuration from environment
 const MODEL = process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
@@ -94,11 +94,16 @@ function getErrorMessages(graph: ConversationState["graph"], runId: string): str
 }
 
 // Recursive node renderer — walks the conversation graph
-function NodeView(props: { graph: ConversationState["graph"]; runId: string }) {
+function NodeView(props: {
+  graph: ConversationState["graph"];
+  runId: string;
+  pendingRelays: PendingRelay[];
+}) {
   const role = () => getRole(props.graph, props.runId);
   const blocks = () => getContentBlocks(props.graph, props.runId);
   const children = () => getChildren(props.graph, props.runId);
   const errors = () => getErrorMessages(props.graph, props.runId);
+  const nodeRelays = () => props.pendingRelays.filter((r) => r.runId === props.runId);
 
   return (
     <box marginTop={role() === "user" ? 1 : 0} marginBottom={role() === "user" ? 1 : 0}>
@@ -110,7 +115,23 @@ function NodeView(props: { graph: ConversationState["graph"]; runId: string }) {
           </text>
         )}
       </For>
-      <For each={children()}>{(childId) => <NodeView graph={props.graph} runId={childId} />}</For>
+      <For each={nodeRelays()}>
+        {(relay) => {
+          const paramsStr = JSON.stringify(relay.params, null, 2);
+          return (
+            <box marginTop={1}>
+              <text wrapMode="word" fg="yellow">
+                {`[!] Permission Required\n   Tool: ${relay.tool}\n   Params: ${paramsStr}\n   Enter 'y' to allow, 'n' to deny`}
+              </text>
+            </box>
+          );
+        }}
+      </For>
+      <For each={children()}>
+        {(childId) => (
+          <NodeView graph={props.graph} runId={childId} pendingRelays={props.pendingRelays} />
+        )}
+      </For>
     </box>
   );
 }
@@ -284,21 +305,14 @@ function ChatApp() {
             <text wrapMode="word">Welcome! Type a message and press Enter to start chatting.</text>
           </Show>
           <For each={roots()}>
-            {(runId) => <NodeView graph={conversation().graph} runId={runId} />}
+            {(runId) => (
+              <NodeView
+                graph={conversation().graph}
+                runId={runId}
+                pendingRelays={conversation().pendingRelays}
+              />
+            )}
           </For>
-          <Show when={pendingRelay() !== null}>
-            {(() => {
-              const relay = pendingRelay()!;
-              const paramsStr = JSON.stringify(relay.params, null, 2);
-              return (
-                <box marginTop={1}>
-                  <text wrapMode="word" fg="yellow">
-                    {`[!] Permission Required\n   Tool: ${relay.tool}\n   Params: ${paramsStr}\n   Enter 'y' to allow, 'n' to deny`}
-                  </text>
-                </box>
-              );
-            })()}
-          </Show>
         </scrollbox>
       </box>
 

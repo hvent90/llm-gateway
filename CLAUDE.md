@@ -17,6 +17,7 @@ Hono server proxying LLM requests through a harness interface.
 - Tests must only output on failure (quiet success, loud failure)
 - No mocks - use real integrations in tests
 - Refactor freely, no backwards compatibility shims
+- No re-export shims - when code moves, update all import sites to point to the new location instead of leaving behind proxy re-exports
 - Ask questions early - liberally use AskUserQuestion when requirements are unclear or ambiguous
 
 ## Project Structure

@@ -1,12 +1,12 @@
 import OpenAI from "openai";
 import { v7 } from "uuid";
+import { toJSONSchema } from "zod";
 import type {
-  HarnessModule,
-  InvokeParams,
+  GeneratorHarnessModule,
+  GeneratorInvokeParams,
+  HarnessEvent,
   Message,
   ToolDefinition,
-  ToolContext,
-  ToolCall,
 } from "../../types";
 
 type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
@@ -86,43 +86,44 @@ function convertTools(tools: ToolDefinition[]): OpenAI.Responses.Tool[] {
     type: "function" as const,
     name: t.name,
     description: t.description,
-    parameters: t.schema as unknown as Record<string, unknown>,
+    parameters: toJSONSchema(t.schema) as unknown as Record<string, unknown>,
     strict: true,
   }));
 }
 
 /**
- * Track tool calls being accumulated from streaming events.
+ * Single-iteration OpenAI harness using the Responses API with SSE streaming.
+ *
+ * This harness makes a single LLM call and yields events for:
+ * - reasoning: streamed reasoning content
+ * - text: streamed text content
+ * - tool_call: tool calls from the model
+ * - error: any errors that occur
+ *
+ * It does NOT:
+ * - Execute tools (that's the agent wrapper's job)
+ * - Handle permissions (that's the agent wrapper's job)
+ * - Loop after tool calls (that's the agent wrapper's job)
  */
-interface StreamingToolCall {
-  id: string;
-  callId: string;
-  name: string;
-  arguments: string;
-}
-
-function createHarness(apiKey?: string): HarnessModule {
+function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
   const client = new OpenAI({
     apiKey: apiKey ?? process.env.OPENAI_API_KEY,
   });
 
   return {
-    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
-      const { instructions, input } = convertMessages(params.messages);
-      const tools = params.tools ? convertTools(params.tools) : undefined;
-
-      const runId = v7(); // Provider always creates its own ID
+    async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const runId = v7();
       const parentId = context?.parentId;
       const reasoningId = v7();
       const textId = v7();
 
-      // Wrap emit to add parentId to events
-      const taggedEmit = (event: Parameters<typeof emit>[0]) => {
-        emit(parentId ? { ...event, parentId } : event);
-      };
+      const tag = <T extends object>(event: T): T & { parentId?: string } =>
+        parentId ? { ...event, parentId } : event;
+
+      const { instructions, input } = convertMessages(params.messages);
+      const tools = params.tools ? convertTools(params.tools) : undefined;
 
       try {
-        // Use the Responses API with streaming
         const stream = await client.responses.create({
           model: params.model,
           instructions,
@@ -131,18 +132,17 @@ function createHarness(apiKey?: string): HarnessModule {
           stream: true,
         });
 
-        // Track accumulated tool calls by output_index
-        const toolCallsMap: Record<string, StreamingToolCall> = {};
-        // Track current output item indices for mapping
-        let currentOutputIndex = 0;
+        // Track tool calls by output_index
+        const toolCallsMap: Record<
+          string,
+          { id: string; callId: string; name: string; arguments: string }
+        > = {};
 
         for await (const event of stream) {
-          // Handle different event types from the Responses API
-
           // Reasoning text delta events
           if (event.type === "response.reasoning_text.delta") {
-            taggedEmit({
-              type: "reasoning",
+            yield tag({
+              type: "reasoning" as const,
               runId,
               id: reasoningId,
               content: event.delta,
@@ -151,8 +151,8 @@ function createHarness(apiKey?: string): HarnessModule {
 
           // Text content delta events
           if (event.type === "response.output_text.delta") {
-            taggedEmit({
-              type: "text",
+            yield tag({
+              type: "text" as const,
               runId,
               id: textId,
               content: event.delta,
@@ -163,7 +163,6 @@ function createHarness(apiKey?: string): HarnessModule {
           if (event.type === "response.output_item.added") {
             const item = event.item;
             if (item.type === "function_call") {
-              currentOutputIndex = event.output_index;
               const key = String(event.output_index);
               toolCallsMap[key] = {
                 id: item.id || v7(),
@@ -174,7 +173,7 @@ function createHarness(apiKey?: string): HarnessModule {
             }
           }
 
-          // Function call arguments delta - accumulate arguments as they stream
+          // Function call arguments delta
           if (event.type === "response.function_call_arguments.delta") {
             const key = String(event.output_index);
             if (toolCallsMap[key]) {
@@ -182,7 +181,7 @@ function createHarness(apiKey?: string): HarnessModule {
             }
           }
 
-          // Function call arguments done - arguments are complete
+          // Function call arguments done
           if (event.type === "response.function_call_arguments.done") {
             const key = String(event.output_index);
             if (toolCallsMap[key]) {
@@ -190,7 +189,7 @@ function createHarness(apiKey?: string): HarnessModule {
             }
           }
 
-          // Output item done - could be a completed function call
+          // Output item done
           if (event.type === "response.output_item.done") {
             const item = event.item;
             if (item.type === "function_call") {
@@ -204,71 +203,30 @@ function createHarness(apiKey?: string): HarnessModule {
           }
         }
 
-        // After streaming completes, emit tool calls and execute tools
-        const toolCalls: ToolCall[] = Object.values(toolCallsMap).map((tc) => {
-          let parsedArgs: unknown;
+        // Yield tool_call events for the agent wrapper to process
+        for (const tc of Object.values(toolCallsMap)) {
+          let args: unknown;
           try {
-            parsedArgs = tc.arguments ? JSON.parse(tc.arguments) : {};
+            args = tc.arguments ? JSON.parse(tc.arguments) : {};
           } catch {
-            parsedArgs = tc.arguments;
+            yield tag({
+              type: "error" as const,
+              runId,
+              error: new Error(`Failed to parse tool arguments: ${tc.arguments}`),
+            });
+            return;
           }
-
-          return {
-            id: tc.callId || tc.id,
-            name: tc.name,
-            arguments: parsedArgs,
-          };
-        });
-
-        // Emit tool_call events
-        for (const tc of toolCalls) {
-          taggedEmit({
-            type: "tool_call",
+          yield tag({
+            type: "tool_call" as const,
             runId,
             name: tc.name,
-            id: tc.id,
-            input: tc.arguments,
+            id: tc.callId || tc.id,
+            input: args,
           });
         }
-
-        // Execute tools if they have executors
-        for (const tc of toolCalls) {
-          const toolDef = params.tools?.find((t) => t.name === tc.name);
-          if (!toolDef?.execute) {
-            // No executor - that's ok, caller may process tool_call events directly
-            continue;
-          }
-
-          const toolCtx: ToolContext = {
-            emit: taggedEmit,
-            parentId: tc.id, // This tool_call becomes parent for nested events
-          };
-
-          try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(
-              tc.arguments,
-              toolCtx,
-            );
-            // Emit tool_result with context for agent loop (context goes into messages)
-            // and result for application consumption
-            taggedEmit({
-              type: "tool_result",
-              runId,
-              name: tc.name,
-              id: tc.id,
-              output: { context: toolContext, result: toolResult },
-            });
-          } catch (error) {
-            taggedEmit({
-              type: "error",
-              runId,
-              error: error instanceof Error ? error : new Error(String(error)),
-            });
-          }
-        }
       } catch (error) {
-        taggedEmit({
-          type: "error",
+        yield tag({
+          type: "error" as const,
           runId,
           error: error instanceof Error ? error : new Error(String(error)),
         });
@@ -277,10 +235,8 @@ function createHarness(apiKey?: string): HarnessModule {
 
     async supportedModels(): Promise<string[]> {
       const response = await client.models.list();
-      // Filter to only chat/completion models (exclude embedding, tts, etc.)
       const chatModels = [];
       for await (const model of response) {
-        // Include models that are likely to support the Responses API
         if (
           model.id.includes("gpt") ||
           model.id.includes("o1") ||
@@ -295,5 +251,5 @@ function createHarness(apiKey?: string): HarnessModule {
   };
 }
 
-export const openAiHarness = createHarness();
-export { createHarness };
+export const openAiHarness = createGeneratorHarness();
+export { createGeneratorHarness };

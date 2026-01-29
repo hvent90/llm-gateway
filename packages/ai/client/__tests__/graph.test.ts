@@ -29,7 +29,7 @@ describe("Graph State", () => {
     const node = newState.nodes.get("run-1")!;
     expect(node.runId).toBe("run-1");
     expect(node.events.length).toBe(1);
-    expect(node.events[0].type).toBe("text");
+    expect(node.events[0]!.type).toBe("text");
   });
 
   test("reduceEvent accumulates events in same node", () => {
@@ -82,7 +82,7 @@ describe("Graph State", () => {
 
     const node = state.nodes.get("run-1")!;
     expect(node.events.length).toBe(1);
-    expect(node.events[0].type).toBe("tool_call");
+    expect(node.events[0]!.type).toBe("tool_call");
   });
 
   test("reduceEvent handles tool_result events", () => {
@@ -97,7 +97,7 @@ describe("Graph State", () => {
     });
 
     const node = state.nodes.get("run-1")!;
-    expect(node.events[0].type).toBe("tool_result");
+    expect(node.events[0]!.type).toBe("tool_result");
   });
 
   test("reduceEvent handles error events", () => {
@@ -110,7 +110,7 @@ describe("Graph State", () => {
     });
 
     const node = state.nodes.get("run-1")!;
-    expect(node.events[0].type).toBe("error");
+    expect(node.events[0]!.type).toBe("error");
   });
 
   test("reduceEvent handles reasoning events", () => {
@@ -124,7 +124,7 @@ describe("Graph State", () => {
     });
 
     const node = state.nodes.get("run-1")!;
-    expect(node.events[0].type).toBe("reasoning");
+    expect(node.events[0]!.type).toBe("reasoning");
   });
 
   test("reduceEvent creates separate nodes for different runIds", () => {

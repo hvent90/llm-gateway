@@ -477,7 +477,7 @@ function createSpawnSubagentTool(
     schema: subagentSchema,
     execute: async (input, ctx) => {
       const subagentId = orchestrator.spawn({
-        model: "nvidia/nemotron-nano-9b-v2:free",
+        model: process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free",
         messages: [
           {
             role: "system",
@@ -543,7 +543,7 @@ The subagent will handle the actual bash execution. You coordinate and report re
     const spawnTool = createSpawnSubagentTool(orchestrator);
 
     const mainAgentId = orchestrator.spawn({
-      model: "nvidia/nemotron-nano-9b-v2:free",
+      model: process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free",
       messages: conversationHistory,
       tools: [spawnTool],
     });

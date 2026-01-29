@@ -8,6 +8,9 @@ const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:4000";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   root: "clients/web",
+  define: {
+    __LLM_MODEL__: JSON.stringify(process.env.LLM_MODEL),
+  },
   server: {
     host: true,
     port,

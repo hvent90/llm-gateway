@@ -3,17 +3,15 @@ import type {
   MessageParam,
   ContentBlockParam,
   ToolResultBlockParam,
-  Tool,
-  ContentBlock,
 } from "@anthropic-ai/sdk/resources/messages";
 import { v7 } from "uuid";
+import { toJSONSchema } from "zod";
 import type {
-  HarnessModule,
-  InvokeParams,
+  GeneratorHarnessModule,
+  GeneratorInvokeParams,
+  HarnessEvent,
   Message,
   ToolDefinition,
-  ToolContext,
-  ToolCall,
 } from "../../types";
 
 // Models that support extended thinking
@@ -99,94 +97,51 @@ function getSystemMessage(messages: Message[]): string | undefined {
   return systemMsg ? systemMsg.content : undefined;
 }
 
-// Convert Zod schema to JSON Schema format for Anthropic
-function zodToJsonSchema(schema: ToolDefinition["schema"]): Tool["input_schema"] {
-  // Use zod's built-in JSON schema generation if available
-  // Otherwise, manually construct the schema from the Zod definition
-  if ("_def" in schema && schema._def) {
-    const def = schema._def as { typeName?: string; shape?: () => Record<string, unknown> };
-    if (def.typeName === "ZodObject" && def.shape) {
-      const shape = def.shape();
-      const properties: Record<string, unknown> = {};
-      const required: string[] = [];
-
-      for (const [key, value] of Object.entries(shape)) {
-        const fieldDef = (
-          value as { _def?: { typeName?: string; description?: string; innerType?: unknown } }
-        )._def;
-        if (fieldDef) {
-          const isOptional = fieldDef.typeName === "ZodOptional";
-          const innerType =
-            isOptional && fieldDef.innerType
-              ? (fieldDef.innerType as { _def?: { typeName?: string } })._def
-              : fieldDef;
-
-          if (!isOptional) {
-            required.push(key);
-          }
-
-          const typeName = innerType?.typeName;
-          let jsonType = "string";
-          if (typeName === "ZodNumber") jsonType = "number";
-          else if (typeName === "ZodBoolean") jsonType = "boolean";
-          else if (typeName === "ZodArray") jsonType = "array";
-          else if (typeName === "ZodObject") jsonType = "object";
-
-          properties[key] = {
-            type: jsonType,
-            ...(fieldDef.description && { description: fieldDef.description }),
-          };
-        }
-      }
-
-      return {
-        type: "object" as const,
-        properties,
-        required: required.length > 0 ? required : undefined,
-      };
-    }
-  }
-
-  // Fallback: assume it's already a JSON schema-like object
-  // Cast through unknown to satisfy TypeScript
-  return schema as unknown as Tool["input_schema"];
+function convertTools(tools: ToolDefinition[]) {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: toJSONSchema(t.schema) as Anthropic.Tool.InputSchema,
+  }));
 }
 
-function createHarness(apiKey?: string): HarnessModule {
+/**
+ * Single-iteration Anthropic harness using the Messages API with SSE streaming.
+ *
+ * This harness makes a single LLM call and yields events for:
+ * - reasoning: streamed thinking content
+ * - text: streamed text content
+ * - tool_call: tool calls from the model
+ * - error: any errors that occur
+ *
+ * It does NOT:
+ * - Execute tools (that's the agent wrapper's job)
+ * - Handle permissions (that's the agent wrapper's job)
+ * - Loop after tool calls (that's the agent wrapper's job)
+ */
+function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
   const client = new Anthropic({
     apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY,
   });
 
   return {
-    async invoke({ emit, context, ...params }: InvokeParams): Promise<void> {
-      const messages = convertMessages(params.messages);
-      const system = getSystemMessage(params.messages);
-      const tools = params.tools
-        ? params.tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            input_schema: zodToJsonSchema(t.schema),
-          }))
-        : undefined;
-
-      const runId = v7(); // Provider always creates its own ID
+    async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const runId = v7();
       const parentId = context?.parentId;
-
-      // Wrap emit to add parentId to events
-      const taggedEmit = (event: Parameters<typeof emit>[0]) => {
-        emit(parentId ? { ...event, parentId } : event);
-      };
-
-      // Track content block IDs for events
       const reasoningId = v7();
       const textId = v7();
 
-      // Determine if we should enable extended thinking
+      const tag = <T extends object>(event: T): T & { parentId?: string } =>
+        parentId ? { ...event, parentId } : event;
+
+      const messages = convertMessages(params.messages);
+      const system = getSystemMessage(params.messages);
+      const tools = params.tools ? convertTools(params.tools) : undefined;
+
       const enableThinking = supportsThinking(params.model);
 
       try {
-        // Use the streaming helper API
-        const streamParams: Anthropic.MessageCreateParams = {
+        const stream = await client.messages.create({
           model: params.model,
           max_tokens: enableThinking ? 16000 : 4096,
           messages,
@@ -194,86 +149,75 @@ function createHarness(apiKey?: string): HarnessModule {
           ...(tools && tools.length > 0 && { tools }),
           ...(enableThinking && {
             thinking: {
-              type: "enabled",
+              type: "enabled" as const,
               budget_tokens: 8000,
             },
           }),
-        };
-
-        const stream = client.messages.stream(streamParams);
-
-        // Collect tool calls for later execution
-        const toolCalls: ToolCall[] = [];
-
-        // Listen for thinking/reasoning events
-        stream.on("thinking", (thinkingDelta: string) => {
-          taggedEmit({ type: "reasoning", runId, id: reasoningId, content: thinkingDelta });
+          stream: true as const,
         });
 
-        // Listen for text events
-        stream.on("text", (textDelta: string) => {
-          taggedEmit({ type: "text", runId, id: textId, content: textDelta });
-        });
+        // Track tool calls by content block index
+        const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
 
-        // Listen for content block events to track tool use blocks
-        stream.on("contentBlock", (block: ContentBlock) => {
-          if (block.type === "tool_use") {
-            taggedEmit({
-              type: "tool_call",
-              runId,
-              name: block.name,
-              id: block.id,
-              input: block.input,
-            });
-            toolCalls.push({
-              id: block.id,
-              name: block.name,
-              arguments: block.input as Record<string, unknown>,
-            });
-          }
-        });
-
-        // Wait for the stream to complete
-        await stream.finalMessage();
-
-        // Execute tools if they have executors
-        for (const tc of toolCalls) {
-          const toolDef = params.tools?.find((t) => t.name === tc.name);
-          if (!toolDef?.execute) {
-            // No executor - that's ok, caller may process tool_call events directly
-            continue;
+        for await (const event of stream) {
+          if (event.type === "content_block_start") {
+            if (event.content_block.type === "tool_use") {
+              toolCallsMap[event.index] = {
+                id: event.content_block.id,
+                name: event.content_block.name,
+                arguments: "",
+              };
+            }
           }
 
-          const toolCtx: ToolContext = {
-            emit: taggedEmit,
-            parentId: tc.id, // This tool_call becomes parent for nested events
-          };
-
-          try {
-            const { context: toolContext, result: toolResult } = await toolDef.execute(
-              tc.arguments,
-              toolCtx,
-            );
-            // Emit tool_result with context for agent loop (context goes into messages)
-            // and result for application consumption
-            taggedEmit({
-              type: "tool_result",
-              runId,
-              name: tc.name,
-              id: tc.id,
-              output: { context: toolContext, result: toolResult },
-            });
-          } catch (error) {
-            taggedEmit({
-              type: "error",
-              runId,
-              error: error instanceof Error ? error : new Error(String(error)),
-            });
+          if (event.type === "content_block_delta") {
+            if (event.delta.type === "thinking_delta") {
+              yield tag({
+                type: "reasoning" as const,
+                runId,
+                id: reasoningId,
+                content: event.delta.thinking,
+              });
+            } else if (event.delta.type === "text_delta") {
+              yield tag({
+                type: "text" as const,
+                runId,
+                id: textId,
+                content: event.delta.text,
+              });
+            } else if (event.delta.type === "input_json_delta") {
+              const tracked = toolCallsMap[event.index];
+              if (tracked) {
+                tracked.arguments += event.delta.partial_json;
+              }
+            }
           }
         }
+
+        // Yield tool_call events for the agent wrapper to process
+        for (const tc of Object.values(toolCallsMap)) {
+          let args: unknown;
+          try {
+            args = tc.arguments ? JSON.parse(tc.arguments) : {};
+          } catch {
+            yield tag({
+              type: "error" as const,
+              runId,
+              error: new Error(`Failed to parse tool arguments: ${tc.arguments}`),
+            });
+            return;
+          }
+          yield tag({
+            type: "tool_call" as const,
+            runId,
+            name: tc.name,
+            id: tc.id,
+            input: args,
+          });
+        }
       } catch (error) {
-        taggedEmit({
-          type: "error",
+        yield tag({
+          type: "error" as const,
           runId,
           error: error instanceof Error ? error : new Error(String(error)),
         });
@@ -305,5 +249,5 @@ function createHarness(apiKey?: string): HarnessModule {
   };
 }
 
-export const anthropicHarness = createHarness();
-export { createHarness };
+export const anthropicHarness = createGeneratorHarness();
+export { createGeneratorHarness };

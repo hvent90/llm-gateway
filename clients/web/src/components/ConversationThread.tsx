@@ -1,19 +1,31 @@
 import { useRef, useEffect } from "react";
 import { getRoots } from "../../../../packages/ai/client";
-import type { GraphState } from "../types";
+import type { GraphState, PendingRelay } from "../types";
 import { MessageNode } from "./MessageNode";
+
+export interface PermissionHandlers {
+  onAllow: (relay: PendingRelay) => void;
+  onAllowAll: (relay: PendingRelay) => void;
+  onDeny: (relay: PendingRelay) => void;
+}
 
 interface ConversationThreadProps {
   graph: GraphState;
+  pendingRelays: PendingRelay[];
+  permissionHandlers: PermissionHandlers;
 }
 
-export function ConversationThread({ graph }: ConversationThreadProps) {
+export function ConversationThread({
+  graph,
+  pendingRelays,
+  permissionHandlers,
+}: ConversationThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const roots = getRoots(graph);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [graph]);
+  }, [graph, pendingRelays]);
 
   if (roots.length === 0) {
     return (
@@ -26,7 +38,13 @@ export function ConversationThread({ graph }: ConversationThreadProps) {
   return (
     <div className="space-y-4">
       {roots.map((runId) => (
-        <MessageNode key={runId} graph={graph} runId={runId} />
+        <MessageNode
+          key={runId}
+          graph={graph}
+          runId={runId}
+          pendingRelays={pendingRelays}
+          permissionHandlers={permissionHandlers}
+        />
       ))}
       <div ref={bottomRef} />
     </div>

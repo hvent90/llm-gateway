@@ -21,7 +21,7 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("text");
+    expect(events[0]!.type).toBe("text");
     expect((events[0] as { content: string }).content).toBe("Hello world");
   });
 
@@ -35,7 +35,7 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("reasoning");
+    expect(events[0]!.type).toBe("reasoning");
     expect((events[0] as { content: string }).content).toBe("Let me think...");
   });
 
@@ -53,7 +53,7 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("tool_call");
+    expect(events[0]!.type).toBe("tool_call");
     const tc = events[0] as { name: string; input: unknown };
     expect(tc.name).toBe("bash");
     expect(tc.input).toEqual({ command: "echo hello" });
@@ -77,8 +77,8 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(2);
-    expect(events[0].type).toBe("text");
-    expect(events[1].type).toBe("error");
+    expect(events[0]!.type).toBe("text");
+    expect(events[1]!.type).toBe("error");
     expect((events[1] as { error: Error }).error.message).toBe("boom");
   });
 
@@ -95,14 +95,14 @@ describe("Deterministic Harness", () => {
       harness.invoke({ model: "deterministic", messages: [{ role: "user", content: "greet" }] }),
     );
     expect(first).toHaveLength(1);
-    expect(first[0].type).toBe("tool_call");
+    expect(first[0]!.type).toBe("tool_call");
 
     // Second invoke — text follow-up
     const second = await collectEvents(
       harness.invoke({ model: "deterministic", messages: [{ role: "user", content: "continue" }] }),
     );
     expect(second).toHaveLength(1);
-    expect(second[0].type).toBe("text");
+    expect(second[0]!.type).toBe("text");
     expect((second[0] as { content: string }).content).toBe("Done greeting");
   });
 
@@ -155,7 +155,7 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(1);
-    expect("parentId" in events[0]).toBe(false);
+    expect("parentId" in events[0]!).toBe(false);
   });
 
   test("each event gets a unique id", async () => {
@@ -203,7 +203,7 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe("error");
+    expect(events[0]!.type).toBe("error");
     expect((events[0] as { error: Error }).error.message).toContain("no scripted response");
   });
 
@@ -226,9 +226,9 @@ describe("Deterministic Harness", () => {
     );
 
     expect(events).toHaveLength(4);
-    expect(events[0].type).toBe("reasoning");
-    expect(events[1].type).toBe("text");
-    expect(events[2].type).toBe("text");
-    expect(events[3].type).toBe("tool_call");
+    expect(events[0]!.type).toBe("reasoning");
+    expect(events[1]!.type).toBe("text");
+    expect(events[2]!.type).toBe("text");
+    expect(events[3]!.type).toBe("tool_call");
   });
 });

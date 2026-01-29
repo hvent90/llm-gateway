@@ -27,7 +27,7 @@ function mockFetch(chunks: string[], status = 200) {
       statusText: status === 200 ? "OK" : "Error",
       body: sseStream(chunks),
     } as Response),
-  );
+  ) as unknown as typeof fetch;
   return () => {
     globalThis.fetch = original;
   };

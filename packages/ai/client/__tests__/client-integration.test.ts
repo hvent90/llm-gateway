@@ -10,8 +10,7 @@ import { z } from "zod";
 import type { Server } from "bun";
 import type { ToolDefinition } from "../../types";
 import type { ServerEvent } from "../server-event";
-import type { ConversationState, ConversationEvent } from "../conversation";
-import type { ContentBlock } from "../selectors";
+import type { ConversationState } from "../conversation";
 import {
   createDeterministicHarness,
   type DeterministicHarnessConfig,
@@ -49,7 +48,7 @@ const echoTool: ToolDefinition<typeof echoSchema, string> = {
 function startTestServer(
   config: DeterministicHarnessConfig,
   tools?: ToolDefinition[],
-): { server: Server; baseUrl: string } {
+): { server: Server<unknown>; baseUrl: string } {
   const provider = createDeterministicHarness(config);
   const harness = createAgentHarness({ harness: provider });
   const app = createApp({ harness, tools });
@@ -132,7 +131,7 @@ function getErrorMessages(graph: ConversationState["graph"], runId: string): str
 
 // --- Shared test state ---
 
-let srv: Server | undefined;
+let srv: Server<unknown> | undefined;
 
 afterEach(() => {
   if (srv) {
@@ -488,7 +487,7 @@ describe("CLI Client Integration", () => {
     expect(apiMessages[0]).toEqual({ role: "user", content: "Run ls" });
 
     // Assistant message should include tool call in [tool] format
-    const assistantMsg = apiMessages[1];
+    const assistantMsg = apiMessages[1]!;
     expect(assistantMsg.role).toBe("assistant");
     expect(assistantMsg.content).toContain("[tool] bash:");
     expect(assistantMsg.content).toContain("file.txt");

@@ -11,7 +11,7 @@ describe("HTTP Transport", () => {
   test("resolveRelay sends POST to /chat/relay/:relayId", async () => {
     originalFetch = globalThis.fetch;
     const mockFetch = mock(() => Promise.resolve({ ok: true } as Response));
-    globalThis.fetch = mockFetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
 
     const transport = createHTTPTransport({ baseUrl: "http://test" });
     await transport.resolveRelay("sess-1", "relay-1", { approved: true });
@@ -26,7 +26,7 @@ describe("HTTP Transport", () => {
   test("resolveRelay sends arbitrary response payload", async () => {
     originalFetch = globalThis.fetch;
     const mockFetch = mock(() => Promise.resolve({ ok: true } as Response));
-    globalThis.fetch = mockFetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
 
     const transport = createHTTPTransport({ baseUrl: "http://test" });
     await transport.resolveRelay("sess-1", "relay-2", { approved: false, reason: "Denied" });
@@ -45,7 +45,7 @@ describe("HTTP Transport", () => {
     originalFetch = globalThis.fetch;
     globalThis.fetch = mock(() =>
       Promise.resolve({ ok: false, status: 404, statusText: "Not Found" } as Response),
-    );
+    ) as unknown as typeof fetch;
 
     const transport = createHTTPTransport({ baseUrl: "http://test" });
     expect(transport.resolveRelay("sess-1", "relay-1", { approved: true })).rejects.toThrow("404");
