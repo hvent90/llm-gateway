@@ -16,6 +16,7 @@ export interface ConversationState {
   pendingRelays: PendingRelay[];
   grantedTools: Set<string>;
   activeStreams: Set<string>;
+  isConnected: boolean;
 }
 
 type UserEvent = {
@@ -40,6 +41,7 @@ export function createInitialConversation(): ConversationState {
     pendingRelays: [],
     grantedTools: new Set(),
     activeStreams: new Set(),
+    isConnected: false,
   };
 }
 
@@ -95,16 +97,22 @@ export function reduceConversation(
       return { ...state, pendingRelays, grantedTools };
     }
 
-    case "stream_start": {
+    case "stream_start":
+      return { ...state, isConnected: true };
+
+    case "stream_end":
+      return { ...state, isConnected: false };
+
+    case "harness_start": {
       const activeStreams = new Set(state.activeStreams);
       activeStreams.add(event.runId);
-      return { ...state, activeStreams };
+      return { ...state, activeStreams, graph: reduceEvent(state.graph, event) };
     }
 
-    case "stream_end": {
+    case "harness_end": {
       const activeStreams = new Set(state.activeStreams);
       activeStreams.delete(event.runId);
-      return { ...state, activeStreams };
+      return { ...state, activeStreams, graph: reduceEvent(state.graph, event) };
     }
 
     default:

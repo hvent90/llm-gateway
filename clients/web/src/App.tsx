@@ -177,7 +177,7 @@ export default function App() {
     [handleAllow, handleAllowAll, handleDeny],
   );
 
-  const isStreaming = state.activeStreams.size > 0;
+  const isStreaming = state.isConnected;
 
   return (
     <div className="flex h-dvh flex-col bg-gray-900 text-gray-100">
@@ -189,6 +189,7 @@ export default function App() {
           graph={state.graph}
           pendingRelays={state.pendingRelays}
           permissionHandlers={permissionHandlers}
+          activeStreams={state.activeStreams}
         />
       </main>
       <InputArea onSubmit={handleSubmit} disabled={isStreaming || state.pendingRelays.length > 0} />

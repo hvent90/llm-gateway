@@ -166,7 +166,7 @@ describe("Web Client Integration", () => {
     // 3. Stream
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
     state = reduceConversation(state, { type: "stream_start", runId: streamRunId });
-    expect(state.activeStreams.has(streamRunId)).toBe(true);
+    expect(state.isConnected).toBe(true);
 
     for await (const event of transport.stream({
       model: "deterministic",
@@ -180,7 +180,7 @@ describe("Web Client Integration", () => {
 
     // 4. Verify graph structure
     expect(state.sessionId).toBeDefined();
-    expect(state.activeStreams.size).toBe(0);
+    expect(state.isConnected).toBe(false);
 
     // User node is a root
     const roots = getRoots(state.graph);
@@ -575,7 +575,7 @@ describe("CLI Client Integration", () => {
     expect(foundErrors[0]).toContain("Something went wrong");
   });
 
-  test("stream lifecycle: stream_start/stream_end toggle activeStreams", async () => {
+  test("stream lifecycle: stream_start/stream_end toggle isConnected, harness events toggle activeStreams", async () => {
     const setup = startTestServer({
       responses: [{ events: [{ type: "text", content: "streaming" }] }],
     });
@@ -586,26 +586,27 @@ describe("CLI Client Integration", () => {
     const streamRunId = "cli-stream-1";
 
     // Before stream
+    expect(state.isConnected).toBe(false);
     expect(state.activeStreams.size).toBe(0);
 
-    // stream_start
+    // stream_start sets isConnected (not activeStreams)
     state = reduceConversation(state, { type: "stream_start", runId: streamRunId });
-    expect(state.activeStreams.has(streamRunId)).toBe(true);
-    expect(state.activeStreams.size).toBe(1);
+    expect(state.isConnected).toBe(true);
+    expect(state.activeStreams.size).toBe(0);
 
-    // Stream events
+    // Stream events — harness_start/harness_end from server populate activeStreams
     for await (const event of transport.stream({
       model: "deterministic",
       messages: [{ role: "user", content: "go" }],
     })) {
       state = reduceConversation(state, event);
-      // During streaming, activeStreams still has our stream
-      expect(state.activeStreams.has(streamRunId)).toBe(true);
     }
 
-    // stream_end
-    state = reduceConversation(state, { type: "stream_end", runId: streamRunId });
-    expect(state.activeStreams.has(streamRunId)).toBe(false);
+    // After all events, harness_end should have cleared activeStreams
     expect(state.activeStreams.size).toBe(0);
+
+    // stream_end clears isConnected
+    state = reduceConversation(state, { type: "stream_end", runId: streamRunId });
+    expect(state.isConnected).toBe(false);
   });
 });

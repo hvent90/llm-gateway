@@ -10,6 +10,7 @@ describe("Conversation Reducer", () => {
     expect(state.pendingRelays).toEqual([]);
     expect(state.grantedTools.size).toBe(0);
     expect(state.activeStreams.size).toBe(0);
+    expect(state.isConnected).toBe(false);
   });
 
   test("connected event sets sessionId", () => {
@@ -144,17 +145,86 @@ describe("Conversation Reducer", () => {
     expect(state.grantedTools.has("bash")).toBe(false);
   });
 
-  test("stream_start adds to activeStreams", () => {
+  test("stream_start sets isConnected to true", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
-    expect(state.activeStreams.has("run-1")).toBe(true);
+    expect(state.isConnected).toBe(true);
   });
 
-  test("stream_end removes from activeStreams", () => {
+  test("stream_end sets isConnected to false", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
     state = reduceConversation(state, { type: "stream_end", runId: "run-1" });
+    expect(state.isConnected).toBe(false);
+  });
+
+  test("harness_start adds runId to activeStreams and delegates to graph", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "harness_start",
+      runId: "run-1",
+      agentId: "agent-1",
+    });
+    expect(state.activeStreams.has("run-1")).toBe(true);
+    expect(state.graph.nodes.has("run-1")).toBe(true);
+    expect(state.graph.nodes.get("run-1")!.events[0]!.type).toBe("harness_start");
+  });
+
+  test("harness_end removes runId from activeStreams and delegates to graph", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "harness_start",
+      runId: "run-1",
+      agentId: "agent-1",
+    });
+    state = reduceConversation(state, {
+      type: "harness_end",
+      runId: "run-1",
+      agentId: "agent-1",
+    });
     expect(state.activeStreams.has("run-1")).toBe(false);
+    expect(state.graph.nodes.get("run-1")!.events).toHaveLength(2);
+    expect(state.graph.nodes.get("run-1")!.events[1]!.type).toBe("harness_end");
+  });
+
+  test("harness_start with parentId creates child node in graph", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "harness_start",
+      runId: "parent-run",
+      agentId: "agent-1",
+    });
+    state = reduceConversation(state, {
+      type: "harness_start",
+      runId: "child-run",
+      agentId: "agent-2",
+      parentId: "parent-run",
+    });
+    expect(state.activeStreams.has("parent-run")).toBe(true);
+    expect(state.activeStreams.has("child-run")).toBe(true);
+    expect(state.graph.nodes.get("child-run")!.parentId).toBe("parent-run");
+  });
+
+  test("multiple harness streams tracked independently", () => {
+    let state = createInitialConversation();
+    state = reduceConversation(state, {
+      type: "harness_start",
+      runId: "run-1",
+      agentId: "agent-1",
+    });
+    state = reduceConversation(state, {
+      type: "harness_start",
+      runId: "run-2",
+      agentId: "agent-2",
+    });
+    expect(state.activeStreams.size).toBe(2);
+    state = reduceConversation(state, {
+      type: "harness_end",
+      runId: "run-1",
+      agentId: "agent-1",
+    });
+    expect(state.activeStreams.size).toBe(1);
+    expect(state.activeStreams.has("run-2")).toBe(true);
   });
 
   test("full conversation flow", () => {

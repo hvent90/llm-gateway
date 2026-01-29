@@ -65,8 +65,13 @@ export function getStatus(state: GraphState, runId: string): "streaming" | "comp
   const hasError = node.events.some((e) => e.type === "error");
   if (hasError) return "error";
 
-  // For now, assume streaming unless we add explicit completion events
-  return "streaming";
+  const hasEnd = node.events.some((e) => e.type === "harness_end");
+  if (hasEnd) return "complete";
+
+  const hasStart = node.events.some((e) => e.type === "harness_start");
+  if (hasStart) return "streaming";
+
+  return "complete";
 }
 
 /**

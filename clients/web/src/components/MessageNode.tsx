@@ -9,6 +9,7 @@ interface MessageNodeProps {
   depth?: number;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  activeStreams: Set<string>;
 }
 
 function ToolCallBlock({ block }: { block: Extract<ContentBlock, { type: "tool_call" }> }) {
@@ -71,6 +72,7 @@ export function MessageNode({
   depth = 0,
   pendingRelays,
   permissionHandlers,
+  activeStreams,
 }: MessageNodeProps) {
   const role = getRole(graph, runId);
   const blocks = getContentBlocks(graph, runId);
@@ -106,6 +108,7 @@ export function MessageNode({
               depth={depth + 1}
               pendingRelays={pendingRelays}
               permissionHandlers={permissionHandlers}
+              activeStreams={activeStreams}
             />
           ))}
         </div>

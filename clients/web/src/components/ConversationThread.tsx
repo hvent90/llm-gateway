@@ -13,12 +13,14 @@ interface ConversationThreadProps {
   graph: GraphState;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  activeStreams: Set<string>;
 }
 
 export function ConversationThread({
   graph,
   pendingRelays,
   permissionHandlers,
+  activeStreams,
 }: ConversationThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const roots = getRoots(graph);
@@ -44,6 +46,7 @@ export function ConversationThread({
           runId={runId}
           pendingRelays={pendingRelays}
           permissionHandlers={permissionHandlers}
+          activeStreams={activeStreams}
         />
       ))}
       <div ref={bottomRef} />

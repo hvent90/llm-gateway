@@ -128,7 +128,41 @@ describe("Selectors", () => {
     expect(toolCalls[1]!.name).toBe("read");
   });
 
-  test("getStatus returns streaming when no terminal event", () => {
+  test("getStatus returns streaming after harness_start", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "harness_start",
+      runId: "run-1",
+      agentId: "a1",
+    });
+
+    expect(getStatus(state, "run-1")).toBe("streaming");
+  });
+
+  test("getStatus returns complete after harness_end", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "harness_start",
+      runId: "run-1",
+      agentId: "a1",
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "e1",
+      agentId: "a1",
+      content: "Hello",
+    });
+    state = reduceEvent(state, {
+      type: "harness_end",
+      runId: "run-1",
+      agentId: "a1",
+    });
+
+    expect(getStatus(state, "run-1")).toBe("complete");
+  });
+
+  test("getStatus returns complete for node without harness events", () => {
     let state = createInitialState();
     state = reduceEvent(state, {
       type: "text",
@@ -138,11 +172,16 @@ describe("Selectors", () => {
       content: "Hello",
     });
 
-    expect(getStatus(state, "run-1")).toBe("streaming");
+    expect(getStatus(state, "run-1")).toBe("complete");
   });
 
   test("getStatus returns error when error event present", () => {
     let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "harness_start",
+      runId: "run-1",
+      agentId: "a1",
+    });
     state = reduceEvent(state, {
       type: "error",
       runId: "run-1",
