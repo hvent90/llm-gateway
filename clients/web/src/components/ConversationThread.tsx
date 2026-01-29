@@ -14,6 +14,7 @@ interface ConversationThreadProps {
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
   activeStreams: Set<string>;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export function ConversationThread({
@@ -21,12 +22,29 @@ export function ConversationThread({
   pendingRelays,
   permissionHandlers,
   activeStreams,
+  scrollContainerRef,
 }: ConversationThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
   const roots = getRoots(graph);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 80;
+    };
+
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, [scrollContainerRef]);
+
+  useEffect(() => {
+    if (isNearBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [graph, pendingRelays]);
 
   if (roots.length === 0) {
