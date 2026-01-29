@@ -8,6 +8,8 @@ import {
   getStatus,
   getContentBlocks,
   getRole,
+  getUsage,
+  getToolCallCount,
 } from "../selectors";
 
 describe("Selectors", () => {
@@ -414,5 +416,74 @@ describe("getRole", () => {
   test("returns undefined for unknown runId", () => {
     const state = createInitialState();
     expect(getRole(state, "nonexistent")).toBeUndefined();
+  });
+});
+
+describe("getUsage", () => {
+  test("returns zeros for unknown runId", () => {
+    const state = createInitialState();
+    expect(getUsage(state, "nonexistent")).toEqual({ inputTokens: 0, outputTokens: 0 });
+  });
+
+  test("sums multiple usage events", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "usage",
+      runId: "run-1",
+      agentId: "a1",
+      inputTokens: 100,
+      outputTokens: 50,
+    });
+    state = reduceEvent(state, {
+      type: "usage",
+      runId: "run-1",
+      agentId: "a1",
+      inputTokens: 200,
+      outputTokens: 75,
+    });
+    expect(getUsage(state, "run-1")).toEqual({ inputTokens: 300, outputTokens: 125 });
+  });
+});
+
+describe("getToolCallCount", () => {
+  test("returns 0 for unknown runId", () => {
+    const state = createInitialState();
+    expect(getToolCallCount(state, "nonexistent")).toBe(0);
+  });
+
+  test("counts tool_call events correctly", () => {
+    let state = createInitialState();
+    state = reduceEvent(state, {
+      type: "tool_call",
+      runId: "run-1",
+      id: "tc-1",
+      agentId: "a1",
+      name: "bash",
+      input: { command: "ls" },
+    });
+    state = reduceEvent(state, {
+      type: "text",
+      runId: "run-1",
+      id: "t1",
+      agentId: "a1",
+      content: "some text",
+    });
+    state = reduceEvent(state, {
+      type: "tool_call",
+      runId: "run-1",
+      id: "tc-2",
+      agentId: "a1",
+      name: "read",
+      input: { path: "/tmp" },
+    });
+    state = reduceEvent(state, {
+      type: "tool_call",
+      runId: "run-1",
+      id: "tc-3",
+      agentId: "a1",
+      name: "write",
+      input: { path: "/tmp/out" },
+    });
+    expect(getToolCallCount(state, "run-1")).toBe(3);
   });
 });

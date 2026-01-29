@@ -133,3 +133,40 @@ export function getRole(state: GraphState, runId: string): "user" | "assistant" 
   if (!node) return undefined;
   return node.role;
 }
+
+/**
+ * Get aggregated token usage for a node by summing all usage events.
+ */
+export function getUsage(
+  state: GraphState,
+  runId: string,
+): { inputTokens: number; outputTokens: number } {
+  const node = state.nodes.get(runId);
+  if (!node) return { inputTokens: 0, outputTokens: 0 };
+
+  let inputTokens = 0;
+  let outputTokens = 0;
+  for (const event of node.events) {
+    if (event.type === "usage") {
+      inputTokens += event.inputTokens;
+      outputTokens += event.outputTokens;
+    }
+  }
+  return { inputTokens, outputTokens };
+}
+
+/**
+ * Count tool_call events for a node.
+ */
+export function getToolCallCount(state: GraphState, runId: string): number {
+  const node = state.nodes.get(runId);
+  if (!node) return 0;
+
+  let count = 0;
+  for (const event of node.events) {
+    if (event.type === "tool_call") {
+      count++;
+    }
+  }
+  return count;
+}

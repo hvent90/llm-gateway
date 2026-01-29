@@ -10,6 +10,8 @@ export {
   getStatus,
   getContentBlocks,
   getRole,
+  getUsage,
+  getToolCallCount,
 } from "./selectors";
 export type { ContentBlock } from "./selectors";
 
