@@ -86,6 +86,7 @@ export type HarnessEvent =
       name: string;
       output: unknown;
     }
+  | { type: "usage"; runId: string; parentId?: string; inputTokens: number; outputTokens: number }
   | { type: "error"; runId: string; parentId?: string; error: Error }
   | RelayEvent;
 

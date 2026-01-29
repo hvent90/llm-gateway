@@ -50,6 +50,14 @@ export type ServerEvent =
       tool: string;
       params: Record<string, unknown>;
     }
+  | {
+      type: "usage";
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      inputTokens: number;
+      outputTokens: number;
+    }
   | { type: "error"; runId: string; agentId: string; parentId?: string; message: string };
 
 /**

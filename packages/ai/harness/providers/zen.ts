@@ -101,6 +101,7 @@ interface ChatCompletionChunk {
     delta: ChatCompletionChunkDelta;
     finish_reason: string | null;
   }>;
+  usage?: { prompt_tokens: number; completion_tokens: number };
   error?: { message: string };
 }
 
@@ -135,6 +136,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
         model: params.model,
         messages: convertMessages(params.messages),
         stream: true,
+        stream_options: { include_usage: true },
       };
       if (params.tools?.length) {
         body.tools = convertTools(params.tools);
@@ -176,6 +178,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
 
       // Accumulate tool calls by index as they stream in
       const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
+      let usageData: { prompt_tokens: number; completion_tokens: number } | undefined;
 
       try {
         for await (const data of parseSSE(response.body)) {
@@ -227,6 +230,11 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
               if (tc.function?.arguments) toolCallsMap[idx].arguments += tc.function.arguments;
             }
           }
+
+          // Usage (sent in the final chunk when stream_options.include_usage is true)
+          if (chunk.usage) {
+            usageData = chunk.usage;
+          }
         }
       } catch (error) {
         yield tag({
@@ -256,6 +264,16 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
           name: tc.name,
           id: tc.id,
           input: args,
+        });
+      }
+
+      // Emit usage event after streaming completes
+      if (usageData) {
+        yield tag({
+          type: "usage" as const,
+          runId,
+          inputTokens: usageData.prompt_tokens,
+          outputTokens: usageData.completion_tokens,
         });
       }
     },

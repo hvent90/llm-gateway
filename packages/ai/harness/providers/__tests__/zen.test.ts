@@ -159,6 +159,51 @@ describe("Zen Generator Harness", () => {
     );
 
     test(
+      "invoke yields usage event after streaming completes",
+      async () => {
+        const events = await collectEvents(
+          zenHarness.invoke({
+            model: "big-pickle",
+            messages: [{ role: "user", content: 'Say only the word "test"' }],
+          }),
+        );
+
+        const usageEvents = events.filter((e) => e.type === "usage");
+        expect(usageEvents.length).toBe(1);
+
+        const usage = usageEvents[0]!;
+        expect(usage.type).toBe("usage");
+        expect(typeof usage.inputTokens).toBe("number");
+        expect(typeof usage.outputTokens).toBe("number");
+        expect(usage.inputTokens).toBeGreaterThan(0);
+        expect(usage.outputTokens).toBeGreaterThan(0);
+
+        // Usage event should have the same runId as text events
+        const textEvents = events.filter((e) => e.type === "text");
+        expect(usage.runId).toBe(textEvents[0]!.runId);
+      },
+      { timeout: 60000 },
+    );
+
+    test(
+      "usage event carries parentId when context.parentId is set",
+      async () => {
+        const events = await collectEvents(
+          zenHarness.invoke({
+            model: "big-pickle",
+            messages: [{ role: "user", content: 'Say only the word "test"' }],
+            context: { parentId: "agent-run-456" },
+          }),
+        );
+
+        const usageEvents = events.filter((e) => e.type === "usage");
+        expect(usageEvents.length).toBe(1);
+        expect((usageEvents[0]! as { parentId?: string }).parentId).toBe("agent-run-456");
+      },
+      { timeout: 120000 },
+    );
+
+    test(
       "provider assigns its own runId, not from context",
       async () => {
         const events: HarnessEvent[] = [];

@@ -705,6 +705,67 @@ test("passes spawn from context through to tool execute, wrapping with tool call
   expect(spawnCalls[0].parentId).toBe("tc-1");
 });
 
+test("passes through usage events from provider with tag", async () => {
+  const mockHarness: GeneratorHarnessModule = {
+    async *invoke() {
+      yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      yield { type: "usage", runId: "r1", inputTokens: 10, outputTokens: 5 };
+    },
+    async supportedModels() {
+      return ["test-model"];
+    },
+  };
+
+  const agentHarness = createAgentHarness({ harness: mockHarness });
+  const events = await collectEvents(
+    agentHarness.invoke({
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+      context: { parentId: "parent-abc" },
+    }),
+  );
+
+  const usageEvents = events.filter((e) => e.type === "usage");
+  expect(usageEvents.length).toBe(1);
+
+  const usage = usageEvents[0]!;
+  expect(usage.type).toBe("usage");
+  expect(usage.inputTokens).toBe(10);
+  expect(usage.outputTokens).toBe(5);
+
+  // Should have the agent's runId, not the provider's
+  const start = events[0]!;
+  expect(usage.runId).toBe(start.runId);
+  expect(usage.runId).not.toBe("r1");
+
+  // Should have parentId from context
+  expect((usage as { parentId?: string }).parentId).toBe("parent-abc");
+});
+
+test("passes through usage events without parentId when no context.parentId", async () => {
+  const mockHarness: GeneratorHarnessModule = {
+    async *invoke() {
+      yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      yield { type: "usage", runId: "r1", inputTokens: 20, outputTokens: 15 };
+    },
+    async supportedModels() {
+      return ["test-model"];
+    },
+  };
+
+  const agentHarness = createAgentHarness({ harness: mockHarness });
+  const events = await collectEvents(
+    agentHarness.invoke({
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+    }),
+  );
+
+  const usageEvents = events.filter((e) => e.type === "usage");
+  expect(usageEvents.length).toBe(1);
+  expect("parentId" in usageEvents[0]!).toBe(false);
+});
+
 test("dispatches multiple tool calls concurrently", async () => {
   const callOrder: string[] = [];
   const slowSchema = z.object({ id: z.string() });

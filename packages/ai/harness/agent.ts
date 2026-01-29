@@ -64,6 +64,8 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             assistantText += event.content;
           } else if (event.type === "reasoning") {
             yield tag(event);
+          } else if (event.type === "usage") {
+            yield tag(event);
           } else if (event.type === "error") {
             yield tag(event);
             yield tag({ type: "harness_end", runId: myRunId });
