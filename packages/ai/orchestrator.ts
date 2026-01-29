@@ -3,6 +3,7 @@ import type { HarnessEvent, GeneratorInvokeParams, GeneratorHarnessModule } from
 import { createGeneratorHarness } from "./harness/providers/openrouter";
 import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
+import { createPassthrough } from "./primitives";
 
 /**
  * A pending relay request, stashed until resolved.
@@ -79,9 +80,56 @@ export class AgentOrchestrator {
    */
   spawn(params: GeneratorInvokeParams): string {
     const agentId = v7();
-    const stream = this.harness.invoke(params);
+    const stream = this.harness.invoke({
+      ...params,
+      context: {
+        ...params.context,
+        spawn: (task: string) => this.spawnSubagent(task, params),
+      },
+    });
     this.mux.register(agentId, stream);
     return agentId;
+  }
+
+  /**
+   * Spawn a subagent for a given task.
+   *
+   * Creates a passthrough async iterable and registers it with the multiplexer
+   * so subagent events stream to the consumer. Iterates the harness generator
+   * with .next(), pushing each event into the passthrough. When the generator
+   * completes, calls passthrough.end() and returns the final assistant text.
+   */
+  private async spawnSubagent(
+    task: string,
+    parentParams: GeneratorInvokeParams,
+  ): Promise<string> {
+    const agentId = v7();
+    const passthrough = createPassthrough<HarnessEvent>();
+
+    // Register passthrough with multiplexer so events stream to client
+    this.mux.register(agentId, passthrough.iterable);
+
+    const stream = this.harness.invoke({
+      model: parentParams.model,
+      messages: [{ role: "user", content: task }],
+      tools: parentParams.tools,
+      permissions: parentParams.permissions,
+      context: {
+        parentId: parentParams.context?.parentId,
+        spawn: (t: string) => this.spawnSubagent(t, parentParams),
+      },
+    });
+
+    // Iterate with .next() to capture return value
+    const iterator = stream[Symbol.asyncIterator]();
+    let next = await iterator.next();
+    while (!next.done) {
+      passthrough.push(next.value);
+      next = await iterator.next();
+    }
+    passthrough.end();
+
+    return next.value as string; // The final assistant text
   }
 
   /**

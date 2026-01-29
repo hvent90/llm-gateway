@@ -5,6 +5,7 @@ import type { ToolDefinition } from "../types";
 import type { MultiplexedEvent } from "../multiplexer";
 import { createAgentHarness } from "../harness/agent";
 import { createGeneratorHarness } from "../harness/providers/openrouter";
+import { createDeterministicHarness } from "../harness/providers/deterministic";
 
 const TEST_MODEL = "nvidia/nemotron-nano-9b-v2:free";
 
@@ -454,6 +455,66 @@ describe("AgentOrchestrator", () => {
 
       // Should not throw
       expect(() => orchestrator.kill("nonexistent")).not.toThrow();
+    });
+  });
+});
+
+describe("AgentOrchestrator (deterministic)", () => {
+  describe("spawnSubagent", () => {
+    it("subagent events stream through multiplexer and spawn resolves with final text", async () => {
+      // Deterministic provider serves responses in order:
+      // Response 0: parent agent's first call -> emits tool_call for "agent"
+      // Response 1: subagent's call -> emits text "Hello from subagent"
+      // Response 2: parent agent's second call (after tool result) -> emits final text
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "agent", input: { task: "say hello" } }] },
+          { events: [{ type: "text", content: "Hello from subagent" }] },
+          { events: [{ type: "text", content: "Subagent said hello" }] },
+        ],
+      });
+
+      const agentTool: ToolDefinition = {
+        name: "agent",
+        description: "Spawn a subagent",
+        schema: z.object({ task: z.string() }),
+        execute: async ({ task }, ctx) => {
+          const result = await ctx.spawn!(task);
+          return { context: result, result };
+        },
+      };
+
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      const agentId = orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Spawn a subagent to say hello" }],
+        tools: [agentTool],
+        permissions: { allowlist: [{ tool: "agent" }] },
+      });
+
+      const events: MultiplexedEvent<ConsumerHarnessEvent>[] = [];
+      for await (const event of orchestrator.events()) {
+        events.push(event);
+      }
+
+      // Should have events from both parent and subagent
+      const agentIds = new Set(events.map((e) => e.agentId));
+      expect(agentIds.size).toBe(2);
+
+      // Subagent should have produced text events
+      const subagentId = [...agentIds].find((id) => id !== agentId)!;
+      const subagentTextEvents = events.filter(
+        (e) => e.agentId === subagentId && e.event.type === "text",
+      );
+      expect(subagentTextEvents.length).toBeGreaterThan(0);
+
+      // Parent should have final text after subagent completed
+      const parentTextEvents = events.filter(
+        (e) => e.agentId === agentId && e.event.type === "text",
+      );
+      expect(parentTextEvents.length).toBeGreaterThan(0);
     });
   });
 });
