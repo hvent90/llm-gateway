@@ -18,6 +18,7 @@ export interface ToolExecutionResult<T = unknown> {
 // Context passed to tool execute functions
 export interface ToolContext {
   parentId?: string; // The tool_call ID that spawned this execution context
+  spawn?: (task: string) => Promise<string>;
 }
 
 // Tool definition (passed at request level)
@@ -105,6 +106,7 @@ export interface GeneratorInvokeParams {
   tools?: ToolDefinition[];
   context?: {
     parentId?: string;
+    spawn?: (task: string) => Promise<string>;
   };
   permissions?: Permissions;
 }
