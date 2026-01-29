@@ -147,14 +147,14 @@ describe("Conversation Reducer", () => {
 
   test("stream_start sets isConnected to true", () => {
     let state = createInitialConversation();
-    state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
+    state = reduceConversation(state, { type: "stream_start" });
     expect(state.isConnected).toBe(true);
   });
 
   test("stream_end sets isConnected to false", () => {
     let state = createInitialConversation();
-    state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
-    state = reduceConversation(state, { type: "stream_end", runId: "run-1" });
+    state = reduceConversation(state, { type: "stream_start" });
+    state = reduceConversation(state, { type: "stream_end" });
     expect(state.isConnected).toBe(false);
   });
 
@@ -231,7 +231,7 @@ describe("Conversation Reducer", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, { type: "connected", sessionId: "s-1" });
     state = reduceConversation(state, { type: "user", runId: "user-1", content: "Hello" });
-    state = reduceConversation(state, { type: "stream_start", runId: "run-1" });
+    state = reduceConversation(state, { type: "stream_start" });
     state = reduceConversation(state, {
       type: "text",
       id: "e1",
@@ -240,7 +240,7 @@ describe("Conversation Reducer", () => {
       parentId: "user-1",
       content: "Hi there!",
     });
-    state = reduceConversation(state, { type: "stream_end", runId: "run-1" });
+    state = reduceConversation(state, { type: "stream_end" });
 
     expect(state.sessionId).toBe("s-1");
     expect(getRoots(state.graph)).toEqual(["user-1"]);

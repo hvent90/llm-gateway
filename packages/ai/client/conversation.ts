@@ -30,8 +30,8 @@ type UserEvent = {
 export type ConversationEvent =
   | ServerEvent
   | UserEvent
-  | { type: "stream_start"; runId: string }
-  | { type: "stream_end"; runId: string }
+  | { type: "stream_start" }
+  | { type: "stream_end" }
   | { type: "relay_resolved"; relayId: string; tool: string; approved: boolean };
 
 export function createInitialConversation(): ConversationState {
@@ -101,7 +101,7 @@ export function reduceConversation(
       return { ...state, isConnected: true };
 
     case "stream_end":
-      return { ...state, isConnected: false };
+      return { ...state, isConnected: false, activeStreams: new Set() };
 
     case "harness_start": {
       const activeStreams = new Set(state.activeStreams);

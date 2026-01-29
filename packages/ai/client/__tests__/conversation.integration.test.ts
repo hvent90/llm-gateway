@@ -62,7 +62,7 @@ async function streamToState(
   let state = createInitialConversation();
   const events: ServerEvent[] = [];
 
-  state = reduceConversation(state, { type: "stream_start", runId: "stream-1" });
+  state = reduceConversation(state, { type: "stream_start" });
 
   for await (const event of transport.stream({
     model: "deterministic",
@@ -73,7 +73,7 @@ async function streamToState(
     state = reduceConversation(state, event);
   }
 
-  state = reduceConversation(state, { type: "stream_end", runId: "stream-1" });
+  state = reduceConversation(state, { type: "stream_end" });
   return { state, events };
 }
 
@@ -377,7 +377,7 @@ describe("Conversation Reducer Integration", () => {
 
     // Stream and reduce
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
-    state = reduceConversation(state, { type: "stream_start", runId: "s1" });
+    state = reduceConversation(state, { type: "stream_start" });
 
     for await (const event of transport.stream({
       model: "deterministic",
@@ -386,7 +386,7 @@ describe("Conversation Reducer Integration", () => {
       state = reduceConversation(state, event);
     }
 
-    state = reduceConversation(state, { type: "stream_end", runId: "s1" });
+    state = reduceConversation(state, { type: "stream_end" });
 
     // Graph should have user root node
     const roots = getRoots(state.graph);
@@ -461,7 +461,7 @@ describe("Conversation Reducer Integration", () => {
 
     let state = createInitialConversation();
     state = reduceConversation(state, { type: "user", runId: "user-1", content: "Go" });
-    state = reduceConversation(state, { type: "stream_start", runId: "s1" });
+    state = reduceConversation(state, { type: "stream_start" });
 
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
     const snapshots: string[] = [];

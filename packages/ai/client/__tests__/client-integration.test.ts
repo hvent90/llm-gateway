@@ -154,7 +154,6 @@ describe("Web Client Integration", () => {
     // Simulate handleSubmit
     let state = createInitialConversation();
     const userId = "user-1";
-    const streamRunId = "stream-1";
 
     // 1. Add user message
     state = reduceConversation(state, { type: "user", runId: userId, content: "Hello from web" });
@@ -165,7 +164,7 @@ describe("Web Client Integration", () => {
 
     // 3. Stream
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
-    state = reduceConversation(state, { type: "stream_start", runId: streamRunId });
+    state = reduceConversation(state, { type: "stream_start" });
     expect(state.isConnected).toBe(true);
 
     for await (const event of transport.stream({
@@ -176,7 +175,7 @@ describe("Web Client Integration", () => {
       state = reduceConversation(state, event);
     }
 
-    state = reduceConversation(state, { type: "stream_end", runId: streamRunId });
+    state = reduceConversation(state, { type: "stream_end" });
 
     // 4. Verify graph structure
     expect(state.sessionId).toBeDefined();
@@ -362,7 +361,7 @@ describe("Web Client Integration", () => {
     // --- Turn 1: grant via relay ---
     const t1Transport = createSSETransport({ baseUrl: setup.baseUrl });
     state = reduceConversation(state, { type: "user", runId: "u1", content: "echo first" });
-    state = reduceConversation(state, { type: "stream_start", runId: "s1" });
+    state = reduceConversation(state, { type: "stream_start" });
 
     for await (const event of t1Transport.stream({
       model: "deterministic",
@@ -381,7 +380,7 @@ describe("Web Client Integration", () => {
         await httpTransport.resolveRelay(state.sessionId!, event.id, { approved: true });
       }
     }
-    state = reduceConversation(state, { type: "stream_end", runId: "s1" });
+    state = reduceConversation(state, { type: "stream_end" });
 
     expect(state.grantedTools.has("echo")).toBe(true);
 
@@ -394,7 +393,7 @@ describe("Web Client Integration", () => {
     // Stream second turn — tool should auto-execute (no relay)
     const t2Transport = createSSETransport({ baseUrl: setup.baseUrl });
     state = reduceConversation(state, { type: "user", runId: "u2", content: "echo second" });
-    state = reduceConversation(state, { type: "stream_start", runId: "s2" });
+    state = reduceConversation(state, { type: "stream_start" });
 
     const t2Events: ServerEvent[] = [];
     for await (const event of t2Transport.stream({
@@ -405,7 +404,7 @@ describe("Web Client Integration", () => {
       t2Events.push(event);
       state = reduceConversation(state, event);
     }
-    state = reduceConversation(state, { type: "stream_end", runId: "s2" });
+    state = reduceConversation(state, { type: "stream_end" });
 
     // No relay in turn 2 — tool auto-approved
     expect(t2Events.some((e) => e.type === "relay")).toBe(false);
@@ -583,14 +582,13 @@ describe("CLI Client Integration", () => {
 
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
     let state = createInitialConversation();
-    const streamRunId = "cli-stream-1";
 
     // Before stream
     expect(state.isConnected).toBe(false);
     expect(state.activeStreams.size).toBe(0);
 
     // stream_start sets isConnected (not activeStreams)
-    state = reduceConversation(state, { type: "stream_start", runId: streamRunId });
+    state = reduceConversation(state, { type: "stream_start" });
     expect(state.isConnected).toBe(true);
     expect(state.activeStreams.size).toBe(0);
 
@@ -606,7 +604,7 @@ describe("CLI Client Integration", () => {
     expect(state.activeStreams.size).toBe(0);
 
     // stream_end clears isConnected
-    state = reduceConversation(state, { type: "stream_end", runId: streamRunId });
+    state = reduceConversation(state, { type: "stream_end" });
     expect(state.isConnected).toBe(false);
   });
 });

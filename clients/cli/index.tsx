@@ -223,15 +223,14 @@ function ChatApp() {
 
   // Stream chat from the server using SSE transport
   async function streamChat(userMessages: Array<{ role: string; content: string }>) {
-    const streamRunId = `stream-${Date.now()}`;
-    setConversation((s) => reduceConversation(s, { type: "stream_start", runId: streamRunId }));
+    setConversation((s) => reduceConversation(s, { type: "stream_start" }));
 
     try {
       for await (const event of sseTransport.stream({ model: MODEL, messages: userMessages })) {
         setConversation((s) => reduceConversation(s, event));
       }
     } finally {
-      setConversation((s) => reduceConversation(s, { type: "stream_end", runId: streamRunId }));
+      setConversation((s) => reduceConversation(s, { type: "stream_end" }));
     }
   }
 

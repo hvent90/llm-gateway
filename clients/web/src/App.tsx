@@ -52,38 +52,34 @@ export default function App() {
   }
 
   // Core streaming function - can be called with different permissions
-  const sendChat = useCallback(
-    async (messages: Message[], permissions: Permissions, streamRunId: string) => {
-      setState((s) => reduceConversation(s, { type: "stream_start", runId: streamRunId }));
+  const sendChat = useCallback(async (messages: Message[], permissions: Permissions) => {
+    setState((s) => reduceConversation(s, { type: "stream_start" }));
 
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
-      try {
-        const stream = sseTransport.stream(
-          { model: MODEL, messages, permissions },
-          controller.signal,
-        );
+    try {
+      const stream = sseTransport.stream(
+        { model: MODEL, messages, permissions },
+        controller.signal,
+      );
 
-        for await (const event of stream) {
-          setState((s) => reduceConversation(s, event));
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name !== "AbortError") {
-          console.error("Stream error:", error);
-        }
-      } finally {
-        setState((s) => reduceConversation(s, { type: "stream_end", runId: streamRunId }));
-        abortControllerRef.current = null;
+      for await (const event of stream) {
+        setState((s) => reduceConversation(s, event));
       }
-    },
-    [],
-  );
+    } catch (error) {
+      if (error instanceof Error && error.name !== "AbortError") {
+        console.error("Stream error:", error);
+      }
+    } finally {
+      setState((s) => reduceConversation(s, { type: "stream_end" }));
+      abortControllerRef.current = null;
+    }
+  }, []);
 
   const handleSubmit = useCallback(
     async (content: string) => {
       const userId = nextUserId();
-      const streamRunId = `stream-${Date.now()}`;
 
       // Add user message to state
       setState((s) => reduceConversation(s, { type: "user", runId: userId, content }));
@@ -97,7 +93,7 @@ export default function App() {
         allowlist: Array.from(current.grantedTools).map((tool) => ({ tool })),
       };
 
-      await sendChat(messages, permissions, streamRunId);
+      await sendChat(messages, permissions);
     },
     [sendChat],
   );
