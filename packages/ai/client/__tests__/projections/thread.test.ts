@@ -131,6 +131,76 @@ describe("Thread Projection", () => {
     expect(view[3]!.role).toBe("assistant");
   });
 
+  test("cross-run promotion: user message with linked assistant reply renders flat", () => {
+    // When a user message has a single cross-run edge (assistant reply via parentId),
+    // the reply should be promoted to a continuation — rendered flat, not as a branch.
+    const g = buildGraph([
+      { type: "user", runId: "u1", content: "Hello" } as any,
+      { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", parentId: "u1:user", content: "Hi there" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const view = projectThread(g);
+    // Should render as flat: [user, text] — not user with a branch
+    expect(view.length).toBe(2);
+    expect(view[0]!.role).toBe("user");
+    expect(view[0]!.branches).toEqual([]);
+    expect(view[1]!.role).toBe("assistant");
+    if (view[1]!.content.kind === "text") {
+      expect(view[1]!.content.text).toBe("Hi there");
+    }
+  });
+
+  test("conversation fork: user message with multiple assistant replies creates branches", () => {
+    // When a user message has multiple cross-run edges (forking conversation),
+    // the first reply is promoted to continuation and the rest become branches.
+    const g = buildGraph([
+      { type: "user", runId: "u1", content: "Hello" } as any,
+      { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", parentId: "u1:user", content: "Reply A" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "u1:user" },
+      { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "u1:user", content: "Reply B" },
+      { type: "harness_end", runId: "r2", agentId: "a2" },
+    ]);
+    const view = projectThread(g);
+    // First reply promoted to continuation (flat), second becomes a branch on user node
+    const userNode = view.find((v) => v.role === "user");
+    expect(userNode).toBeDefined();
+    expect(userNode!.branches.length).toBe(1);
+    // The promoted reply should follow the user node in the flat list
+    const textNodes = view.filter((v) => v.content.kind === "text");
+    expect(textNodes.length).toBeGreaterThanOrEqual(1);
+    // The branch should contain the second reply
+    const branchTexts = userNode!.branches[0]!;
+    expect(branchTexts.length).toBeGreaterThan(0);
+    const branchText = branchTexts.find((v) => v.content.kind === "text");
+    expect(branchText).toBeDefined();
+    if (branchText!.content.kind === "text") {
+      expect(branchText!.content.text).toBe("Reply B");
+    }
+  });
+
+  test("text node with cross-run branch renders the branch", () => {
+    // Any content node (not just tool_call) should be able to have branches
+    // when it has cross-run edges.
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Main text" },
+      // A cross-run edge from t1 to a child run
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "t1" },
+      { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "t1", content: "Branch text" },
+      { type: "harness_end", runId: "r2", agentId: "a2" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const view = projectThread(g);
+    const mainNode = view.find((v) => v.content.kind === "text" && v.id === "t1");
+    expect(mainNode).toBeDefined();
+    // The cross-run child should appear as a branch
+    expect(mainNode!.branches.length).toBe(1);
+    expect(mainNode!.branches[0]!.length).toBeGreaterThan(0);
+  });
+
   test("parallel subagents create multiple branches", () => {
     const g = buildGraph([
       { type: "harness_start", runId: "r1", agentId: "a1" },

@@ -134,18 +134,31 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
     const content = nodeToViewContent(node);
     const edges = graph.edges.get(current) ?? [];
 
-    // Separate edges into same-run (continuation) and cross-run (branches)
-    const continuations: string[] = [];
-    const branchStarts: string[] = [];
+    // Separate edges into same-run (continuation) and cross-run targets.
+    let continuation: string | null = null;
+    const crossRunTargets: string[] = [];
 
     for (const targetId of edges) {
       const targetNode = graph.nodes.get(targetId);
       if (!targetNode) continue;
       if (targetNode.runId === node.runId) {
-        continuations.push(targetId);
+        if (!continuation) continuation = targetId;
       } else {
-        branchStarts.push(targetId);
+        crossRunTargets.push(targetId);
       }
+    }
+
+    // When there is a same-run continuation, all cross-run edges are branches.
+    // When there is NO same-run continuation, the first cross-run edge is
+    // promoted to continuation (e.g. user → assistant reply), rest are branches.
+    let branchStarts: string[];
+    if (continuation) {
+      branchStarts = crossRunTargets;
+    } else if (crossRunTargets.length > 0) {
+      continuation = crossRunTargets[0]!;
+      branchStarts = crossRunTargets.slice(1);
+    } else {
+      branchStarts = [];
     }
 
     // If this node produces content, create or merge a ViewNode
@@ -175,14 +188,12 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
           branches: [],
         };
 
-        // If this is a tool_call, build branches from cross-run children
-        if (content.kind === "tool_call" && branchStarts.length > 0) {
-          for (const branchStartId of branchStarts) {
-            if (!visited.has(branchStartId)) {
-              const branch = walkRun(graph, branchStartId, visited);
-              if (branch.length > 0) {
-                viewNode.branches.push(branch);
-              }
+        // Build branches from cross-run children
+        for (const branchStartId of branchStarts) {
+          if (!visited.has(branchStartId)) {
+            const branch = walkRun(graph, branchStartId, visited);
+            if (branch.length > 0) {
+              viewNode.branches.push(branch);
             }
           }
         }
@@ -190,17 +201,18 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
         result.push(viewNode);
       }
     } else {
-      // Even structural nodes (harness_start, harness_end, etc.) may have
-      // cross-run branch edges we need to process. But typically only
-      // tool_call has cross-run edges, so this is rarely hit.
-      // We still need to process branches from non-content nodes.
+      // Structural nodes (harness_start, harness_end, etc.) don't produce
+      // ViewNodes but may still have cross-run branches that need walking.
+      for (const branchStartId of branchStarts) {
+        if (!visited.has(branchStartId)) {
+          const branch = walkRun(graph, branchStartId, visited);
+          result.push(...branch);
+        }
+      }
     }
 
     // If the node is tool_result, attach its output to the last tool_call ViewNode
     if (node.kind === "tool_result") {
-      // Walk backwards to find the matching tool_call ViewNode
-      // The tool_result id is `{tool_call_id}:result`, so the tool_call id
-      // is the prefix before `:result`
       const toolCallId = node.id.replace(/:result$/, "");
       for (let i = result.length - 1; i >= 0; i--) {
         const v = result[i]!;
@@ -211,8 +223,8 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
       }
     }
 
-    // Follow the first same-run continuation edge
-    current = continuations.length > 0 ? continuations[0]! : null;
+    // Follow continuation edge
+    current = continuation;
   }
 
   return result;
