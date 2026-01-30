@@ -1,6 +1,7 @@
 import type { ServerEvent } from "./server-event";
-import type { GraphState } from "./types";
-import { createInitialState, reduceEvent } from "./graph";
+import type { GraphBuilderState } from "./types";
+import { createInitialGraph, reduceGraphEvent } from "./graph";
+import type { GraphEvent } from "./graph";
 
 export interface PendingRelay {
   relayId: string;
@@ -11,7 +12,7 @@ export interface PendingRelay {
 }
 
 export interface ConversationState {
-  graph: GraphState;
+  graph: GraphBuilderState;
   sessionId: string | null;
   pendingRelays: PendingRelay[];
   grantedTools: Set<string>;
@@ -19,24 +20,16 @@ export interface ConversationState {
   isConnected: boolean;
 }
 
-type UserEvent = {
-  type: "user";
-  runId: string;
-  parentId?: string;
-  content: string;
-  timestamp?: number;
-};
-
 export type ConversationEvent =
   | ServerEvent
-  | UserEvent
+  | { type: "user"; runId: string; parentId?: string; content: string; timestamp?: number }
   | { type: "stream_start" }
   | { type: "stream_end" }
   | { type: "relay_resolved"; relayId: string; tool: string; approved: boolean };
 
 export function createInitialConversation(): ConversationState {
   return {
-    graph: createInitialState(),
+    graph: createInitialGraph(),
     sessionId: null,
     pendingRelays: [],
     grantedTools: new Set(),
@@ -45,12 +38,10 @@ export function createInitialConversation(): ConversationState {
   };
 }
 
-/** Returns pending relays whose tool is already in grantedTools. */
 export function getAutoApprovableRelays(state: ConversationState): PendingRelay[] {
   return state.pendingRelays.filter((r) => state.grantedTools.has(r.tool));
 }
 
-/** Returns all pending relays matching a given tool name. */
 export function getSameToolRelays(state: ConversationState, tool: string): PendingRelay[] {
   return state.pendingRelays.filter((r) => r.tool === tool);
 }
@@ -63,25 +54,8 @@ export function reduceConversation(
     case "connected":
       return { ...state, sessionId: event.sessionId };
 
-    case "user": {
-      const runId = event.runId;
-      const parentId = event.parentId;
-      // Store a synthetic text event so getContentBlocks works
-      const syntheticEvent = {
-        type: "text" as const,
-        id: runId,
-        runId,
-        agentId: runId,
-        content: event.content,
-      };
-      const existingNode = state.graph.nodes.get(runId);
-      const node = existingNode
-        ? { ...existingNode, events: [...existingNode.events, syntheticEvent as ServerEvent] }
-        : { runId, parentId, role: "user" as const, events: [syntheticEvent as ServerEvent] };
-      const newNodes = new Map(state.graph.nodes);
-      newNodes.set(runId, node);
-      return { ...state, graph: { nodes: newNodes } };
-    }
+    case "user":
+      return { ...state, graph: reduceGraphEvent(state.graph, event) };
 
     case "relay": {
       const relay: PendingRelay = {
@@ -91,11 +65,10 @@ export function reduceConversation(
         tool: event.tool,
         params: event.params,
       };
-      // Also delegate to graph reducer so the relay event is tracked on the node
       return {
         ...state,
         pendingRelays: [...state.pendingRelays, relay],
-        graph: reduceEvent(state.graph, event),
+        graph: reduceGraphEvent(state.graph, event),
       };
     }
 
@@ -116,16 +89,16 @@ export function reduceConversation(
     case "harness_start": {
       const activeStreams = new Set(state.activeStreams);
       activeStreams.add(event.runId);
-      return { ...state, activeStreams, graph: reduceEvent(state.graph, event) };
+      return { ...state, activeStreams, graph: reduceGraphEvent(state.graph, event) };
     }
 
     case "harness_end": {
       const activeStreams = new Set(state.activeStreams);
       activeStreams.delete(event.runId);
-      return { ...state, activeStreams, graph: reduceEvent(state.graph, event) };
+      return { ...state, activeStreams, graph: reduceGraphEvent(state.graph, event) };
     }
 
     default:
-      return { ...state, graph: reduceEvent(state.graph, event as ServerEvent) };
+      return { ...state, graph: reduceGraphEvent(state.graph, event as ServerEvent) };
   }
 }
