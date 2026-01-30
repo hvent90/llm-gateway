@@ -1,18 +1,34 @@
-import type { ServerEvent } from "./server-event";
+/**
+ * A node in the conversation graph.
+ * Each node represents one content block — not one "message" or one "run."
+ */
+export type Node = { id: string; runId: string } & (
+  | { kind: "text"; content: string }
+  | { kind: "reasoning"; content: string }
+  | { kind: "tool_call"; name: string; input: unknown }
+  | { kind: "tool_result"; name: string; output: unknown }
+  | { kind: "user"; content: string }
+  | { kind: "harness_start"; agentId: string }
+  | { kind: "harness_end"; agentId: string }
+  | { kind: "error"; message: string }
+  | { kind: "usage"; inputTokens: number; outputTokens: number }
+  | {
+      kind: "relay";
+      relayKind: "permission";
+      toolCallId: string;
+      tool: string;
+      params: Record<string, unknown>;
+    }
+);
 
 /**
- * A node in the event graph, representing a single harness invocation.
+ * The conversation graph.
+ * - nodes: all nodes keyed by id
+ * - edges: adjacency list (sourceId → targetIds[])
+ * - lastNodeByRunId: tracks the most recent node per runId for edge construction
  */
-export interface GraphNode {
-  runId: string;
-  parentId?: string;
-  role: "user" | "assistant";
-  events: ServerEvent[];
-}
-
-/**
- * The complete graph state - minimal, events as source of truth.
- */
-export interface GraphState {
-  nodes: Map<string, GraphNode>;
+export interface Graph {
+  nodes: Map<string, Node>;
+  edges: Map<string, string[]>;
+  lastNodeByRunId: Map<string, string>;
 }
