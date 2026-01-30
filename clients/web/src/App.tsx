@@ -12,9 +12,6 @@ import {
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
 import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
 
-declare const __LLM_MODEL__: string | undefined;
-const MODEL = __LLM_MODEL__ ?? "kimi-k2.5";
-
 const sseTransport = createSSETransport({ baseUrl: "" });
 const httpTransport = createHTTPTransport({ baseUrl: "" });
 
@@ -26,10 +23,22 @@ function nextUserId(): string {
 export default function App() {
   const [state, setState] = useState<ConversationState>(createInitialConversation);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [models, setModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/models")
+      .then((r) => r.json())
+      .then((data: { models: string[] }) => {
+        setModels(data.models);
+        if (data.models.length > 0) setSelectedModel(data.models[0]);
+      })
+      .catch(() => {});
+  }, []);
 
   function buildMessagesFromGraph(graph: ConversationState["graph"]): Message[] {
     const messages: Message[] = [];
@@ -48,56 +57,56 @@ export default function App() {
     return messages;
   }
 
-  const sendChat = useCallback(async (messages: Message[], permissions: Permissions) => {
-    setState((s) => reduceConversation(s, { type: "stream_start" }));
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    const pendingEvents: ServerEvent[] = [];
-    let rafId: number | undefined;
+  const sendChat = useCallback(
+    async (model: string, messages: Message[], permissions: Permissions) => {
+      setState((s) => reduceConversation(s, { type: "stream_start" }));
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      const pendingEvents: ServerEvent[] = [];
+      let rafId: number | undefined;
 
-    const flushPending = () => {
-      if (rafId !== undefined) cancelAnimationFrame(rafId);
-      rafId = undefined;
-      if (pendingEvents.length > 0) {
-        const batch = pendingEvents.splice(0);
-        setState((s) => {
-          let current = s;
-          for (const e of batch) current = reduceConversation(current, e);
-          return current;
-        });
-      }
-    };
-
-    try {
-      const stream = sseTransport.stream(
-        { model: MODEL, messages, permissions },
-        controller.signal,
-      );
-      for await (const event of stream) {
-        pendingEvents.push(event);
-        if (rafId === undefined) {
-          rafId = requestAnimationFrame(() => {
-            rafId = undefined;
-            const batch = pendingEvents.splice(0);
-            setState((s) => {
-              let current = s;
-              for (const e of batch) current = reduceConversation(current, e);
-              return current;
-            });
+      const flushPending = () => {
+        if (rafId !== undefined) cancelAnimationFrame(rafId);
+        rafId = undefined;
+        if (pendingEvents.length > 0) {
+          const batch = pendingEvents.splice(0);
+          setState((s) => {
+            let current = s;
+            for (const e of batch) current = reduceConversation(current, e);
+            return current;
           });
         }
+      };
+
+      try {
+        const stream = sseTransport.stream({ model, messages, permissions }, controller.signal);
+        for await (const event of stream) {
+          pendingEvents.push(event);
+          if (rafId === undefined) {
+            rafId = requestAnimationFrame(() => {
+              rafId = undefined;
+              const batch = pendingEvents.splice(0);
+              setState((s) => {
+                let current = s;
+                for (const e of batch) current = reduceConversation(current, e);
+                return current;
+              });
+            });
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name !== "AbortError") {
+          console.error("Stream error:", error);
+          setStreamError(error.message);
+        }
+      } finally {
+        flushPending();
+        setState((s) => reduceConversation(s, { type: "stream_end" }));
+        abortControllerRef.current = null;
       }
-    } catch (error) {
-      if (error instanceof Error && error.name !== "AbortError") {
-        console.error("Stream error:", error);
-        setStreamError(error.message);
-      }
-    } finally {
-      flushPending();
-      setState((s) => reduceConversation(s, { type: "stream_end" }));
-      abortControllerRef.current = null;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const handleSubmit = useCallback(
     async (content: string) => {
@@ -110,9 +119,9 @@ export default function App() {
       const permissions: Permissions = {
         allowlist: Array.from(current.grantedTools).map((tool) => ({ tool })),
       };
-      await sendChat(messages, permissions);
+      await sendChat(selectedModel, messages, permissions);
     },
-    [sendChat],
+    [sendChat, selectedModel],
   );
 
   const handleAllow = useCallback(
@@ -232,8 +241,11 @@ export default function App() {
       <InputArea
         onSubmit={handleSubmit}
         onCancel={handleCancel}
-        disabled={isStreaming || state.pendingRelays.length > 0}
+        disabled={isStreaming || state.pendingRelays.length > 0 || !selectedModel}
         isStreaming={isStreaming}
+        models={models}
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
       />
     </div>
   );

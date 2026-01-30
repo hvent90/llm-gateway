@@ -3,6 +3,8 @@ import { streamSSE } from "hono/streaming";
 import { v7 } from "uuid";
 import { AgentOrchestrator, type ConsumerHarnessEvent } from "../packages/ai/orchestrator.ts";
 import { agentTool, bashTool } from "../packages/ai/tools";
+import { createAgentHarness } from "../packages/ai/harness/agent.ts";
+import { createGeneratorHarness } from "../packages/ai/harness/providers/zen.ts";
 import type {
   GeneratorHarnessModule,
   Message,
@@ -43,9 +45,15 @@ function serializeEvent(event: ConsumerHarnessEvent, agentId: string): object {
 export function createApp(config?: AppConfig): Hono {
   const app = new Hono();
   const tools = config?.tools ?? [agentTool, bashTool];
+  const harness = config?.harness ?? createAgentHarness({ harness: createGeneratorHarness() });
 
   // Per-app orchestrator map for isolation
   const orchestrators = new Map<string, AgentOrchestrator>();
+
+  app.get("/models", async (c) => {
+    const models = await harness.supportedModels();
+    return c.json({ models });
+  });
 
   app.post("/chat", async (c) => {
     let body: ChatRequest;
@@ -64,7 +72,7 @@ export function createApp(config?: AppConfig): Hono {
 
     return streamSSE(c, async (stream) => {
       // Create orchestrator for this session
-      const orchestrator = new AgentOrchestrator(config?.harness);
+      const orchestrator = new AgentOrchestrator(harness);
       orchestrators.set(sessionId, orchestrator);
 
       try {
