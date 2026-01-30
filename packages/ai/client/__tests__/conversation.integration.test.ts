@@ -1,15 +1,7 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { z } from "zod";
 import type { Server } from "bun";
-import type { ToolDefinition } from "../../types";
 import type { ServerEvent } from "../server-event";
 import type { ConversationState } from "../conversation";
-import {
-  createDeterministicHarness,
-  type DeterministicHarnessConfig,
-} from "../../harness/providers/deterministic";
-import { createAgentHarness } from "../../harness/agent";
-import { createApp } from "../../../../server/index";
 import {
   createSSETransport,
   createHTTPTransport,
@@ -17,48 +9,7 @@ import {
   reduceConversation,
   projectThread,
 } from "../index";
-import type { ViewNode } from "../index";
-
-// --- Helpers ---
-
-function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
-  const all: ViewNode[] = [];
-  function walk(list: ViewNode[]) {
-    for (const n of list) {
-      all.push(n);
-      for (const branch of n.branches) walk(branch);
-    }
-  }
-  walk(nodes);
-  return all;
-}
-
-// --- Test tool ---
-
-const echoSchema = z.object({ message: z.string() });
-
-const echoTool: ToolDefinition<typeof echoSchema, string> = {
-  name: "echo",
-  description: "Echoes a message back.",
-  schema: echoSchema,
-  execute: async ({ message }) => ({
-    context: `Echo: ${message}`,
-    result: message,
-  }),
-};
-
-// --- Test helpers ---
-
-function startTestServer(
-  config: DeterministicHarnessConfig,
-  tools?: ToolDefinition[],
-): { server: Server<unknown>; baseUrl: string } {
-  const provider = createDeterministicHarness(config);
-  const harness = createAgentHarness({ harness: provider });
-  const app = createApp({ harness, tools });
-  const server = Bun.serve({ fetch: app.fetch, port: 0 });
-  return { server, baseUrl: `http://localhost:${server.port}` };
-}
+import { collectAllViewNodes, startTestServer, echoTool, renderableKinds } from "./helpers";
 
 /**
  * Stream a chat request and reduce all SSE events into conversation state.
@@ -446,7 +397,6 @@ describe("Conversation Reducer Integration", () => {
     const projectedIds = new Set(all.map((n) => n.id));
 
     // Check every content-bearing node in the graph is represented
-    const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
     for (const [, node] of state.graph.nodes) {
       if (renderableKinds.has(node.kind)) {
         expect(projectedIds.has(node.id)).toBe(true);
@@ -454,7 +404,7 @@ describe("Conversation Reducer Integration", () => {
     }
   });
 
-  test("streamed text is visible through selectors during streaming", async () => {
+  test("streamed text is visible through projection during streaming", async () => {
     const setup = startTestServer({
       responses: [
         {
@@ -525,7 +475,6 @@ describe("Conversation Reducer Integration", () => {
     const all = collectAllViewNodes(viewNodes);
     const projectedIds = new Set(all.map((n) => n.id));
 
-    const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
     for (const [, node] of state.graph.nodes) {
       if (renderableKinds.has(node.kind)) {
         expect(projectedIds.has(node.id)).toBe(true);

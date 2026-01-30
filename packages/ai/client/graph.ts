@@ -93,9 +93,23 @@ function eventToNode(id: string, event: GraphEvent): Node {
     case "error":
       return { id, runId, kind: "error", message: event.message };
     case "usage":
-      return { id, runId, kind: "usage", inputTokens: event.inputTokens, outputTokens: event.outputTokens };
+      return {
+        id,
+        runId,
+        kind: "usage",
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+      };
     case "relay":
-      return { id, runId, kind: "relay", relayKind: event.kind, toolCallId: event.toolCallId, tool: event.tool, params: event.params };
+      return {
+        id,
+        runId,
+        kind: "relay",
+        relayKind: event.kind,
+        toolCallId: event.toolCallId,
+        tool: event.tool,
+        params: event.params,
+      };
     case "user":
       return { id, runId, kind: "user", content: event.content };
     default:
@@ -106,7 +120,11 @@ function eventToNode(id: string, event: GraphEvent): Node {
 /**
  * Add an edge from `source` to `target` in the edges map (cloned).
  */
-function addEdge(edges: Map<string, string[]>, source: string, target: string): Map<string, string[]> {
+function addEdge(
+  edges: Map<string, string[]>,
+  source: string,
+  target: string,
+): Map<string, string[]> {
   const existing = edges.get(source);
   if (existing) {
     edges.set(source, [...existing, target]);

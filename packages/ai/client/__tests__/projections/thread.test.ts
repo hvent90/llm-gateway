@@ -64,7 +64,14 @@ describe("Thread Projection", () => {
       { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
       { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "tc1", content: "Found it" },
       { type: "harness_end", runId: "r2", agentId: "a2", parentId: "tc1" },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "search", output: ["auth.ts"] },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "search",
+        output: ["auth.ts"],
+      },
       { type: "text", id: "t3", runId: "r1", agentId: "a1", content: "Done" },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
@@ -98,9 +105,7 @@ describe("Thread Projection", () => {
   });
 
   test("user event produces user ViewNode", () => {
-    const g = buildGraph([
-      { type: "user", runId: "u1", content: "Hello" } as any,
-    ]);
+    const g = buildGraph([{ type: "user", runId: "u1", content: "Hello" } as any]);
     const view = projectThread(g);
     expect(view.length).toBe(1);
     expect(view[0]!.role).toBe("user");
@@ -136,7 +141,14 @@ describe("Thread Projection", () => {
       { type: "harness_start", runId: "r2b", agentId: "a3", parentId: "tc1" },
       { type: "text", id: "t2b", runId: "r2b", agentId: "a3", parentId: "tc1", content: "B" },
       { type: "harness_end", runId: "r2b", agentId: "a3", parentId: "tc1" },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "search", output: "done" },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "search",
+        output: "done",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const view = projectThread(g);

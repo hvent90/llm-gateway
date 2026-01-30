@@ -11,47 +11,13 @@ import { z } from "zod";
 import type { Server } from "bun";
 import type { ToolDefinition } from "../../types";
 import type { ServerEvent } from "../server-event";
-import type { ConversationState } from "../conversation";
-import {
-  createDeterministicHarness,
-  type DeterministicHarnessConfig,
-} from "../../harness/providers/deterministic";
-import { createAgentHarness } from "../../harness/agent";
-import { createApp } from "../../../../server/index";
 import {
   createSSETransport,
   createInitialConversation,
   reduceConversation,
   projectThread,
 } from "../index";
-import type { ViewNode } from "../index";
-
-// --- Helpers ---
-
-function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
-  const all: ViewNode[] = [];
-  function walk(list: ViewNode[]) {
-    for (const n of list) {
-      all.push(n);
-      for (const branch of n.branches) walk(branch);
-    }
-  }
-  walk(nodes);
-  return all;
-}
-
-// --- Test helpers ---
-
-function startTestServer(
-  config: DeterministicHarnessConfig,
-  tools?: ToolDefinition[],
-): { server: Server<unknown>; baseUrl: string } {
-  const provider = createDeterministicHarness(config);
-  const harness = createAgentHarness({ harness: provider });
-  const app = createApp({ harness, tools });
-  const server = Bun.serve({ fetch: app.fetch, port: 0 });
-  return { server, baseUrl: `http://localhost:${server.port}` };
-}
+import { collectAllViewNodes, startTestServer, renderableKinds } from "./helpers";
 
 const agentSchema = z.object({ task: z.string() });
 const agentTool: ToolDefinition<typeof agentSchema, string> = {
@@ -115,7 +81,6 @@ describe("Nested Subagent Integration", () => {
       const projectedIds = new Set(all.map((n) => n.id));
 
       // Every renderable node in the graph must appear in the projection
-      const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
       const unreachable: string[] = [];
       for (const [, node] of state.graph.nodes) {
         if (renderableKinds.has(node.kind) && !projectedIds.has(node.id)) {

@@ -120,11 +120,7 @@ function nodeRole(node: Node): "user" | "assistant" {
  * a tool_result, it attaches the output back to the previous tool_call
  * ViewNode rather than creating a new ViewNode.
  */
-function walkRun(
-  graph: Graph,
-  startId: string,
-  visited: Set<string>,
-): ViewNode[] {
+function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[] {
   const result: ViewNode[] = [];
   let current: string | null = startId;
 

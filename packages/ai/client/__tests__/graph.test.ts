@@ -42,8 +42,20 @@ describe("Graph Reducer", () => {
 
   test("streaming reasoning with same id appends content", () => {
     let g = createGraph();
-    g = reduceEvent(g, { type: "reasoning", id: "r1", runId: "run1", agentId: "a1", content: "Think" });
-    g = reduceEvent(g, { type: "reasoning", id: "r1", runId: "run1", agentId: "a1", content: "ing" });
+    g = reduceEvent(g, {
+      type: "reasoning",
+      id: "r1",
+      runId: "run1",
+      agentId: "a1",
+      content: "Think",
+    });
+    g = reduceEvent(g, {
+      type: "reasoning",
+      id: "r1",
+      runId: "run1",
+      agentId: "a1",
+      content: "ing",
+    });
     const node = g.nodes.get("r1")!;
     if (node.kind === "reasoning") expect(node.content).toBe("Thinking");
   });
@@ -64,12 +76,19 @@ describe("Graph Reducer", () => {
     let g = createGraph();
     // Parent run: tool_call
     g = reduceEvent(g, {
-      type: "tool_call", id: "tc1", runId: "r1", agentId: "a1",
-      name: "agent", input: { task: "go" },
+      type: "tool_call",
+      id: "tc1",
+      runId: "r1",
+      agentId: "a1",
+      name: "agent",
+      input: { task: "go" },
     });
     // Child run starts with parentId pointing to tc1
     g = reduceEvent(g, {
-      type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1",
+      type: "harness_start",
+      runId: "r2",
+      agentId: "a2",
+      parentId: "tc1",
     });
     // tc1 should have an edge to the child's harness_start
     const tc1Edges = g.edges.get("tc1") ?? [];
@@ -79,12 +98,20 @@ describe("Graph Reducer", () => {
   test("tool_call then tool_result in same run creates sequential edge", () => {
     let g = createGraph();
     g = reduceEvent(g, {
-      type: "tool_call", id: "tc1", runId: "r1", agentId: "a1",
-      name: "bash", input: { cmd: "ls" },
+      type: "tool_call",
+      id: "tc1",
+      runId: "r1",
+      agentId: "a1",
+      name: "bash",
+      input: { cmd: "ls" },
     });
     g = reduceEvent(g, {
-      type: "tool_result", id: "tc1", runId: "r1", agentId: "a1",
-      name: "bash", output: "file.txt",
+      type: "tool_result",
+      id: "tc1",
+      runId: "r1",
+      agentId: "a1",
+      name: "bash",
+      output: "file.txt",
     });
     // tool_call -> tool_result (sequential in same run)
     expect(g.edges.get("tc1")).toContain("tc1:result");
@@ -105,10 +132,18 @@ describe("Graph Reducer", () => {
   test("usage events use counter for unique ids", () => {
     let g = createGraph();
     g = reduceEvent(g, {
-      type: "usage", runId: "r1", agentId: "a1", inputTokens: 10, outputTokens: 5,
+      type: "usage",
+      runId: "r1",
+      agentId: "a1",
+      inputTokens: 10,
+      outputTokens: 5,
     });
     g = reduceEvent(g, {
-      type: "usage", runId: "r1", agentId: "a1", inputTokens: 20, outputTokens: 10,
+      type: "usage",
+      runId: "r1",
+      agentId: "a1",
+      inputTokens: 20,
+      outputTokens: 10,
     });
     expect(g.nodes.size).toBe(2);
   });
@@ -116,7 +151,11 @@ describe("Graph Reducer", () => {
   test("state is immutable", () => {
     const g1 = createGraph();
     const g2 = reduceEvent(g1, {
-      type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hi",
+      type: "text",
+      id: "t1",
+      runId: "r1",
+      agentId: "a1",
+      content: "Hi",
     });
     expect(g1.nodes.size).toBe(0);
     expect(g2.nodes.size).toBe(1);
@@ -126,24 +165,48 @@ describe("Graph Reducer", () => {
     let g = createGraph();
     // Parent agent: text then tool_call
     g = reduceEvent(g, { type: "harness_start", runId: "r2", agentId: "a1" });
-    g = reduceEvent(g, { type: "text", id: "t1", runId: "r2", agentId: "a1", content: "Let me search." });
     g = reduceEvent(g, {
-      type: "tool_call", id: "tc1", runId: "r2", agentId: "a1",
-      name: "search", input: "auth",
+      type: "text",
+      id: "t1",
+      runId: "r2",
+      agentId: "a1",
+      content: "Let me search.",
+    });
+    g = reduceEvent(g, {
+      type: "tool_call",
+      id: "tc1",
+      runId: "r2",
+      agentId: "a1",
+      name: "search",
+      input: "auth",
     });
     // Subagent starts (parentId = tc1)
     g = reduceEvent(g, { type: "harness_start", runId: "r3", agentId: "a2", parentId: "tc1" });
     g = reduceEvent(g, {
-      type: "text", id: "t2", runId: "r3", agentId: "a2", parentId: "tc1",
+      type: "text",
+      id: "t2",
+      runId: "r3",
+      agentId: "a2",
+      parentId: "tc1",
       content: "Searching...",
     });
     g = reduceEvent(g, { type: "harness_end", runId: "r3", agentId: "a2", parentId: "tc1" });
     // Parent continues: tool_result then more text
     g = reduceEvent(g, {
-      type: "tool_result", id: "tc1", runId: "r2", agentId: "a1",
-      name: "search", output: ["auth.ts"],
+      type: "tool_result",
+      id: "tc1",
+      runId: "r2",
+      agentId: "a1",
+      name: "search",
+      output: ["auth.ts"],
     });
-    g = reduceEvent(g, { type: "text", id: "t3", runId: "r2", agentId: "a1", content: "Found auth.ts" });
+    g = reduceEvent(g, {
+      type: "text",
+      id: "t3",
+      runId: "r2",
+      agentId: "a1",
+      content: "Found auth.ts",
+    });
     g = reduceEvent(g, { type: "harness_end", runId: "r2", agentId: "a1" });
 
     // Verify edge structure
@@ -158,7 +221,9 @@ describe("Graph Reducer", () => {
   test("user event creates user node", () => {
     let g = createGraph();
     g = reduceEvent(g, {
-      type: "user", runId: "u1", content: "Hello",
+      type: "user",
+      runId: "u1",
+      content: "Hello",
     } as any);
     expect(g.nodes.size).toBe(1);
     const node = g.nodes.get("u1:user")!;
@@ -168,9 +233,14 @@ describe("Graph Reducer", () => {
   test("relay event creates relay node", () => {
     let g = createGraph();
     g = reduceEvent(g, {
-      type: "relay", kind: "permission", id: "relay-1",
-      runId: "r1", agentId: "a1",
-      toolCallId: "tc1", tool: "bash", params: { command: "rm" },
+      type: "relay",
+      kind: "permission",
+      id: "relay-1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc1",
+      tool: "bash",
+      params: { command: "rm" },
     });
     expect(g.nodes.has("relay-1")).toBe(true);
     const node = g.nodes.get("relay-1")!;

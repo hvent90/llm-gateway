@@ -37,7 +37,11 @@ describe("Conversation Reducer", () => {
   test("text event delegates to graph reducer", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, {
-      type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hello",
+      type: "text",
+      id: "t1",
+      runId: "r1",
+      agentId: "a1",
+      content: "Hello",
     });
     expect(state.graph.nodes.size).toBe(1);
     expect(state.graph.nodes.get("t1")!.kind).toBe("text");
@@ -46,8 +50,14 @@ describe("Conversation Reducer", () => {
   test("relay event appends to pendingRelays and creates graph node", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-1", runId: "r1", agentId: "a1",
-      toolCallId: "tc-1", tool: "bash", params: { command: "rm -rf" },
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: { command: "rm -rf" },
     });
     expect(state.pendingRelays.length).toBe(1);
     expect(state.pendingRelays[0]!.relayId).toBe("r-1");
@@ -57,11 +67,20 @@ describe("Conversation Reducer", () => {
   test("relay_resolved removes relay and grants tool if approved", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-1", runId: "r1", agentId: "a1",
-      toolCallId: "tc-1", tool: "bash", params: {},
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "bash",
+      params: {},
     });
     state = reduceConversation(state, {
-      type: "relay_resolved", relayId: "r-1", tool: "bash", approved: true,
+      type: "relay_resolved",
+      relayId: "r-1",
+      tool: "bash",
+      approved: true,
     });
     expect(state.pendingRelays.length).toBe(0);
     expect(state.grantedTools.has("bash")).toBe(true);
@@ -93,19 +112,40 @@ describe("Conversation Reducer", () => {
   test("getAutoApprovableRelays returns relays whose tool is already granted", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-0", runId: "r1", agentId: "a1",
-      toolCallId: "tc-0", tool: "read_file", params: {},
+      type: "relay",
+      kind: "permission",
+      id: "r-0",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-0",
+      tool: "read_file",
+      params: {},
     });
     state = reduceConversation(state, {
-      type: "relay_resolved", relayId: "r-0", tool: "read_file", approved: true,
+      type: "relay_resolved",
+      relayId: "r-0",
+      tool: "read_file",
+      approved: true,
     });
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-1", runId: "r1", agentId: "a1",
-      toolCallId: "tc-1", tool: "read_file", params: { path: "/a" },
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "read_file",
+      params: { path: "/a" },
     });
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-2", runId: "r1", agentId: "a1",
-      toolCallId: "tc-2", tool: "bash", params: { command: "ls" },
+      type: "relay",
+      kind: "permission",
+      id: "r-2",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-2",
+      tool: "bash",
+      params: { command: "ls" },
     });
     const auto = getAutoApprovableRelays(state);
     expect(auto.length).toBe(1);
@@ -115,16 +155,34 @@ describe("Conversation Reducer", () => {
   test("getSameToolRelays returns all pending relays matching a tool type", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-1", runId: "r1", agentId: "a1",
-      toolCallId: "tc-1", tool: "read_file", params: {},
+      type: "relay",
+      kind: "permission",
+      id: "r-1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-1",
+      tool: "read_file",
+      params: {},
     });
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-2", runId: "r1", agentId: "a1",
-      toolCallId: "tc-2", tool: "read_file", params: {},
+      type: "relay",
+      kind: "permission",
+      id: "r-2",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-2",
+      tool: "read_file",
+      params: {},
     });
     state = reduceConversation(state, {
-      type: "relay", kind: "permission", id: "r-3", runId: "r1", agentId: "a1",
-      toolCallId: "tc-3", tool: "bash", params: {},
+      type: "relay",
+      kind: "permission",
+      id: "r-3",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc-3",
+      tool: "bash",
+      params: {},
     });
     const same = getSameToolRelays(state, "read_file");
     expect(same.length).toBe(2);

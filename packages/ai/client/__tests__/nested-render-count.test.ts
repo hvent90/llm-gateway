@@ -10,22 +10,8 @@
  */
 import { describe, test, expect } from "bun:test";
 import { createInitialConversation, reduceConversation, projectThread } from "../index";
-import type { ViewNode } from "../index";
 import type { ConversationEvent } from "../conversation";
-
-// --- Helpers ---
-
-function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
-  const all: ViewNode[] = [];
-  function walk(list: ViewNode[]) {
-    for (const n of list) {
-      all.push(n);
-      for (const branch of n.branches) walk(branch);
-    }
-  }
-  walk(nodes);
-  return all;
-}
+import { collectAllViewNodes, renderableKinds } from "./helpers";
 
 describe("Nested subagent render count", () => {
   // Full event sequence for A → B → C
@@ -192,7 +178,6 @@ describe("Nested subagent render count", () => {
     const all = collectAllViewNodes(viewNodes);
     const projectedIds = new Set(all.map((n) => n.id));
 
-    const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
     const unreachable: string[] = [];
     for (const [, node] of state.graph.nodes) {
       if (renderableKinds.has(node.kind) && !projectedIds.has(node.id)) {

@@ -6,17 +6,9 @@
  * add user event to state -> build messages from graph -> stream via SSE -> reduce events -> projectThread.
  */
 import { describe, test, expect, afterEach } from "bun:test";
-import { z } from "zod";
 import type { Server } from "bun";
-import type { ToolDefinition } from "../../types";
 import type { ServerEvent } from "../server-event";
 import type { ConversationState } from "../conversation";
-import {
-  createDeterministicHarness,
-  type DeterministicHarnessConfig,
-} from "../../harness/providers/deterministic";
-import { createAgentHarness } from "../../harness/agent";
-import { createApp } from "../../../../server/index";
 import {
   createSSETransport,
   createHTTPTransport,
@@ -24,48 +16,7 @@ import {
   reduceConversation,
   projectThread,
 } from "../index";
-import type { ViewNode } from "../index";
-
-// --- Helpers ---
-
-function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
-  const all: ViewNode[] = [];
-  function walk(list: ViewNode[]) {
-    for (const n of list) {
-      all.push(n);
-      for (const branch of n.branches) walk(branch);
-    }
-  }
-  walk(nodes);
-  return all;
-}
-
-// --- Test tool ---
-
-const echoSchema = z.object({ message: z.string() });
-
-const echoTool: ToolDefinition<typeof echoSchema, string> = {
-  name: "echo",
-  description: "Echoes a message back.",
-  schema: echoSchema,
-  execute: async ({ message }) => ({
-    context: `Echo: ${message}`,
-    result: message,
-  }),
-};
-
-// --- Helpers ---
-
-function startTestServer(
-  config: DeterministicHarnessConfig,
-  tools?: ToolDefinition[],
-): { server: Server<unknown>; baseUrl: string } {
-  const provider = createDeterministicHarness(config);
-  const harness = createAgentHarness({ harness: provider });
-  const app = createApp({ harness, tools });
-  const server = Bun.serve({ fetch: app.fetch, port: 0 });
-  return { server, baseUrl: `http://localhost:${server.port}` };
-}
+import { collectAllViewNodes, startTestServer, echoTool } from "./helpers";
 
 // --- Web client helper functions (using projectThread instead of old selectors) ---
 
