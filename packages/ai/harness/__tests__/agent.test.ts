@@ -699,10 +699,11 @@ test("passes spawn from context through to tool execute, wrapping with tool call
   expect(receivedSpawn).toBeDefined();
   expect(typeof receivedSpawn).toBe("function");
 
-  // The underlying spawn should have been called with the task and the tool call ID
+  // The underlying spawn should have been called with the task and the namespaced tool call ID
   expect(spawnCalls).toHaveLength(1);
   expect(spawnCalls[0].task).toBe("sub-task");
-  expect(spawnCalls[0].parentId).toBe("tc-1");
+  // parentId is namespaced: "<runId>/tc-1"
+  expect(spawnCalls[0].parentId).toMatch(/^[0-9a-f-]+\/tc-1$/);
 });
 
 test("passes through usage events from provider with tag", async () => {

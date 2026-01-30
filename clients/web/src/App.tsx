@@ -13,7 +13,7 @@ import {
   getSameToolRelays,
 } from "../../../packages/ai/client";
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
-import type { ConversationState, Message, PendingRelay, Permissions } from "./types";
+import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
 
 declare const __LLM_MODEL__: string | undefined;
 const MODEL = __LLM_MODEL__ ?? "kimi-k2.5";
@@ -62,6 +62,24 @@ export default function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    const pendingEvents: ServerEvent[] = [];
+    let rafId: number | undefined;
+
+    const flushPending = () => {
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      rafId = undefined;
+      if (pendingEvents.length > 0) {
+        const batch = pendingEvents.splice(0);
+        setState((s) => {
+          let current = s;
+          for (const e of batch) {
+            current = reduceConversation(current, e);
+          }
+          return current;
+        });
+      }
+    };
+
     try {
       const stream = sseTransport.stream(
         { model: MODEL, messages, permissions },
@@ -69,7 +87,20 @@ export default function App() {
       );
 
       for await (const event of stream) {
-        setState((s) => reduceConversation(s, event));
+        pendingEvents.push(event);
+        if (rafId === undefined) {
+          rafId = requestAnimationFrame(() => {
+            rafId = undefined;
+            const batch = pendingEvents.splice(0);
+            setState((s) => {
+              let current = s;
+              for (const e of batch) {
+                current = reduceConversation(current, e);
+              }
+              return current;
+            });
+          });
+        }
       }
     } catch (error) {
       if (error instanceof Error && error.name !== "AbortError") {
@@ -77,6 +108,7 @@ export default function App() {
         setStreamError(error.message);
       }
     } finally {
+      flushPending();
       setState((s) => reduceConversation(s, { type: "stream_end" }));
       abortControllerRef.current = null;
     }

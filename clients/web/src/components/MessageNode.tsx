@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import {
   getContentBlocks,
   getChildren,
@@ -28,7 +28,7 @@ interface ToolCallBlockProps {
   activeStreams: Set<string>;
 }
 
-function ToolCallBlock({
+const ToolCallBlock = memo(function ToolCallBlock({
   block,
   graph,
   depth,
@@ -45,7 +45,7 @@ function ToolCallBlock({
     if (!userExpanded && childrenStreaming) {
       containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight });
     }
-  }, [blockChildren, childrenStreaming, userExpanded]);
+  });
 
   const inputStr =
     typeof block.input === "string" ? block.input : JSON.stringify(block.input, null, 2);
@@ -132,7 +132,7 @@ function ToolCallBlock({
       )}
     </div>
   );
-}
+});
 
 interface ContentBlockViewProps {
   block: ContentBlock;
@@ -191,7 +191,7 @@ const indentClasses = [
   "ml-8 sm:ml-16",
 ] as const;
 
-export function MessageNode({
+export const MessageNode = memo(function MessageNode({
   graph,
   runId,
   depth = 0,
@@ -254,4 +254,4 @@ export function MessageNode({
       )}
     </div>
   );
-}
+});

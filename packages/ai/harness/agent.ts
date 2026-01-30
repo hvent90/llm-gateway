@@ -32,6 +32,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
   return {
     async *invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
       const myRunId = uuidv7();
+      const nsId = (rawId: string) => `${myRunId}/${rawId}`;
       const parentId = params.context?.parentId;
 
       const tag = <T extends { runId: string }>(event: T): T & { parentId?: string } => {
@@ -107,7 +108,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           const denial = params.permissions?.deny?.find((d) => d.toolCallId === tc.id);
           if (denial) {
             const output = { status: "denied", reason: denial.reason };
-            yield tag({ type: "tool_result", runId: myRunId, id: tc.id, name: tc.name, output });
+            yield tag({ type: "tool_result", runId: myRunId, id: nsId(tc.id), name: tc.name, output });
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
@@ -129,7 +130,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
               kind: "permission",
               runId: myRunId,
               id: uuidv7(),
-              toolCallId: tc.id,
+              toolCallId: nsId(tc.id),
               tool: tc.name,
               params: args,
               respond: (response: PermissionResponse) => resolve(response),
@@ -140,7 +141,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
             if (!decision.approved) {
               const output = { status: "denied", reason: decision.reason };
-              yield tag({ type: "tool_result", runId: myRunId, id: tc.id, name: tc.name, output });
+              yield tag({ type: "tool_result", runId: myRunId, id: nsId(tc.id), name: tc.name, output });
               messages.push({
                 role: "tool",
                 tool_call_id: tc.id,
@@ -151,7 +152,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           }
 
           // Approved — yield tool_call event
-          yield tag({ type: "tool_call", runId: myRunId, name: tc.name, id: tc.id, input: args });
+          yield tag({ type: "tool_call", runId: myRunId, name: tc.name, id: nsId(tc.id), input: args });
 
           if (!toolDef?.execute) {
             // No executor - yield error and return
@@ -176,9 +177,9 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         const results = await Promise.all(
           approved.map(async ({ tc, toolDef }) => {
             const toolCtx: ToolContext = {
-              parentId: tc.id,
+              parentId: nsId(tc.id),
               spawn: params.context?.spawn
-                ? (task: string) => params.context!.spawn!(task, tc.id)
+                ? (task: string) => params.context!.spawn!(task, nsId(tc.id))
                 : undefined,
             };
             try {
@@ -192,7 +193,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
                   type: "tool_result" as const,
                   runId: myRunId,
                   name: tc.name,
-                  id: tc.id,
+                  id: nsId(tc.id),
                   output,
                 }),
                 message: {
