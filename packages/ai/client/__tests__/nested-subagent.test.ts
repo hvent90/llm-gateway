@@ -3,7 +3,7 @@
  * Verifies that:
  * 1. All events stream through correctly
  * 2. Graph structure has correct parent-child relationships
- * 3. All nodes are reachable via tree traversal (no orphans)
+ * 3. All nodes are reachable via projectThread (no orphans)
  * 4. No infinite loops or deadlocks
  */
 import { describe, test, expect, afterEach } from "bun:test";
@@ -22,11 +22,23 @@ import {
   createSSETransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getText,
+  projectThread,
 } from "../index";
+import type { ViewNode } from "../index";
+
+// --- Helpers ---
+
+function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
+  const all: ViewNode[] = [];
+  function walk(list: ViewNode[]) {
+    for (const n of list) {
+      all.push(n);
+      for (const branch of n.branches) walk(branch);
+    }
+  }
+  walk(nodes);
+  return all;
+}
 
 // --- Test helpers ---
 
@@ -64,7 +76,7 @@ afterEach(() => {
 
 describe("Nested Subagent Integration", () => {
   test(
-    "nested subagent (A → B → C): all nodes reachable via UI traversal pattern",
+    "nested subagent (A → B → C): all nodes reachable via projectThread",
     async () => {
       const setup = startTestServer(
         {
@@ -97,70 +109,34 @@ describe("Nested Subagent Integration", () => {
 
       state = reduceConversation(state, { type: "stream_end" });
 
-      // Debug: dump the graph structure
-      const nodeInfo: Array<{ runId: string; parentId?: string; text: string; toolCalls: string[] }> = [];
-      for (const [runId, node] of state.graph.nodes) {
-        const blocks = getContentBlocks(state.graph, runId);
-        const text = getText(state.graph, runId);
-        const toolCalls = blocks
-          .filter((b) => b.type === "tool_call")
-          .map((b) => `${b.name}(${b.id})`);
-        nodeInfo.push({ runId, parentId: node.parentId, text, toolCalls });
-      }
+      // Use projectThread to verify all content-bearing nodes are reachable
+      const viewNodes = projectThread(state.graph);
+      const all = collectAllViewNodes(viewNodes);
+      const projectedIds = new Set(all.map((n) => n.id));
 
-      // Simulate the exact UI traversal pattern:
-      // ConversationThread renders roots via getRoots()
-      // MessageNode renders children via getChildren(graph, runId)
-      // ToolCallBlock renders children via getChildren(graph, block.id)
-      const reachable = new Set<string>();
-
-      function simulateMessageNode(runId: string, depth: number) {
-        if (reachable.has(runId)) return; // cycle guard
-        reachable.add(runId);
-
-        const blocks = getContentBlocks(state.graph, runId);
-
-        // ContentBlockView → ToolCallBlock for each tool_call block
-        for (const block of blocks) {
-          if (block.type === "tool_call") {
-            // ToolCallBlock calls getChildren(graph, block.id)
-            const blockChildren = getChildren(state.graph, block.id);
-            for (const childId of blockChildren) {
-              simulateMessageNode(childId, depth + 1);
-            }
-          }
-        }
-
-        // MessageNode also calls getChildren(graph, runId) at the end
-        const children = getChildren(state.graph, runId);
-        for (const childId of children) {
-          simulateMessageNode(childId, depth + 1);
-        }
-      }
-
-      const roots = getRoots(state.graph);
-      for (const runId of roots) {
-        simulateMessageNode(runId, 0);
-      }
-
-      // Every node in the graph must be reachable via UI traversal
+      // Every renderable node in the graph must appear in the projection
+      const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
       const unreachable: string[] = [];
-      for (const [runId] of state.graph.nodes) {
-        if (!reachable.has(runId)) {
-          const node = state.graph.nodes.get(runId)!;
-          unreachable.push(`${runId} (parentId=${node.parentId}, text=${getText(state.graph, runId)})`);
+      for (const [, node] of state.graph.nodes) {
+        if (renderableKinds.has(node.kind) && !projectedIds.has(node.id)) {
+          unreachable.push(node.id);
         }
-      }
-
-      if (unreachable.length > 0) {
-        // Print full graph for debugging
-        console.log("Graph nodes:", JSON.stringify(nodeInfo, null, 2));
-        console.log("Roots:", roots);
-        console.log("Reachable:", [...reachable]);
-        console.log("Unreachable:", unreachable);
       }
 
       expect(unreachable).toEqual([]);
+
+      // Verify specific text content appears
+      const allTexts = all
+        .filter((n) => n.content.kind === "text")
+        .map((n) => (n.content as { kind: "text"; text: string }).text);
+
+      expect(allTexts.some((t) => t.includes("hello from C"))).toBe(true);
+      expect(allTexts.some((t) => t.includes("B got C's result"))).toBe(true);
+      expect(allTexts.some((t) => t.includes("A got B's result"))).toBe(true);
+
+      // Verify tool_call ViewNodes exist
+      const toolCalls = all.filter((n) => n.content.kind === "tool_call");
+      expect(toolCalls.length).toBeGreaterThanOrEqual(2);
     },
     { timeout: 30000 },
   );

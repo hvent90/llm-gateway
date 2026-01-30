@@ -15,12 +15,23 @@ import {
   createHTTPTransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
-  getText,
+  projectThread,
 } from "../index";
+import type { ViewNode } from "../index";
+
+// --- Helpers ---
+
+function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
+  const all: ViewNode[] = [];
+  function walk(list: ViewNode[]) {
+    for (const n of list) {
+      all.push(n);
+      for (const branch of n.branches) walk(branch);
+    }
+  }
+  walk(nodes);
+  return all;
+}
 
 // --- Test tool ---
 
@@ -103,16 +114,14 @@ describe("Conversation Reducer Integration", () => {
     // Should have at least one graph node
     expect(state.graph.nodes.size).toBeGreaterThan(0);
 
-    // Find the assistant node with our text content
-    let foundText = false;
-    for (const [, node] of state.graph.nodes) {
-      const text = getText(state.graph, node.runId);
-      if (text.includes("Hello world")) {
-        foundText = true;
-        expect(getRole(state.graph, node.runId)).toBe("assistant");
-      }
-    }
-    expect(foundText).toBe(true);
+    // Use projectThread to find the assistant ViewNode with "Hello world"
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const textNode = all.find(
+      (n) => n.content.kind === "text" && n.content.text.includes("Hello world"),
+    );
+    expect(textNode).toBeDefined();
+    expect(textNode!.role).toBe("assistant");
   });
 
   test("streaming text chunks merge into single text block", async () => {
@@ -131,20 +140,17 @@ describe("Conversation Reducer Integration", () => {
 
     const { state } = await streamToState(setup.baseUrl, [{ role: "user", content: "hi" }]);
 
-    // Find the assistant node and check content blocks merge
-    let found = false;
-    for (const [, node] of state.graph.nodes) {
-      const blocks = getContentBlocks(state.graph, node.runId);
-      const textBlocks = blocks.filter((b) => b.type === "text");
-      const fullText = textBlocks.map((b) => b.content).join("");
-      if (fullText.includes("Hello world!")) {
-        // getContentBlocks merges consecutive text events
-        expect(textBlocks.length).toBe(1);
-        expect(textBlocks[0]!.content).toBe("Hello world!");
-        found = true;
-      }
+    // projectThread merges consecutive text nodes
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const merged = all.find(
+      (n) => n.content.kind === "text" && n.content.text.includes("Hello world!"),
+    );
+    expect(merged).toBeDefined();
+    expect(merged!.content.kind).toBe("text");
+    if (merged!.content.kind === "text") {
+      expect(merged!.content.text).toBe("Hello world!");
     }
-    expect(found).toBe(true);
   });
 
   test("reasoning + text: both block types present", async () => {
@@ -164,19 +170,20 @@ describe("Conversation Reducer Integration", () => {
       { role: "user", content: "think then answer" },
     ]);
 
-    // Find the node with both reasoning and text
-    let found = false;
-    for (const [, node] of state.graph.nodes) {
-      const blocks = getContentBlocks(state.graph, node.runId);
-      const reasoning = blocks.filter((b) => b.type === "reasoning");
-      const text = blocks.filter((b) => b.type === "text");
-      if (reasoning.length > 0 && text.length > 0) {
-        expect(reasoning[0]!.content).toContain("think");
-        expect(text[0]!.content).toContain("answer");
-        found = true;
-      }
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+
+    const reasoning = all.find((n) => n.content.kind === "reasoning");
+    const text = all.find((n) => n.content.kind === "text");
+
+    expect(reasoning).toBeDefined();
+    expect(text).toBeDefined();
+    if (reasoning!.content.kind === "reasoning") {
+      expect(reasoning!.content.text).toContain("think");
     }
-    expect(found).toBe(true);
+    if (text!.content.kind === "text") {
+      expect(text!.content.text).toContain("answer");
+    }
   });
 
   test("tool call with auto-approve (tool in allowlist)", async () => {
@@ -211,18 +218,22 @@ describe("Conversation Reducer Integration", () => {
     // The tool_call event should have name "echo"
     expect((toolCallEvents[0] as { name: string }).name).toBe("echo");
 
-    // Content blocks on the agent node should include tool_call with output
-    let foundToolBlock = false;
-    for (const [, node] of state.graph.nodes) {
-      const blocks = getContentBlocks(state.graph, node.runId);
-      for (const b of blocks) {
-        if (b.type === "tool_call" && b.name === "echo") {
-          expect(b.output).toBeDefined();
-          foundToolBlock = true;
-        }
-      }
+    // Use projectThread to find tool_call ViewNode with output attached
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const toolCallNode = all.find(
+      (n) => n.content.kind === "tool_call" && n.content.name === "echo",
+    );
+    expect(toolCallNode).toBeDefined();
+    if (toolCallNode!.content.kind === "tool_call") {
+      expect(toolCallNode!.content.output).toBeDefined();
     }
-    expect(foundToolBlock).toBe(true);
+
+    // Find the text ViewNode with "The echo said: ping"
+    const textNode = all.find(
+      (n) => n.content.kind === "text" && n.content.text.includes("The echo said: ping"),
+    );
+    expect(textNode).toBeDefined();
   });
 
   test("tool call with relay (empty allowlist): pendingRelays populated, then resolved", async () => {
@@ -351,13 +362,14 @@ describe("Conversation Reducer Integration", () => {
     expect(errorEvents.length).toBeGreaterThan(0);
     expect((errorEvents[0] as { message: string }).message).toContain("Provider exploded");
 
-    // Error node should exist in graph
-    let foundError = false;
-    for (const [, node] of state.graph.nodes) {
-      const hasError = node.events.some((e) => e.type === "error");
-      if (hasError) foundError = true;
+    // Use projectThread to find an error ViewNode
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const errorNode = all.find((n) => n.content.kind === "error");
+    expect(errorNode).toBeDefined();
+    if (errorNode!.content.kind === "error") {
+      expect(errorNode!.content.message).toContain("Provider exploded");
     }
-    expect(foundError).toBe(true);
   });
 
   test("full round trip: user → stream → assistant with correct graph structure", async () => {
@@ -388,26 +400,24 @@ describe("Conversation Reducer Integration", () => {
 
     state = reduceConversation(state, { type: "stream_end" });
 
-    // Graph should have user root node
-    const roots = getRoots(state.graph);
-    expect(roots).toContain(userRunId);
-    expect(getRole(state.graph, userRunId)).toBe("user");
-    expect(getContentBlocks(state.graph, userRunId)).toEqual([
-      { type: "text", content: "Hello assistant" },
-    ]);
+    // Use projectThread to verify user and assistant ViewNodes
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
 
-    // There should be an assistant node (may or may not be child of user,
-    // depending on parentId — the server assigns parentId based on agent hierarchy)
-    let foundAssistant = false;
-    for (const [runId, node] of state.graph.nodes) {
-      if (node.role === "assistant") {
-        const text = getText(state.graph, runId);
-        if (text.includes("I am the assistant")) {
-          foundAssistant = true;
-        }
-      }
-    }
-    expect(foundAssistant).toBe(true);
+    // Find user ViewNode
+    const userNode = all.find(
+      (n) => n.role === "user" && n.content.kind === "user" && n.content.text === "Hello assistant",
+    );
+    expect(userNode).toBeDefined();
+
+    // Find assistant ViewNode with text
+    const assistantNode = all.find(
+      (n) =>
+        n.role === "assistant" &&
+        n.content.kind === "text" &&
+        n.content.text.includes("I am the assistant"),
+    );
+    expect(assistantNode).toBeDefined();
 
     // Stream should be inactive
     expect(state.activeStreams.size).toBe(0);
@@ -430,19 +440,17 @@ describe("Conversation Reducer Integration", () => {
       state = reduceConversation(state, event);
     }
 
-    // Collect all nodes reachable via tree traversal (the same way UIs render)
-    const reachable = new Set<string>();
-    const traverse = (runIds: string[]) => {
-      for (const runId of runIds) {
-        reachable.add(runId);
-        traverse(getChildren(state.graph, runId));
-      }
-    };
-    traverse(getRoots(state.graph));
+    // All content-bearing graph nodes should appear in the projectThread output
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const projectedIds = new Set(all.map((n) => n.id));
 
-    // Every node in the graph must be reachable via tree traversal
-    for (const [runId] of state.graph.nodes) {
-      expect(reachable.has(runId)).toBe(true);
+    // Check every content-bearing node in the graph is represented
+    const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
+    for (const [, node] of state.graph.nodes) {
+      if (renderableKinds.has(node.kind)) {
+        expect(projectedIds.has(node.id)).toBe(true);
+      }
     }
   });
 
@@ -472,18 +480,13 @@ describe("Conversation Reducer Integration", () => {
     })) {
       state = reduceConversation(state, event);
 
-      // After each event, check what text is visible via tree traversal
+      // After each event, check what text is visible via projectThread
+      const viewNodes = projectThread(state.graph);
+      const all = collectAllViewNodes(viewNodes);
       const visible: string[] = [];
-      const collect = (runIds: string[]) => {
-        for (const runId of runIds) {
-          const blocks = getContentBlocks(state.graph, runId);
-          for (const b of blocks) {
-            if (b.type === "text") visible.push(b.content);
-          }
-          collect(getChildren(state.graph, runId));
-        }
-      };
-      collect(getRoots(state.graph));
+      for (const n of all) {
+        if (n.content.kind === "text") visible.push(n.content.text);
+      }
       snapshots.push(visible.join(""));
     }
 
@@ -517,25 +520,23 @@ describe("Conversation Reducer Integration", () => {
       state = reduceConversation(state, event);
     }
 
-    // All nodes must be reachable
-    const reachable = new Set<string>();
-    const traverse = (runIds: string[]) => {
-      for (const runId of runIds) {
-        reachable.add(runId);
-        traverse(getChildren(state.graph, runId));
+    // All content-bearing nodes must be reachable via projectThread
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const projectedIds = new Set(all.map((n) => n.id));
+
+    const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
+    for (const [, node] of state.graph.nodes) {
+      if (renderableKinds.has(node.kind)) {
+        expect(projectedIds.has(node.id)).toBe(true);
       }
-    };
-    traverse(getRoots(state.graph));
-
-    for (const [runId] of state.graph.nodes) {
-      expect(reachable.has(runId)).toBe(true);
     }
 
-    // Should have both tool_call and text content visible
-    const allText: string[] = [];
-    for (const runId of reachable) {
-      allText.push(getText(state.graph, runId));
-    }
-    expect(allText.join("")).toContain("Echo result");
+    // Should have "Echo result" text visible
+    const allText = all
+      .filter((n) => n.content.kind === "text")
+      .map((n) => (n.content as { kind: "text"; text: string }).text)
+      .join("");
+    expect(allText).toContain("Echo result");
   });
 });

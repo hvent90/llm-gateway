@@ -1,9 +1,9 @@
 /**
  * Client Integration Tests
  *
- * Exercises the exact code paths the web and CLI clients use —
+ * Exercises the exact code paths the web and CLI clients use --
  * without React/Solid rendering. Both clients follow:
- * add user event to state → build messages from graph → stream via SSE → reduce events → use selectors.
+ * add user event to state -> build messages from graph -> stream via SSE -> reduce events -> projectThread.
  */
 import { describe, test, expect, afterEach } from "bun:test";
 import { z } from "zod";
@@ -22,12 +22,23 @@ import {
   createHTTPTransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
-  getText,
+  projectThread,
 } from "../index";
+import type { ViewNode } from "../index";
+
+// --- Helpers ---
+
+function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
+  const all: ViewNode[] = [];
+  function walk(list: ViewNode[]) {
+    for (const n of list) {
+      all.push(n);
+      for (const branch of n.branches) walk(branch);
+    }
+  }
+  walk(nodes);
+  return all;
+}
 
 // --- Test tool ---
 
@@ -56,31 +67,26 @@ function startTestServer(
   return { server, baseUrl: `http://localhost:${server.port}` };
 }
 
-// --- Web client helper functions (extracted from App.tsx patterns) ---
+// --- Web client helper functions (using projectThread instead of old selectors) ---
 
 function buildMessagesFromGraph(
   graph: ConversationState["graph"],
 ): Array<{ role: string; content: string }> {
   const messages: Array<{ role: string; content: string }> = [];
-  const traverse = (runIds: string[]) => {
-    for (const runId of runIds) {
-      const role = getRole(graph, runId);
-      const blocks = getContentBlocks(graph, runId);
-      const textContent = blocks
-        .filter((block) => block.type === "text")
-        .map((block) => block.content)
-        .join("");
-      if (textContent && role) {
-        messages.push({ role, content: textContent });
-      }
-      traverse(getChildren(graph, runId));
+  const viewNodes = projectThread(graph);
+  const all = collectAllViewNodes(viewNodes);
+
+  for (const n of all) {
+    if (n.content.kind === "text") {
+      messages.push({ role: n.role, content: n.content.text });
+    } else if (n.content.kind === "user") {
+      messages.push({ role: n.role, content: n.content.text });
     }
-  };
-  traverse(getRoots(graph));
+  }
   return messages;
 }
 
-// --- CLI client helper functions (extracted from CLI index.tsx patterns) ---
+// --- CLI client helper functions (using projectThread instead of old selectors) ---
 
 function formatOutput(output: unknown): string {
   const str = typeof output === "string" ? output : JSON.stringify(output, null, 2);
@@ -93,40 +99,45 @@ function buildApiMessages(
   graph: ConversationState["graph"],
 ): Array<{ role: string; content: string }> {
   const messages: Array<{ role: string; content: string }> = [];
-  const traverse = (runIds: string[]) => {
-    for (const runId of runIds) {
-      const role = getRole(graph, runId);
-      const blocks = getContentBlocks(graph, runId);
-      const parts: string[] = [];
-      for (const b of blocks) {
-        if (b.type === "text") {
-          parts.push(b.content);
-        } else if (b.type === "tool_call") {
-          const inputStr = typeof b.input === "string" ? b.input : JSON.stringify(b.input);
-          parts.push(`[tool] ${b.name}: ${inputStr}`);
-          if (b.output !== undefined) {
-            parts.push(`   -> ${formatOutput(b.output)}`);
-          }
-        }
-        // Skip reasoning blocks — not sent to API
-      }
-      const content = parts.join("\n");
-      if (content && role) {
-        messages.push({ role, content });
-      }
-      traverse(getChildren(graph, runId));
-    }
-  };
-  traverse(getRoots(graph));
-  return messages;
-}
+  const viewNodes = projectThread(graph);
+  const all = collectAllViewNodes(viewNodes);
 
-function getErrorMessages(graph: ConversationState["graph"], runId: string): string[] {
-  const node = graph.nodes.get(runId);
-  if (!node) return [];
-  return node.events
-    .filter((e) => e.type === "error")
-    .map((e) => (e as Extract<ServerEvent, { type: "error" }>).message);
+  // Group consecutive ViewNodes by runId to build per-run messages
+  let currentRunId: string | null = null;
+  let currentRole: string | null = null;
+  let parts: string[] = [];
+
+  function flush() {
+    if (parts.length > 0 && currentRole) {
+      messages.push({ role: currentRole, content: parts.join("\n") });
+    }
+    parts = [];
+  }
+
+  for (const n of all) {
+    if (n.runId !== currentRunId) {
+      flush();
+      currentRunId = n.runId;
+      currentRole = n.role;
+    }
+
+    if (n.content.kind === "text") {
+      parts.push(n.content.text);
+    } else if (n.content.kind === "user") {
+      parts.push(n.content.text);
+    } else if (n.content.kind === "tool_call") {
+      const inputStr =
+        typeof n.content.input === "string" ? n.content.input : JSON.stringify(n.content.input);
+      parts.push(`[tool] ${n.content.name}: ${inputStr}`);
+      if (n.content.output !== undefined) {
+        parts.push(`   -> ${formatOutput(n.content.output)}`);
+      }
+    }
+    // Skip reasoning blocks -- not sent to API
+  }
+  flush();
+
+  return messages;
 }
 
 // --- Shared test state ---
@@ -145,7 +156,7 @@ afterEach(() => {
 // =====================================================================
 
 describe("Web Client Integration", () => {
-  test("handleSubmit flow: user event → stream_start → SSE events → stream_end → graph", async () => {
+  test("handleSubmit flow: user event -> stream_start -> SSE events -> stream_end -> graph", async () => {
     const setup = startTestServer({
       responses: [{ events: [{ type: "text", content: "Web response" }] }],
     });
@@ -177,24 +188,27 @@ describe("Web Client Integration", () => {
 
     state = reduceConversation(state, { type: "stream_end" });
 
-    // 4. Verify graph structure
+    // 4. Verify graph structure via projectThread
     expect(state.sessionId).toBeDefined();
     expect(state.isConnected).toBe(false);
 
-    // User node is a root
-    const roots = getRoots(state.graph);
-    expect(roots).toContain(userId);
-    expect(getRole(state.graph, userId)).toBe("user");
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+
+    // User node should be present
+    const userNode = all.find(
+      (n) => n.role === "user" && n.content.kind === "user" && n.content.text === "Hello from web",
+    );
+    expect(userNode).toBeDefined();
 
     // Assistant node exists with response text
-    let foundAssistant = false;
-    for (const [, node] of state.graph.nodes) {
-      if (node.role === "assistant") {
-        const text = getText(state.graph, node.runId);
-        if (text.includes("Web response")) foundAssistant = true;
-      }
-    }
-    expect(foundAssistant).toBe(true);
+    const assistantNode = all.find(
+      (n) =>
+        n.role === "assistant" &&
+        n.content.kind === "text" &&
+        n.content.text.includes("Web response"),
+    );
+    expect(assistantNode).toBeDefined();
   });
 
   test("handleAllow (allow once): clears relay without granting tool", async () => {
@@ -390,7 +404,7 @@ describe("Web Client Integration", () => {
     };
     expect(permissions.allowlist).toEqual([{ tool: "echo" }]);
 
-    // Stream second turn — tool should auto-execute (no relay)
+    // Stream second turn -- tool should auto-execute (no relay)
     const t2Transport = createSSETransport({ baseUrl: setup.baseUrl });
     state = reduceConversation(state, { type: "user", runId: "u2", content: "echo second" });
     state = reduceConversation(state, { type: "stream_start" });
@@ -406,7 +420,7 @@ describe("Web Client Integration", () => {
     }
     state = reduceConversation(state, { type: "stream_end" });
 
-    // No relay in turn 2 — tool auto-approved
+    // No relay in turn 2 -- tool auto-approved
     expect(t2Events.some((e) => e.type === "relay")).toBe(false);
     expect(t2Events.some((e) => e.type === "tool_call")).toBe(true);
     expect(t2Events.some((e) => e.type === "tool_result")).toBe(true);
@@ -415,13 +429,13 @@ describe("Web Client Integration", () => {
   test("buildMessagesFromGraph extracts messages in tree order", () => {
     let state = createInitialConversation();
 
-    // Build a simple user → assistant graph manually
+    // Build a simple user -> assistant graph manually
     state = reduceConversation(state, {
       type: "user",
       runId: "user-1",
       content: "What is 2+2?",
     });
-    // Simulate assistant response as root (no parentId — would be a root)
+    // Simulate assistant response as root (no parentId -- would be a root)
     state = reduceConversation(state, {
       type: "text",
       id: "t1",
@@ -505,7 +519,7 @@ describe("CLI Client Integration", () => {
     );
     srv = setup.server;
 
-    // Simulate CLI flow: stream → detect relay → approve
+    // Simulate CLI flow: stream -> detect relay -> approve
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
     const httpTransport = createHTTPTransport({ baseUrl: setup.baseUrl });
     let state = createInitialConversation();
@@ -540,7 +554,7 @@ describe("CLI Client Integration", () => {
     expect(events.some((e) => e.type === "tool_call")).toBe(true);
   });
 
-  test("error events extracted by getErrorMessages", async () => {
+  test("error events present in graph nodes", async () => {
     const setup = startTestServer({
       responses: [
         {
@@ -563,15 +577,22 @@ describe("CLI Client Integration", () => {
       state = reduceConversation(state, event);
     }
 
-    // Find the node with the error
-    let foundErrors: string[] = [];
-    for (const [runId] of state.graph.nodes) {
-      const errors = getErrorMessages(state.graph, runId);
-      if (errors.length > 0) foundErrors = errors;
+    // Find error node directly in graph
+    let foundError = false;
+    for (const [, node] of state.graph.nodes) {
+      if (node.kind === "error" && node.message.includes("Something went wrong")) {
+        foundError = true;
+      }
     }
+    expect(foundError).toBe(true);
 
-    expect(foundErrors.length).toBeGreaterThan(0);
-    expect(foundErrors[0]).toContain("Something went wrong");
+    // Also verify via projectThread
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const errorNode = all.find(
+      (n) => n.content.kind === "error" && n.content.message.includes("Something went wrong"),
+    );
+    expect(errorNode).toBeDefined();
   });
 
   test("stream lifecycle: stream_start/stream_end toggle isConnected, harness events toggle activeStreams", async () => {
@@ -592,7 +613,7 @@ describe("CLI Client Integration", () => {
     expect(state.isConnected).toBe(true);
     expect(state.activeStreams.size).toBe(0);
 
-    // Stream events — harness_start/harness_end from server populate activeStreams
+    // Stream events -- harness_start/harness_end from server populate activeStreams
     for await (const event of transport.stream({
       model: "deterministic",
       messages: [{ role: "user", content: "go" }],

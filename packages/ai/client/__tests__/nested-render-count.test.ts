@@ -1,24 +1,31 @@
 /**
- * Reproduction test for potential infinite loop / quadratic blowup
- * when processing nested subagent events.
+ * Tests for the thread projection of nested subagent event sequences.
  *
- * Simulates the EXACT server event sequence for A → B → C,
- * then after each event replays the UI traversal pattern
- * (getRoots + getChildren) and counts total selector calls.
- *
- * Checks:
- * 1. getChildren call count does not grow quadratically/exponentially
- * 2. No node appears as a child of two different parents (shared ownership)
+ * Verifies that:
+ * 1. projectThread produces correct output for A → B → C
+ * 2. No duplicate ViewNode ids in flattened output
+ * 3. All content-bearing graph nodes are reachable via projectThread
+ * 4. Increasing nesting depth does not cause exponential blowup
+ * 5. Colliding provider-issued tool_call IDs produce correct structure
  */
 import { describe, test, expect } from "bun:test";
-import {
-  createInitialConversation,
-  reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-} from "../index";
+import { createInitialConversation, reduceConversation, projectThread } from "../index";
+import type { ViewNode } from "../index";
 import type { ConversationEvent } from "../conversation";
+
+// --- Helpers ---
+
+function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
+  const all: ViewNode[] = [];
+  function walk(list: ViewNode[]) {
+    for (const n of list) {
+      all.push(n);
+      for (const branch of n.branches) walk(branch);
+    }
+  }
+  walk(nodes);
+  return all;
+}
 
 describe("Nested subagent render count", () => {
   // Full event sequence for A → B → C
@@ -131,106 +138,34 @@ describe("Nested subagent render count", () => {
     { type: "stream_end" },
   ];
 
-  /**
-   * Simulate the exact React render tree traversal from MessageNode +
-   * ToolCallBlock. Returns the total getChildren call count and a map
-   * tracking which parent each child was found under.
-   */
-  function simulateUITraversal(graph: ReturnType<typeof getRoots extends (g: infer G) => unknown ? () => G : never> extends () => infer G ? G : never) {
-    let getChildrenCalls = 0;
-    // childId -> parentId that found it
-    const childOwnership = new Map<string, string>();
-    const duplicateChildren: Array<{ childId: string; parent1: string; parent2: string }> = [];
-
-    function simulateToolCallBlock(blockId: string, depth: number) {
-      getChildrenCalls++;
-      const blockChildren = getChildren(graph, blockId);
-      for (const childId of blockChildren) {
-        const existingParent = childOwnership.get(childId);
-        if (existingParent && existingParent !== blockId) {
-          duplicateChildren.push({ childId, parent1: existingParent, parent2: blockId });
-        }
-        childOwnership.set(childId, blockId);
-        simulateMessageNode(childId, depth + 1);
-      }
-    }
-
-    function simulateMessageNode(runId: string, depth: number) {
-      // MessageNode calls getContentBlocks, then for each tool_call block
-      // renders ToolCallBlock which calls getChildren(graph, block.id)
-      const blocks = getContentBlocks(graph, runId);
-      for (const block of blocks) {
-        if (block.type === "tool_call") {
-          simulateToolCallBlock(block.id, depth);
-        }
-      }
-
-      // MessageNode ALSO calls getChildren(graph, runId) at the end
-      // to render nested MessageNode children
-      getChildrenCalls++;
-      const children = getChildren(graph, runId);
-      for (const childId of children) {
-        const existingParent = childOwnership.get(childId);
-        if (existingParent && existingParent !== runId) {
-          duplicateChildren.push({ childId, parent1: existingParent, parent2: runId });
-        }
-        childOwnership.set(childId, runId);
-        simulateMessageNode(childId, depth + 1);
-      }
-    }
-
-    const roots = getRoots(graph);
-    for (const runId of roots) {
-      simulateMessageNode(runId, 0);
-    }
-
-    return { getChildrenCalls, childOwnership, duplicateChildren, roots };
-  }
-
-  test("getChildren call count grows linearly, not quadratically", () => {
+  test("projectThread produces correct output at each step", () => {
     let state = createInitialConversation();
-    const callCountsPerEvent: number[] = [];
 
     for (const event of events) {
       state = reduceConversation(state, event);
-      const { getChildrenCalls } = simulateUITraversal(state.graph);
-      callCountsPerEvent.push(getChildrenCalls);
+      // projectThread should not throw at any intermediate state
+      const viewNodes = projectThread(state.graph);
+      expect(Array.isArray(viewNodes)).toBe(true);
     }
 
-    // Print the growth pattern for diagnosis
-    console.log("getChildren calls after each event:");
-    for (let i = 0; i < events.length; i++) {
-      const evt = events[i];
-      const label = evt.type === "stream_start" || evt.type === "stream_end"
-        ? evt.type
-        : `${evt.type}${"runId" in evt ? `(${evt.runId})` : ""}`;
-      console.log(`  [${i}] ${label}: ${callCountsPerEvent[i]} calls`);
-    }
+    // Final state: verify the ViewNode tree has correct content
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
 
-    // For a tree with 3 agents, each having 1 tool call,
-    // a full UI traversal should make at most:
-    //   - 1 call per MessageNode (getChildren on runId) = 3
-    //   - 1 call per ToolCallBlock (getChildren on block.id) = 2
-    //   Total = 5 for the final state
-    //
-    // If it grows quadratically, the final count would be >> 5.
-    // With N=3 agents, quadratic would be ~9-15, exponential would be ~8+.
-    const finalCount = callCountsPerEvent[callCountsPerEvent.length - 1];
-    console.log(`\nFinal getChildren call count: ${finalCount}`);
+    // Should contain text from all three agents
+    const texts = all
+      .filter((n) => n.content.kind === "text")
+      .map((n) => (n.content as { kind: "text"; text: string }).text);
+    expect(texts.some((t) => t.includes("Hello from A"))).toBe(true);
+    expect(texts.some((t) => t.includes("Hello from B"))).toBe(true);
+    expect(texts.some((t) => t.includes("Hello from C"))).toBe(true);
 
-    // At most 2 calls per node (one from MessageNode, one from ToolCallBlock)
-    // plus the root traversal. 3 nodes => at most ~8 calls is reasonable.
-    // Anything > 20 indicates a problem.
-    expect(finalCount).toBeLessThanOrEqual(20);
-
-    // Verify that the growth is at most linear:
-    // The max call count should not exceed 4 * number_of_events
-    // (generous bound for linear growth)
-    const maxCalls = Math.max(...callCountsPerEvent);
-    expect(maxCalls).toBeLessThanOrEqual(4 * events.length);
+    // Should contain tool_call ViewNodes
+    const toolCalls = all.filter((n) => n.content.kind === "tool_call");
+    expect(toolCalls.length).toBe(2);
   });
 
-  test("no node appears as child of two different parents", () => {
+  test("no duplicate ViewNode ids in the flattened output", () => {
     let state = createInitialConversation();
 
     // Process all events
@@ -238,51 +173,30 @@ describe("Nested subagent render count", () => {
       state = reduceConversation(state, event);
     }
 
-    const { duplicateChildren, childOwnership } = simulateUITraversal(state.graph);
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const ids = all.map((n) => n.id);
+    const uniqueIds = new Set(ids);
 
-    if (duplicateChildren.length > 0) {
-      console.log("DUPLICATE CHILDREN FOUND:");
-      for (const dup of duplicateChildren) {
-        console.log(`  Node ${dup.childId} is child of both ${dup.parent1} and ${dup.parent2}`);
-      }
-    }
-
-    console.log("\nChild ownership map:");
-    for (const [childId, parentId] of childOwnership) {
-      console.log(`  ${childId} -> parent: ${parentId}`);
-    }
-
-    expect(duplicateChildren).toEqual([]);
+    expect(ids.length).toBe(uniqueIds.size);
   });
 
-  test("all graph nodes are reachable via UI traversal", () => {
+  test("all content-bearing graph nodes are reachable via projectThread", () => {
     let state = createInitialConversation();
 
     for (const event of events) {
       state = reduceConversation(state, event);
     }
 
-    const { childOwnership, roots } = simulateUITraversal(state.graph);
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
+    const projectedIds = new Set(all.map((n) => n.id));
 
-    // All reachable = roots + all children
-    const reachable = new Set([...roots, ...childOwnership.keys()]);
-
+    const renderableKinds = new Set(["text", "reasoning", "tool_call", "user", "error", "relay"]);
     const unreachable: string[] = [];
-    for (const [runId] of state.graph.nodes) {
-      if (!reachable.has(runId)) {
-        unreachable.push(runId);
-      }
-    }
-
-    if (unreachable.length > 0) {
-      console.log("UNREACHABLE NODES:");
-      for (const runId of unreachable) {
-        const node = state.graph.nodes.get(runId)!;
-        console.log(`  ${runId} (parentId=${node.parentId})`);
-      }
-      console.log("\nAll graph nodes:");
-      for (const [runId, node] of state.graph.nodes) {
-        console.log(`  ${runId} (parentId=${node.parentId})`);
+    for (const [, node] of state.graph.nodes) {
+      if (renderableKinds.has(node.kind) && !projectedIds.has(node.id)) {
+        unreachable.push(node.id);
       }
     }
 
@@ -371,34 +285,29 @@ describe("Nested subagent render count", () => {
       state = reduceConversation(state, event);
     }
 
-    const { getChildrenCalls, duplicateChildren } = simulateUITraversal(state.graph);
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
 
-    console.log(`\nDeep chain (${N} agents):`);
-    console.log(`  Total getChildren calls: ${getChildrenCalls}`);
-    console.log(`  Graph nodes: ${state.graph.nodes.size}`);
+    // Should have N text ViewNodes (one per agent)
+    const textNodes = all.filter((n) => n.content.kind === "text");
+    expect(textNodes.length).toBe(N);
 
-    // For a linear chain of N agents, each with 1 tool call (except leaf),
-    // the UI traversal should make:
-    //   - N calls from MessageNode (one per agent)
-    //   - (N-1) calls from ToolCallBlock (one per tool_call)
-    //   = 2N - 1 calls total
-    // If exponential, it would be 2^N or similar.
-    const expectedLinear = 2 * N - 1;
-    console.log(`  Expected ~${expectedLinear} calls for linear growth`);
+    // Should have N-1 tool_call ViewNodes
+    const toolCallNodes = all.filter((n) => n.content.kind === "tool_call");
+    expect(toolCallNodes.length).toBe(N - 1);
 
-    // Allow some slack but catch exponential blowup
-    expect(getChildrenCalls).toBeLessThanOrEqual(expectedLinear * 3);
-    expect(duplicateChildren).toEqual([]);
+    // Total renderable ViewNodes = N text + (N-1) tool_call = 2N - 1
+    const renderableNodes = all.filter(
+      (n) => n.content.kind === "text" || n.content.kind === "tool_call",
+    );
+    expect(renderableNodes.length).toBe(2 * N - 1);
+
+    // No duplicates
+    const ids = all.map((n) => n.id);
+    expect(ids.length).toBe(new Set(ids).size);
   });
 
-  test("colliding provider-issued tool_call IDs do not cause infinite loop or duplicate children", () => {
-    // Reproduce the exact bug: two agents both produce tool_calls with
-    // the same raw ID "functions.agent:0" (as Kimi does). After namespacing
-    // in agent.ts, these should be globally unique and not collide.
-    //
-    // Before the fix, getChildren(graph, "functions.agent:0") would find
-    // agent B (whose parentId is "functions.agent:0") when rendering
-    // agent A's tool_call block, creating an infinite render loop.
+  test("colliding provider-issued tool_call IDs produce correct nesting structure", () => {
     const collidingEvents: ConversationEvent[] = [
       { type: "stream_start" },
       // Agent A starts
@@ -498,25 +407,36 @@ describe("Nested subagent render count", () => {
       state = reduceConversation(state, event);
     }
 
-    const { duplicateChildren, getChildrenCalls } = simulateUITraversal(state.graph);
+    const viewNodes = projectThread(state.graph);
+    const all = collectAllViewNodes(viewNodes);
 
-    // No node should appear as child of two different parents
-    expect(duplicateChildren).toEqual([]);
+    // No duplicate ids
+    const ids = all.map((n) => n.id);
+    expect(ids.length).toBe(new Set(ids).size);
 
-    // Should not blow up — 3 agents with 2 tool calls = at most ~5 getChildren calls
-    expect(getChildrenCalls).toBeLessThanOrEqual(10);
+    // Verify correct nesting via branches:
+    // Agent A's tool_call should have B's content as a branch
+    const aToolCall = all.find(
+      (n) => n.content.kind === "tool_call" && n.id === "a/functions.agent:0",
+    );
+    expect(aToolCall).toBeDefined();
+    expect(aToolCall!.branches.length).toBeGreaterThan(0);
 
-    // Verify correct parent-child structure:
-    // A's tool_call "a/functions.agent:0" should have B as child
-    // B's tool_call "b/functions.agent:0" should have C as child
-    const aChildren = getChildren(state.graph, "a/functions.agent:0");
-    expect(aChildren).toEqual(["b"]);
+    // B's content should appear in A's tool_call branches
+    const aBranchNodes = aToolCall!.branches.flatMap((branch) => collectAllViewNodes(branch));
+    const bToolCall = aBranchNodes.find(
+      (n) => n.content.kind === "tool_call" && n.id === "b/functions.agent:0",
+    );
+    expect(bToolCall).toBeDefined();
 
-    const bChildren = getChildren(state.graph, "b/functions.agent:0");
-    expect(bChildren).toEqual(["c"]);
-
-    // C has no tool calls, no children
-    const cChildren = getChildren(state.graph, "c");
-    expect(cChildren).toEqual([]);
+    // B's tool_call should have C's content as a branch
+    expect(bToolCall!.branches.length).toBeGreaterThan(0);
+    const bBranchNodes = bToolCall!.branches.flatMap((branch) => collectAllViewNodes(branch));
+    const cText = bBranchNodes.find(
+      (n) =>
+        n.content.kind === "text" &&
+        (n.content as { kind: "text"; text: string }).text === "Hello from C",
+    );
+    expect(cText).toBeDefined();
   });
 });
