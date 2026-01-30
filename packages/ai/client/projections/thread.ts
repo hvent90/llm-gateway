@@ -101,7 +101,7 @@ function walkThread(graph: Graph, startId: string, completedRuns: Set<string>): 
     const node = graph.nodes.get(currentId);
     if (!node) break;
 
-    const targets = graph.edges.get(currentId) ?? [];
+    const targets: string[] = graph.edges.get(currentId) ?? [];
 
     // Separate continuation (same run) from cross-run targets.
     let continuation: string | null = null;
