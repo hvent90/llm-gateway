@@ -1,6 +1,6 @@
 import type { ServerEvent } from "./server-event";
-import type { GraphState } from "./types";
-import { createInitialState, reduceEvent } from "./graph";
+import type { Graph } from "./types";
+import { createGraph, reduceEvent, type GraphEvent } from "./graph";
 
 export interface PendingRelay {
   relayId: string;
@@ -11,7 +11,7 @@ export interface PendingRelay {
 }
 
 export interface ConversationState {
-  graph: GraphState;
+  graph: Graph;
   sessionId: string | null;
   pendingRelays: PendingRelay[];
   grantedTools: Set<string>;
@@ -36,7 +36,7 @@ export type ConversationEvent =
 
 export function createInitialConversation(): ConversationState {
   return {
-    graph: createInitialState(),
+    graph: createGraph(),
     sessionId: null,
     pendingRelays: [],
     grantedTools: new Set(),
@@ -45,12 +45,10 @@ export function createInitialConversation(): ConversationState {
   };
 }
 
-/** Returns pending relays whose tool is already in grantedTools. */
 export function getAutoApprovableRelays(state: ConversationState): PendingRelay[] {
   return state.pendingRelays.filter((r) => state.grantedTools.has(r.tool));
 }
 
-/** Returns all pending relays matching a given tool name. */
 export function getSameToolRelays(state: ConversationState, tool: string): PendingRelay[] {
   return state.pendingRelays.filter((r) => r.tool === tool);
 }
@@ -63,25 +61,8 @@ export function reduceConversation(
     case "connected":
       return { ...state, sessionId: event.sessionId };
 
-    case "user": {
-      const runId = event.runId;
-      const parentId = event.parentId;
-      // Store a synthetic text event so getContentBlocks works
-      const syntheticEvent = {
-        type: "text" as const,
-        id: runId,
-        runId,
-        agentId: runId,
-        content: event.content,
-      };
-      const existingNode = state.graph.nodes.get(runId);
-      const node = existingNode
-        ? { ...existingNode, events: [...existingNode.events, syntheticEvent as ServerEvent] }
-        : { runId, parentId, role: "user" as const, events: [syntheticEvent as ServerEvent] };
-      const newNodes = new Map(state.graph.nodes);
-      newNodes.set(runId, node);
-      return { ...state, graph: { nodes: newNodes } };
-    }
+    case "user":
+      return { ...state, graph: reduceEvent(state.graph, event as GraphEvent) };
 
     case "relay": {
       const relay: PendingRelay = {
@@ -91,7 +72,6 @@ export function reduceConversation(
         tool: event.tool,
         params: event.params,
       };
-      // Also delegate to graph reducer so the relay event is tracked on the node
       return {
         ...state,
         pendingRelays: [...state.pendingRelays, relay],
