@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { AgentMultiplexer, type MultiplexedEvent } from "../multiplexer";
+import { createPassthrough } from "../primitives";
 
 /**
  * Helper to create a simple async generator from an array of values.
@@ -257,6 +258,77 @@ describe("AgentMultiplexer", () => {
       }
 
       expect(events).toEqual([]);
+    });
+
+    it("yields events from agent registered while Promise.race is in progress", async () => {
+      // Reproduces the nested subagent deadlock from the real orchestrator:
+      //
+      // In the real code, the parent agent's events flow through a passthrough.
+      // The spawnSubagent() loop drives the harness generator and pushes events
+      // into the passthrough. When tool execution spawns a child, it calls
+      // mux.register() for the child. This happens ASYNCHRONOUSLY — not inside
+      // the passthrough's next() call. So the mux is already in Promise.race
+      // on the parent's passthrough when the child is registered.
+      //
+      // The child produces events that must be consumed before the parent
+      // can continue (the parent is awaiting the child's completion).
+      // This creates a deadlock: mux races on parentPending, child events
+      // can't be consumed, parent can't resolve.
+
+      const mux = new AgentMultiplexer<string>();
+      const parentPt = createPassthrough<string>();
+      const childPt = createPassthrough<string>();
+
+      mux.register("parent", parentPt.iterable);
+
+      const iterator = mux.events()[Symbol.asyncIterator]();
+
+      // Push first event from parent
+      parentPt.push("parent-1");
+      const first = await iterator.next();
+      expect(first.value).toEqual({ agentId: "parent", event: "parent-1" });
+
+      // At this point the mux generator has yielded parent-1 and is suspended.
+      // When we call iterator.next() again, it will:
+      // 1. Resume the generator from the yield
+      // 2. Call pull("parent") — parentPt has no buffered values, so parentPending blocks
+      // 3. Collect racing = [parentPending] and enter Promise.race
+      //
+      // We need the child registration to happen AFTER Promise.race starts.
+      // We use a microtask to ensure the registration happens after the
+      // synchronous part of iterator.next() completes.
+
+      // Schedule child registration for after the mux enters Promise.race
+      setTimeout(() => {
+        mux.register("child", childPt.iterable);
+        childPt.push("child-1");
+        childPt.end();
+      }, 10);
+
+      // This iterator.next() call enters Promise.race([parentPending]).
+      // The child registration happens 10ms later, but the mux is stuck
+      // racing only on parentPending.
+      const second = await Promise.race([
+        iterator.next(),
+        new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 2000)),
+      ]);
+
+      // The child event must come through even though parent is blocked
+      expect(second).not.toBe("timeout");
+      expect((second as IteratorResult<MultiplexedEvent<string>>).value).toEqual({
+        agentId: "child",
+        event: "child-1",
+      });
+
+      // Now resolve parent
+      parentPt.push("parent-2");
+      parentPt.end();
+
+      const third = await iterator.next();
+      expect(third.value).toEqual({ agentId: "parent", event: "parent-2" });
+
+      const done = await iterator.next();
+      expect(done.done).toBe(true);
     });
 
     it("preserves event order per agent", async () => {

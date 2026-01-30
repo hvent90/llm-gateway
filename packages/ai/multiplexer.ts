@@ -1,5 +1,3 @@
-import { AsyncQueue } from "./primitives";
-
 /**
  * A multiplexed event from an agent.
  */
@@ -38,7 +36,7 @@ type AgentState<T> = {
  */
 export class AgentMultiplexer<T> {
   private agents = new Map<string, AgentState<T>>();
-  private signal = new AsyncQueue<void>();
+  private wakeup: (() => void) | null = null;
 
   /**
    * Register an agent with its async iterable stream.
@@ -50,7 +48,7 @@ export class AgentMultiplexer<T> {
     const iterator = iterable[Symbol.asyncIterator]();
     this.agents.set(agentId, { iterator, paused: false, pending: null });
     this.pull(agentId);
-    this.signal.push(); // Wake up consumer
+    this.wake();
   }
 
   /**
@@ -88,7 +86,17 @@ export class AgentMultiplexer<T> {
     if (agent) {
       agent.paused = false;
       if (!agent.pending) this.pull(agentId);
-      this.signal.push(); // Wake up consumer
+      this.wake();
+    }
+  }
+
+  /**
+   * Wake the events() loop so it re-collects the racing set.
+   */
+  private wake(): void {
+    if (this.wakeup) {
+      this.wakeup();
+      this.wakeup = null;
     }
   }
 
@@ -137,13 +145,23 @@ export class AgentMultiplexer<T> {
       }
 
       if (racing.length === 0) {
-        // All paused or no pending—wait for signal
-        await this.signal.pop();
+        // All paused or no pending — wait for a wake signal
+        await new Promise<void>((r) => {
+          this.wakeup = r;
+        });
         continue;
       }
 
-      // Race all active agents
-      const { agentId, result } = await Promise.race(racing);
+      // Race all active agents, plus a wakeup promise so that register()/resume()
+      // can interrupt the race when new agents need to be included
+      const wakeupPromise = new Promise<null>((r) => {
+        this.wakeup = () => r(null);
+      });
+      const winner = await Promise.race([...racing, wakeupPromise]);
+
+      if (!winner) continue; // Wakeup fired — re-collect racing
+
+      const { agentId, result } = winner;
       const agent = this.agents.get(agentId);
 
       if (!agent) continue; // Agent was removed while racing
