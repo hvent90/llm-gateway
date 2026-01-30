@@ -1,19 +1,6 @@
 // Core graph
-export { createInitialState, reduceEvent } from "./graph";
-
-// Selectors
-export {
-  getRoots,
-  getChildren,
-  getText,
-  getToolCalls,
-  getStatus,
-  getContentBlocks,
-  getRole,
-  getUsage,
-  getToolCallCount,
-} from "./selectors";
-export type { ContentBlock } from "./selectors";
+export { createGraph, reduceEvent } from "./graph";
+export type { GraphEvent } from "./graph";
 
 // Conversation layer
 export {
@@ -23,12 +10,13 @@ export {
   getSameToolRelays,
 } from "./conversation";
 
+// Projection
+export { projectThread } from "./projections/thread";
+export type { ViewNode, ViewContent } from "./projections/thread";
+
 // Types
-export type { GraphState, GraphNode } from "./types";
-
+export type { Graph, Node } from "./types";
 export type { PendingRelay, ConversationState, ConversationEvent } from "./conversation";
-
-// Server event types
 export type { ServerEvent, StreamRequest } from "./server-event";
 
 // Transports
