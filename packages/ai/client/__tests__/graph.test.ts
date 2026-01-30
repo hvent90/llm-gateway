@@ -1,167 +1,235 @@
 import { describe, test, expect } from "bun:test";
-import { createInitialState, reduceEvent } from "../graph";
+import { createInitialGraph, reduceGraphEvent } from "../graph";
+import type { Node } from "../types";
 
-describe("Graph State", () => {
-  test("createInitialState returns empty graph", () => {
-    const state = createInitialState();
-    expect(state.nodes.size).toBe(0);
-  });
-
-  test("reduceEvent ignores connected events", () => {
-    const state = createInitialState();
-    const newState = reduceEvent(state, { type: "connected", sessionId: "s-1" });
-    expect(newState.nodes.size).toBe(0);
-  });
-
-  test("reduceEvent creates node for new runId", () => {
-    const state = createInitialState();
-    const newState = reduceEvent(state, {
+describe("Graph Reducer", () => {
+  test("creates a node for a text event", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
       type: "text",
-      runId: "run-1",
-      agentId: "agent-1",
-      id: "evt-1",
+      id: "t1",
+      runId: "r1",
+      agentId: "a1",
       content: "Hello",
     });
-
-    expect(newState.nodes.size).toBe(1);
-    expect(newState.nodes.has("run-1")).toBe(true);
-
-    const node = newState.nodes.get("run-1")!;
-    expect(node.runId).toBe("run-1");
-    expect(node.events.length).toBe(1);
-    expect(node.events[0]!.type).toBe("text");
+    expect(g.nodes.size).toBe(1);
+    const node = [...g.nodes.values()][0]!;
+    expect(node.kind).toBe("text");
+    expect(node.runId).toBe("r1");
+    if (node.kind === "text") expect(node.content).toBe("Hello");
   });
 
-  test("reduceEvent accumulates events in same node", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
+  test("creates sequential edges within the same runId", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
       type: "text",
-      runId: "run-1",
-      agentId: "agent-1",
-      id: "evt-1",
-      content: "Hello ",
+      id: "t1",
+      runId: "r1",
+      agentId: "a1",
+      content: "A",
     });
-    state = reduceEvent(state, {
+    g = reduceGraphEvent(g, {
       type: "text",
-      runId: "run-1",
-      agentId: "agent-1",
-      id: "evt-2",
-      content: "world",
+      id: "t2",
+      runId: "r1",
+      agentId: "a1",
+      content: "B",
     });
-
-    expect(state.nodes.size).toBe(1);
-    const node = state.nodes.get("run-1")!;
-    expect(node.events.length).toBe(2);
+    expect(g.edges.get("t1")).toEqual(["t2"]);
   });
 
-  test("reduceEvent stores parentId from first event", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
+  test("does not create edges between different runIds (without parentId)", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
       type: "text",
-      runId: "child-run",
-      agentId: "agent-1",
-      id: "evt-1",
-      parentId: "parent-run",
-      content: "Hello",
+      id: "t1",
+      runId: "r1",
+      agentId: "a1",
+      content: "A",
     });
-
-    const node = state.nodes.get("child-run")!;
-    expect(node.parentId).toBe("parent-run");
+    g = reduceGraphEvent(g, {
+      type: "text",
+      id: "t2",
+      runId: "r2",
+      agentId: "a2",
+      content: "B",
+    });
+    expect(g.edges.get("t1") ?? []).toEqual([]);
   });
 
-  test("reduceEvent handles tool_call events", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
+  test("creates cross-run edge via parentId", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
       type: "tool_call",
-      runId: "run-1",
-      agentId: "agent-1",
       id: "tc-1",
+      runId: "r1",
+      agentId: "a1",
+      name: "search",
+      input: "auth",
+    });
+    g = reduceGraphEvent(g, {
+      type: "harness_start",
+      runId: "r2",
+      agentId: "sub",
+      parentId: "tc-1",
+    });
+    const targets = g.edges.get("tc-1") ?? [];
+    expect(targets).toContain("r2:start");
+  });
+
+  test("tool_call node stores eventId", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
+      type: "tool_call",
+      id: "tc-1",
+      runId: "r1",
+      agentId: "a1",
       name: "bash",
       input: { command: "ls" },
     });
-
-    const node = state.nodes.get("run-1")!;
-    expect(node.events.length).toBe(1);
-    expect(node.events[0]!.type).toBe("tool_call");
+    const node = g.nodes.get("tc-1")!;
+    expect(node.kind).toBe("tool_call");
+    if (node.kind === "tool_call") expect(node.eventId).toBe("tc-1");
   });
 
-  test("reduceEvent handles tool_result events", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
-      type: "tool_result",
-      runId: "run-1",
-      agentId: "agent-1",
+  test("tool_result node stores eventId and gets unique node id", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
+      type: "tool_call",
       id: "tc-1",
+      runId: "r1",
+      agentId: "a1",
       name: "bash",
-      output: { stdout: "file.txt" },
+      input: { command: "ls" },
     });
-
-    const node = state.nodes.get("run-1")!;
-    expect(node.events[0]!.type).toBe("tool_result");
+    g = reduceGraphEvent(g, {
+      type: "tool_result",
+      id: "tc-1",
+      runId: "r1",
+      agentId: "a1",
+      name: "bash",
+      output: "files",
+    });
+    expect(g.nodes.has("tc-1")).toBe(true);
+    expect(g.nodes.has("tc-1:result")).toBe(true);
+    const trNode = g.nodes.get("tc-1:result")!;
+    if (trNode.kind === "tool_result") expect(trNode.eventId).toBe("tc-1");
   });
 
-  test("reduceEvent handles error events", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
-      type: "error",
-      runId: "run-1",
-      agentId: "agent-1",
-      message: "Something went wrong",
+  test("harness_start/end get deterministic node ids", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
+      type: "harness_start",
+      runId: "r1",
+      agentId: "a1",
     });
-
-    const node = state.nodes.get("run-1")!;
-    expect(node.events[0]!.type).toBe("error");
+    g = reduceGraphEvent(g, {
+      type: "harness_end",
+      runId: "r1",
+      agentId: "a1",
+    });
+    expect(g.nodes.has("r1:start")).toBe(true);
+    expect(g.nodes.has("r1:end")).toBe(true);
   });
 
-  test("reduceEvent handles reasoning events", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
-      type: "reasoning",
-      runId: "run-1",
-      agentId: "agent-1",
-      id: "r-1",
-      content: "Let me think...",
-    });
-
-    const node = state.nodes.get("run-1")!;
-    expect(node.events[0]!.type).toBe("reasoning");
+  test("skips connected events", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, { type: "connected", sessionId: "s-1" });
+    expect(g.nodes.size).toBe(0);
   });
 
-  test("reduceEvent creates separate nodes for different runIds", () => {
-    let state = createInitialState();
-    state = reduceEvent(state, {
-      type: "text",
-      runId: "run-1",
-      agentId: "agent-1",
-      id: "evt-1",
+  test("user events create user nodes", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
+      type: "user" as any,
+      runId: "u1",
       content: "Hello",
     });
-    state = reduceEvent(state, {
-      type: "text",
-      runId: "run-2",
-      agentId: "agent-1",
-      id: "evt-2",
-      parentId: "run-1",
-      content: "World",
-    });
-
-    expect(state.nodes.size).toBe(2);
-    expect(state.nodes.has("run-1")).toBe(true);
-    expect(state.nodes.has("run-2")).toBe(true);
+    const node = g.nodes.get("u1")!;
+    expect(node.kind).toBe("user");
+    if (node.kind === "user") expect(node.content).toBe("Hello");
   });
 
-  test("state is immutable - original unchanged", () => {
-    const state1 = createInitialState();
-    const state2 = reduceEvent(state1, {
+  test("subagent scenario: tool_call has edges to both result and spawn", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
       type: "text",
-      runId: "run-1",
-      agentId: "agent-1",
-      id: "evt-1",
-      content: "Hello",
+      id: "t1",
+      runId: "r1",
+      agentId: "a1",
+      content: "Let me search.",
+    });
+    g = reduceGraphEvent(g, {
+      type: "tool_call",
+      id: "tc-1",
+      runId: "r1",
+      agentId: "a1",
+      name: "search",
+      input: "auth",
+    });
+    g = reduceGraphEvent(g, {
+      type: "harness_start",
+      runId: "r2",
+      agentId: "sub",
+      parentId: "tc-1",
+    });
+    g = reduceGraphEvent(g, {
+      type: "text",
+      id: "t2",
+      runId: "r2",
+      agentId: "sub",
+      content: "Searching...",
+    });
+    g = reduceGraphEvent(g, {
+      type: "harness_end",
+      runId: "r2",
+      agentId: "sub",
+    });
+    g = reduceGraphEvent(g, {
+      type: "tool_result",
+      id: "tc-1",
+      runId: "r1",
+      agentId: "a1",
+      name: "search",
+      output: ["auth.ts"],
+    });
+    g = reduceGraphEvent(g, {
+      type: "text",
+      id: "t3",
+      runId: "r1",
+      agentId: "a1",
+      content: "Found auth.ts",
     });
 
-    expect(state1.nodes.size).toBe(0);
-    expect(state2.nodes.size).toBe(1);
-    expect(state1.nodes).not.toBe(state2.nodes);
+    const tcEdges = g.edges.get("tc-1") ?? [];
+    expect(tcEdges).toContain("r2:start");
+    expect(tcEdges).toContain("tc-1:result");
+    expect(g.edges.get("tc-1:result")).toEqual(["t3"]);
+    expect(g.edges.get("r2:start")).toEqual(["t2"]);
+    expect(g.edges.get("t2")).toEqual(["r2:end"]);
+  });
+
+  test("parentId as runId creates edge from last node of that run", () => {
+    let g = createInitialGraph();
+    g = reduceGraphEvent(g, {
+      type: "harness_start",
+      runId: "agent-1",
+      agentId: "a1",
+    });
+    g = reduceGraphEvent(g, {
+      type: "text",
+      id: "t1",
+      runId: "agent-1",
+      agentId: "a1",
+      content: "Thinking",
+    });
+    g = reduceGraphEvent(g, {
+      type: "harness_start",
+      runId: "turn-1",
+      agentId: "provider",
+      parentId: "agent-1",
+    });
+    const t1Edges = g.edges.get("t1") ?? [];
+    expect(t1Edges).toContain("turn-1:start");
   });
 });
