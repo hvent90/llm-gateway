@@ -1,14 +1,11 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import type { PermissionHandlers } from "./components/ConversationThread";
 import {
   createSSETransport,
   createHTTPTransport,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
+  projectThread,
   getAutoApprovableRelays,
   getSameToolRelays,
 } from "../../../packages/ai/client";
@@ -34,34 +31,27 @@ export default function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Build messages array from graph using selectors
   function buildMessagesFromGraph(graph: ConversationState["graph"]): Message[] {
     const messages: Message[] = [];
-    const traverse = (runIds: string[]) => {
-      for (const runId of runIds) {
-        const role = getRole(graph, runId);
-        const blocks = getContentBlocks(graph, runId);
-        const textContent = blocks
-          .filter((block) => block.type === "text")
-          .map((block) => block.content)
-          .join("");
-        if (textContent && role) {
-          messages.push({ role, content: textContent });
+    const viewNodes = projectThread(graph);
+    const collect = (nodes: typeof viewNodes) => {
+      for (const node of nodes) {
+        if (node.content.kind === "text" || node.content.kind === "user") {
+          messages.push({ role: node.role, content: node.content.text });
         }
-        traverse(getChildren(graph, runId));
+        for (const branch of node.branches) {
+          collect(branch);
+        }
       }
     };
-    traverse(getRoots(graph));
+    collect(viewNodes);
     return messages;
   }
 
-  // Core streaming function - can be called with different permissions
   const sendChat = useCallback(async (messages: Message[], permissions: Permissions) => {
     setState((s) => reduceConversation(s, { type: "stream_start" }));
-
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
     const pendingEvents: ServerEvent[] = [];
     let rafId: number | undefined;
 
@@ -72,9 +62,7 @@ export default function App() {
         const batch = pendingEvents.splice(0);
         setState((s) => {
           let current = s;
-          for (const e of batch) {
-            current = reduceConversation(current, e);
-          }
+          for (const e of batch) current = reduceConversation(current, e);
           return current;
         });
       }
@@ -85,7 +73,6 @@ export default function App() {
         { model: MODEL, messages, permissions },
         controller.signal,
       );
-
       for await (const event of stream) {
         pendingEvents.push(event);
         if (rafId === undefined) {
@@ -94,9 +81,7 @@ export default function App() {
             const batch = pendingEvents.splice(0);
             setState((s) => {
               let current = s;
-              for (const e of batch) {
-                current = reduceConversation(current, e);
-              }
+              for (const e of batch) current = reduceConversation(current, e);
               return current;
             });
           });
@@ -118,19 +103,13 @@ export default function App() {
     async (content: string) => {
       setStreamError(null);
       const userId = nextUserId();
-
-      // Add user message to state
       setState((s) => reduceConversation(s, { type: "user", runId: userId, content }));
-
-      // Read latest state via ref (setState is async, state would be stale)
       const current = stateRef.current;
       const messages = buildMessagesFromGraph(current.graph);
       messages.push({ role: "user", content });
-
       const permissions: Permissions = {
         allowlist: Array.from(current.grantedTools).map((tool) => ({ tool })),
       };
-
       await sendChat(messages, permissions);
     },
     [sendChat],
@@ -139,10 +118,6 @@ export default function App() {
   const handleAllow = useCallback(
     async (relay: PendingRelay) => {
       if (!state.sessionId) return;
-
-      // Clear the relay without granting the tool permanently.
-      // We use approved: false in the reducer (to skip granting) even though
-      // we send approved: true to the server (to actually execute the tool).
       setState((s) =>
         reduceConversation(s, {
           type: "relay_resolved",
@@ -151,10 +126,7 @@ export default function App() {
           approved: false,
         }),
       );
-
-      await httpTransport.resolveRelay(state.sessionId, relay.relayId, {
-        approved: true,
-      });
+      await httpTransport.resolveRelay(state.sessionId, relay.relayId, { approved: true });
     },
     [state.sessionId],
   );
@@ -162,11 +134,7 @@ export default function App() {
   const handleAllowAll = useCallback(
     async (relay: PendingRelay) => {
       if (!state.sessionId) return;
-
-      // Find all pending relays of the same tool type
       const sameTypeRelays = getSameToolRelays(state, relay.tool);
-
-      // Grant tool on the clicked relay, resolve all siblings
       setState((s) => {
         let current = s;
         for (const r of sameTypeRelays) {
@@ -179,8 +147,6 @@ export default function App() {
         }
         return current;
       });
-
-      // Approve all on the server in parallel
       const sessionId = state.sessionId;
       await Promise.all(
         sameTypeRelays.map((r) =>
@@ -194,8 +160,6 @@ export default function App() {
   const handleDeny = useCallback(
     async (relay: PendingRelay) => {
       if (!state.sessionId) return;
-
-      // Clear relay with denial
       setState((s) =>
         reduceConversation(s, {
           type: "relay_resolved",
@@ -204,7 +168,6 @@ export default function App() {
           approved: false,
         }),
       );
-
       await httpTransport.resolveRelay(state.sessionId, relay.relayId, {
         approved: false,
         reason: "User denied",
@@ -217,22 +180,16 @@ export default function App() {
     abortControllerRef.current?.abort();
   }, []);
 
-  const permissionHandlers: PermissionHandlers = useMemo(
-    () => ({
-      onAllow: handleAllow,
-      onAllowAll: handleAllowAll,
-      onDeny: handleDeny,
-    }),
-    [handleAllow, handleAllowAll, handleDeny],
-  );
+  const permissionHandlers: PermissionHandlers = {
+    onAllow: handleAllow,
+    onAllowAll: handleAllowAll,
+    onDeny: handleDeny,
+  };
 
-  // Auto-resolve incoming relays for tools already in grantedTools
   useEffect(() => {
     if (!state.sessionId) return;
-
     const autoApprovable = getAutoApprovableRelays(state);
     if (autoApprovable.length === 0) return;
-
     setState((s) => {
       let current = s;
       for (const r of autoApprovable) {
@@ -245,7 +202,6 @@ export default function App() {
       }
       return current;
     });
-
     const sessionId = state.sessionId;
     for (const r of autoApprovable) {
       httpTransport.resolveRelay(sessionId, r.relayId, { approved: true });
@@ -264,7 +220,6 @@ export default function App() {
           graph={state.graph}
           pendingRelays={state.pendingRelays}
           permissionHandlers={permissionHandlers}
-          activeStreams={state.activeStreams}
           scrollContainerRef={scrollContainerRef}
         />
         {streamError && (
