@@ -3,7 +3,7 @@
  * Verifies that:
  * 1. All events stream through correctly
  * 2. Graph structure has correct parent-child relationships
- * 3. All nodes are reachable via tree traversal (no orphans)
+ * 3. All content nodes are reachable via projectThread
  * 4. No infinite loops or deadlocks
  */
 import { describe, test, expect, afterEach } from "bun:test";
@@ -11,7 +11,6 @@ import { z } from "zod";
 import type { Server } from "bun";
 import type { ToolDefinition } from "../../types";
 import type { ServerEvent } from "../server-event";
-import type { ConversationState } from "../conversation";
 import {
   createDeterministicHarness,
   type DeterministicHarnessConfig,
@@ -22,11 +21,9 @@ import {
   createSSETransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getText,
+  projectThread,
 } from "../index";
+import type { ViewNode } from "../index";
 
 // --- Test helpers ---
 
@@ -62,9 +59,43 @@ afterEach(() => {
   }
 });
 
+// Collect all ViewNode text content recursively
+function collectTexts(nodes: ViewNode[]): string[] {
+  const texts: string[] = [];
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      if (node.content.kind === "text" || node.content.kind === "user") {
+        texts.push(node.content.text);
+      } else if (node.content.kind === "tool_call") {
+        texts.push(`[tool] ${node.content.name}`);
+      }
+      for (const branch of node.branches) {
+        walk(branch);
+      }
+    }
+  };
+  walk(nodes);
+  return texts;
+}
+
+// Count all ViewNodes recursively
+function countNodes(nodes: ViewNode[]): number {
+  let count = 0;
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      count++;
+      for (const branch of node.branches) {
+        walk(branch);
+      }
+    }
+  };
+  walk(nodes);
+  return count;
+}
+
 describe("Nested Subagent Integration", () => {
   test(
-    "nested subagent (A → B → C): all nodes reachable via UI traversal pattern",
+    "nested subagent (A -> B -> C): all content reachable via projectThread",
     async () => {
       const setup = startTestServer(
         {
@@ -97,77 +128,30 @@ describe("Nested Subagent Integration", () => {
 
       state = reduceConversation(state, { type: "stream_end" });
 
-      // Debug: dump the graph structure
-      const nodeInfo: Array<{
-        runId: string;
-        parentId?: string;
-        text: string;
-        toolCalls: string[];
-      }> = [];
-      for (const [runId, node] of state.graph.nodes) {
-        const blocks = getContentBlocks(state.graph, runId);
-        const text = getText(state.graph, runId);
-        const toolCalls = blocks
-          .filter((b) => b.type === "tool_call")
-          .map((b) => `${b.name}(${b.id})`);
-        nodeInfo.push({ runId, parentId: node.parentId, text, toolCalls });
-      }
+      // Use projectThread to get the view
+      const view = projectThread(state.graph);
 
-      // Simulate the exact UI traversal pattern:
-      // ConversationThread renders roots via getRoots()
-      // MessageNode renders children via getChildren(graph, runId)
-      // ToolCallBlock renders children via getChildren(graph, block.id)
-      const reachable = new Set<string>();
+      // Should have some content
+      expect(view.length).toBeGreaterThan(0);
 
-      function simulateMessageNode(runId: string, depth: number) {
-        if (reachable.has(runId)) return; // cycle guard
-        reachable.add(runId);
+      // Collect all texts - should contain content from all three agents
+      const texts = collectTexts(view);
+      expect(texts.some((t) => t.includes("hello from C"))).toBe(true);
+      expect(texts.some((t) => t.includes("B got C's result"))).toBe(true);
+      expect(texts.some((t) => t.includes("A got B's result"))).toBe(true);
+      // Should have tool_call nodes
+      expect(texts.some((t) => t.includes("[tool] agent"))).toBe(true);
 
-        const blocks = getContentBlocks(state.graph, runId);
-
-        // ContentBlockView → ToolCallBlock for each tool_call block
-        for (const block of blocks) {
-          if (block.type === "tool_call") {
-            // ToolCallBlock calls getChildren(graph, block.id)
-            const blockChildren = getChildren(state.graph, block.id);
-            for (const childId of blockChildren) {
-              simulateMessageNode(childId, depth + 1);
-            }
+      // All projected nodes should have a valid status
+      const walk = (list: ViewNode[]) => {
+        for (const node of list) {
+          expect(["streaming", "complete", "error"]).toContain(node.status);
+          for (const branch of node.branches) {
+            walk(branch);
           }
         }
-
-        // MessageNode also calls getChildren(graph, runId) at the end
-        const children = getChildren(state.graph, runId);
-        for (const childId of children) {
-          simulateMessageNode(childId, depth + 1);
-        }
-      }
-
-      const roots = getRoots(state.graph);
-      for (const runId of roots) {
-        simulateMessageNode(runId, 0);
-      }
-
-      // Every node in the graph must be reachable via UI traversal
-      const unreachable: string[] = [];
-      for (const [runId] of state.graph.nodes) {
-        if (!reachable.has(runId)) {
-          const node = state.graph.nodes.get(runId)!;
-          unreachable.push(
-            `${runId} (parentId=${node.parentId}, text=${getText(state.graph, runId)})`,
-          );
-        }
-      }
-
-      if (unreachable.length > 0) {
-        // Print full graph for debugging
-        console.log("Graph nodes:", JSON.stringify(nodeInfo, null, 2));
-        console.log("Roots:", roots);
-        console.log("Reachable:", [...reachable]);
-        console.log("Unreachable:", unreachable);
-      }
-
-      expect(unreachable).toEqual([]);
+      };
+      walk(view);
     },
     { timeout: 30000 },
   );

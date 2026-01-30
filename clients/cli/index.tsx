@@ -14,12 +14,14 @@ import {
   createHTTPTransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
+  projectThread,
 } from "../../packages/ai/client";
-import type { ConversationState, ContentBlock, PendingRelay } from "../../packages/ai/client";
+import type {
+  ConversationState,
+  PendingRelay,
+  ViewNode,
+  ViewContent,
+} from "../../packages/ai/client";
 
 // Configuration from environment
 const MODEL = process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
@@ -42,23 +44,27 @@ function formatOutput(output: unknown): string {
   return lines.slice(0, 5).join("\n") + `\n... (${lines.length - 5} more lines)`;
 }
 
-// Block renderer for a single ContentBlock
-function BlockView(props: { block: ContentBlock; isUser: boolean }) {
+// Block renderer for a single ViewContent
+function BlockView(props: { content: ViewContent; isUser: boolean }) {
   return (
     <Show
-      when={props.block.type === "reasoning"}
+      when={props.content.kind === "reasoning"}
       fallback={
         <Show
-          when={props.block.type === "tool_call"}
+          when={props.content.kind === "tool_call"}
           fallback={
             <text wrapMode="word">
               {props.isUser ? "You: " : ""}
-              {(props.block as Extract<ContentBlock, { type: "text" }>).content.trimEnd()}
+              {(
+                props.content as
+                  | Extract<ViewContent, { kind: "text" }>
+                  | Extract<ViewContent, { kind: "user" }>
+              ).text.trimEnd()}
             </text>
           }
         >
           {(() => {
-            const tc = props.block as Extract<ContentBlock, { type: "tool_call" }>;
+            const tc = props.content as Extract<ViewContent, { kind: "tool_call" }>;
             const inputStr = typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input);
             const outputStr = tc.output !== undefined ? formatOutput(tc.output) : null;
             return (
@@ -79,42 +85,28 @@ function BlockView(props: { block: ContentBlock; isUser: boolean }) {
           fg="gray"
           attributes={createTextAttributes({ dim: true, italic: true })}
         >
-          {(props.block as Extract<ContentBlock, { type: "reasoning" }>).content.trimEnd()}
+          {(props.content as Extract<ViewContent, { kind: "reasoning" }>).text.trimEnd()}
         </text>
       </box>
     </Show>
   );
 }
 
-// Extract error messages from a graph node's events
-function getErrorMessages(graph: ConversationState["graph"], runId: string): string[] {
-  const node = graph.nodes.get(runId);
-  if (!node) return [];
-  return node.events.filter((e) => e.type === "error").map((e) => e.message);
-}
-
-// Recursive node renderer — walks the conversation graph
-function NodeView(props: {
-  graph: ConversationState["graph"];
-  runId: string;
-  pendingRelays: PendingRelay[];
-}) {
-  const role = () => getRole(props.graph, props.runId);
-  const blocks = () => getContentBlocks(props.graph, props.runId);
-  const children = () => getChildren(props.graph, props.runId);
-  const errors = () => getErrorMessages(props.graph, props.runId);
-  const nodeRelays = () => props.pendingRelays.filter((r) => r.runId === props.runId);
+// Recursive node renderer — walks the ViewNode tree
+function NodeView(props: { node: ViewNode; pendingRelays: PendingRelay[] }) {
+  const nodeRelays = () => props.pendingRelays.filter((r) => r.runId === props.node.runId);
 
   return (
-    <box marginTop={role() === "user" ? 1 : 0} marginBottom={role() === "user" ? 1 : 0}>
-      <For each={blocks()}>{(block) => <BlockView block={block} isUser={role() === "user"} />}</For>
-      <For each={errors()}>
-        {(msg) => (
-          <text wrapMode="word" fg="red">
-            {`[error] ${msg}`}
-          </text>
-        )}
-      </For>
+    <box
+      marginTop={props.node.role === "user" ? 1 : 0}
+      marginBottom={props.node.role === "user" ? 1 : 0}
+    >
+      <BlockView content={props.node.content} isUser={props.node.role === "user"} />
+      <Show when={props.node.status === "error"}>
+        <text wrapMode="word" fg="red">
+          {"[error] Node failed"}
+        </text>
+      </Show>
       <For each={nodeRelays()}>
         {(relay) => {
           const paramsStr = JSON.stringify(relay.params, null, 2);
@@ -127,48 +119,47 @@ function NodeView(props: {
           );
         }}
       </For>
-      <For each={children()}>
-        {(childId) => (
-          <NodeView graph={props.graph} runId={childId} pendingRelays={props.pendingRelays} />
+      <For each={props.node.branches}>
+        {(branch) => (
+          <For each={branch}>
+            {(child) => <NodeView node={child} pendingRelays={props.pendingRelays} />}
+          </For>
         )}
       </For>
     </box>
   );
 }
 
-// Build API messages from the conversation graph
-function buildApiMessages(
-  graph: ConversationState["graph"],
-): Array<{ role: string; content: string }> {
+// Build API messages from ViewNode[]
+function buildApiMessages(nodes: ViewNode[]): Array<{ role: string; content: string }> {
   const messages: Array<{ role: string; content: string }> = [];
-  const traverse = (runIds: string[]) => {
-    for (const runId of runIds) {
-      const role = getRole(graph, runId);
-      const blocks = getContentBlocks(graph, runId);
-
-      // Build content from all block types (text + tool calls)
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      const c = node.content;
       const parts: string[] = [];
-      for (const b of blocks) {
-        if (b.type === "text") {
-          parts.push(b.content);
-        } else if (b.type === "tool_call") {
-          const inputStr = typeof b.input === "string" ? b.input : JSON.stringify(b.input);
-          parts.push(`[tool] ${b.name}: ${inputStr}`);
-          if (b.output !== undefined) {
-            parts.push(`   -> ${formatOutput(b.output)}`);
-          }
+
+      if (c.kind === "text" || c.kind === "user") {
+        parts.push(c.text);
+      } else if (c.kind === "tool_call") {
+        const inputStr = typeof c.input === "string" ? c.input : JSON.stringify(c.input);
+        parts.push(`[tool] ${c.name}: ${inputStr}`);
+        if (c.output !== undefined) {
+          parts.push(`   -> ${formatOutput(c.output)}`);
         }
-        // Skip reasoning blocks — not sent to API
       }
+      // Skip reasoning — not sent to API
 
       const content = parts.join("\n");
-      if (content && role) {
-        messages.push({ role, content });
+      if (content) {
+        messages.push({ role: node.role, content });
       }
-      traverse(getChildren(graph, runId));
+
+      for (const branch of node.branches) {
+        walk(branch);
+      }
     }
   };
-  traverse(getRoots(graph));
+  walk(nodes);
   return messages;
 }
 
@@ -189,7 +180,7 @@ function ChatApp() {
 
   const isStreaming = () => conversation().activeStreams.size > 0;
   const pendingRelay = () => conversation().pendingRelays[0] ?? null;
-  const roots = () => getRoots(conversation().graph);
+  const viewNodes = () => projectThread(conversation().graph);
 
   // Resolve a pending relay request
   async function resolveRelay(approved: boolean) {
@@ -268,8 +259,8 @@ function ChatApp() {
     // Start streaming
     setStatusText("Streaming...");
 
-    // Build messages array for API from the graph
-    const apiMessages = buildApiMessages(conversation().graph);
+    // Build messages array for API from the view
+    const apiMessages = buildApiMessages(viewNodes());
 
     try {
       await streamChat(apiMessages);
@@ -300,17 +291,11 @@ function ChatApp() {
       {/* Messages */}
       <box flexGrow={1} border borderStyle="single" borderColor="#6b7280">
         <scrollbox width="100%" height="100%" scrollY stickyScroll stickyStart="bottom">
-          <Show when={roots().length === 0}>
+          <Show when={viewNodes().length === 0}>
             <text wrapMode="word">Welcome! Type a message and press Enter to start chatting.</text>
           </Show>
-          <For each={roots()}>
-            {(runId) => (
-              <NodeView
-                graph={conversation().graph}
-                runId={runId}
-                pendingRelays={conversation().pendingRelays}
-              />
-            )}
+          <For each={viewNodes()}>
+            {(node) => <NodeView node={node} pendingRelays={conversation().pendingRelays} />}
           </For>
         </scrollbox>
       </box>

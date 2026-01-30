@@ -1,8 +1,8 @@
 // Re-export shared types
 export type { ServerEvent } from "../../../packages/ai/client/server-event";
 export type { ConversationState, PendingRelay } from "../../../packages/ai/client";
-export type { ContentBlock } from "../../../packages/ai/client";
-export type { GraphState } from "../../../packages/ai/client";
+export type { ViewNode, ViewContent } from "../../../packages/ai/client";
+export type { Graph } from "../../../packages/ai/client";
 
 // Message structure for API requests
 export interface Message {

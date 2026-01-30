@@ -5,15 +5,13 @@ import type { PermissionHandlers } from "./components/ConversationThread";
 import {
   createSSETransport,
   createHTTPTransport,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
+  projectThread,
   getAutoApprovableRelays,
   getSameToolRelays,
 } from "../../../packages/ai/client";
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
 import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
+import type { ViewNode } from "./types";
 
 declare const __LLM_MODEL__: string | undefined;
 const MODEL = __LLM_MODEL__ ?? "kimi-k2.5";
@@ -26,6 +24,26 @@ function nextUserId(): string {
   return `user-${++userIdCounter}`;
 }
 
+// Build messages array from ViewNode[] (flat walk)
+function buildMessagesFromView(nodes: ViewNode[]): Message[] {
+  const messages: Message[] = [];
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      if (node.content.kind === "text" || node.content.kind === "user") {
+        messages.push({
+          role: node.role,
+          content: node.content.text,
+        });
+      }
+      for (const branch of node.branches) {
+        walk(branch);
+      }
+    }
+  };
+  walk(nodes);
+  return messages;
+}
+
 export default function App() {
   const [state, setState] = useState<ConversationState>(createInitialConversation);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -34,26 +52,8 @@ export default function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Build messages array from graph using selectors
-  function buildMessagesFromGraph(graph: ConversationState["graph"]): Message[] {
-    const messages: Message[] = [];
-    const traverse = (runIds: string[]) => {
-      for (const runId of runIds) {
-        const role = getRole(graph, runId);
-        const blocks = getContentBlocks(graph, runId);
-        const textContent = blocks
-          .filter((block) => block.type === "text")
-          .map((block) => block.content)
-          .join("");
-        if (textContent && role) {
-          messages.push({ role, content: textContent });
-        }
-        traverse(getChildren(graph, runId));
-      }
-    };
-    traverse(getRoots(graph));
-    return messages;
-  }
+  // Project the graph into ViewNode[] for rendering
+  const viewNodes = projectThread(state.graph);
 
   // Core streaming function - can be called with different permissions
   const sendChat = useCallback(async (messages: Message[], permissions: Permissions) => {
@@ -124,7 +124,8 @@ export default function App() {
 
       // Read latest state via ref (setState is async, state would be stale)
       const current = stateRef.current;
-      const messages = buildMessagesFromGraph(current.graph);
+      const currentView = projectThread(current.graph);
+      const messages = buildMessagesFromView(currentView);
       messages.push({ role: "user", content });
 
       const permissions: Permissions = {
@@ -261,7 +262,7 @@ export default function App() {
       </header>
       <main ref={scrollContainerRef} className="flex-1 overflow-auto p-3 sm:p-4">
         <ConversationThread
-          graph={state.graph}
+          nodes={viewNodes}
           pendingRelays={state.pendingRelays}
           permissionHandlers={permissionHandlers}
           activeStreams={state.activeStreams}

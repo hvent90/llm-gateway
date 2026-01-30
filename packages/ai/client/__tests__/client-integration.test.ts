@@ -1,9 +1,9 @@
 /**
  * Client Integration Tests
  *
- * Exercises the exact code paths the web and CLI clients use —
+ * Exercises the exact code paths the web and CLI clients use --
  * without React/Solid rendering. Both clients follow:
- * add user event to state → build messages from graph → stream via SSE → reduce events → use selectors.
+ * add user event to state -> build messages from graph -> stream via SSE -> reduce events -> projectThread.
  */
 import { describe, test, expect, afterEach } from "bun:test";
 import { z } from "zod";
@@ -22,12 +22,9 @@ import {
   createHTTPTransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
-  getText,
+  projectThread,
 } from "../index";
+import type { ViewNode } from "../index";
 
 // --- Test tool ---
 
@@ -56,31 +53,25 @@ function startTestServer(
   return { server, baseUrl: `http://localhost:${server.port}` };
 }
 
-// --- Web client helper functions (extracted from App.tsx patterns) ---
+// --- Web client helper: build messages from ViewNode[] ---
 
-function buildMessagesFromGraph(
-  graph: ConversationState["graph"],
-): Array<{ role: string; content: string }> {
+function buildMessagesFromView(nodes: ViewNode[]): Array<{ role: string; content: string }> {
   const messages: Array<{ role: string; content: string }> = [];
-  const traverse = (runIds: string[]) => {
-    for (const runId of runIds) {
-      const role = getRole(graph, runId);
-      const blocks = getContentBlocks(graph, runId);
-      const textContent = blocks
-        .filter((block) => block.type === "text")
-        .map((block) => block.content)
-        .join("");
-      if (textContent && role) {
-        messages.push({ role, content: textContent });
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      if (node.content.kind === "text" || node.content.kind === "user") {
+        messages.push({ role: node.role, content: node.content.text });
       }
-      traverse(getChildren(graph, runId));
+      for (const branch of node.branches) {
+        walk(branch);
+      }
     }
   };
-  traverse(getRoots(graph));
+  walk(nodes);
   return messages;
 }
 
-// --- CLI client helper functions (extracted from CLI index.tsx patterns) ---
+// --- CLI client helper: build API messages from ViewNode[] ---
 
 function formatOutput(output: unknown): string {
   const str = typeof output === "string" ? output : JSON.stringify(output, null, 2);
@@ -89,44 +80,102 @@ function formatOutput(output: unknown): string {
   return lines.slice(0, 5).join("\n") + `\n... (${lines.length - 5} more lines)`;
 }
 
-function buildApiMessages(
-  graph: ConversationState["graph"],
-): Array<{ role: string; content: string }> {
+function buildApiMessages(nodes: ViewNode[]): Array<{ role: string; content: string }> {
   const messages: Array<{ role: string; content: string }> = [];
-  const traverse = (runIds: string[]) => {
-    for (const runId of runIds) {
-      const role = getRole(graph, runId);
-      const blocks = getContentBlocks(graph, runId);
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      const c = node.content;
       const parts: string[] = [];
-      for (const b of blocks) {
-        if (b.type === "text") {
-          parts.push(b.content);
-        } else if (b.type === "tool_call") {
-          const inputStr = typeof b.input === "string" ? b.input : JSON.stringify(b.input);
-          parts.push(`[tool] ${b.name}: ${inputStr}`);
-          if (b.output !== undefined) {
-            parts.push(`   -> ${formatOutput(b.output)}`);
-          }
+      if (c.kind === "text" || c.kind === "user") {
+        parts.push(c.text);
+      } else if (c.kind === "tool_call") {
+        const inputStr = typeof c.input === "string" ? c.input : JSON.stringify(c.input);
+        parts.push(`[tool] ${c.name}: ${inputStr}`);
+        if (c.output !== undefined) {
+          parts.push(`   -> ${formatOutput(c.output)}`);
         }
-        // Skip reasoning blocks — not sent to API
       }
+      // Skip reasoning — not sent to API
       const content = parts.join("\n");
-      if (content && role) {
-        messages.push({ role, content });
+      if (content) {
+        messages.push({ role: node.role, content });
       }
-      traverse(getChildren(graph, runId));
+      for (const branch of node.branches) {
+        walk(branch);
+      }
     }
   };
-  traverse(getRoots(graph));
+  walk(nodes);
   return messages;
 }
 
-function getErrorMessages(graph: ConversationState["graph"], runId: string): string[] {
-  const node = graph.nodes.get(runId);
-  if (!node) return [];
-  return node.events
-    .filter((e) => e.type === "error")
-    .map((e) => (e as Extract<ServerEvent, { type: "error" }>).message);
+// --- Helpers for extracting data from ViewNode[] ---
+
+function collectTexts(nodes: ViewNode[]): string[] {
+  const texts: string[] = [];
+  const walk = (list: ViewNode[]) => {
+    for (const node of list) {
+      if (node.content.kind === "text") texts.push(node.content.text);
+      if (node.content.kind === "user") texts.push(node.content.text);
+      for (const branch of node.branches) {
+        walk(branch);
+      }
+    }
+  };
+  walk(nodes);
+  return texts;
+}
+
+function findNodeByText(nodes: ViewNode[], substring: string): ViewNode | undefined {
+  const walk = (list: ViewNode[]): ViewNode | undefined => {
+    for (const node of list) {
+      if (
+        (node.content.kind === "text" || node.content.kind === "user") &&
+        node.content.text.includes(substring)
+      ) {
+        return node;
+      }
+      for (const branch of node.branches) {
+        const found = walk(branch);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  return walk(nodes);
+}
+
+function hasToolCall(nodes: ViewNode[], toolName: string): boolean {
+  const walk = (list: ViewNode[]): boolean => {
+    for (const node of list) {
+      if (node.content.kind === "tool_call" && node.content.name === toolName) return true;
+      for (const branch of node.branches) {
+        if (walk(branch)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(nodes);
+}
+
+function findToolCallWithOutput(nodes: ViewNode[], toolName: string): ViewNode | undefined {
+  const walk = (list: ViewNode[]): ViewNode | undefined => {
+    for (const node of list) {
+      if (
+        node.content.kind === "tool_call" &&
+        node.content.name === toolName &&
+        node.content.output !== undefined
+      ) {
+        return node;
+      }
+      for (const branch of node.branches) {
+        const found = walk(branch);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  return walk(nodes);
 }
 
 // --- Shared test state ---
@@ -145,7 +194,7 @@ afterEach(() => {
 // =====================================================================
 
 describe("Web Client Integration", () => {
-  test("handleSubmit flow: user event → stream_start → SSE events → stream_end → graph", async () => {
+  test("handleSubmit flow: user event -> stream_start -> SSE events -> stream_end -> graph", async () => {
     const setup = startTestServer({
       responses: [{ events: [{ type: "text", content: "Web response" }] }],
     });
@@ -158,8 +207,9 @@ describe("Web Client Integration", () => {
     // 1. Add user message
     state = reduceConversation(state, { type: "user", runId: userId, content: "Hello from web" });
 
-    // 2. Build messages from graph
-    const messages = buildMessagesFromGraph(state.graph);
+    // 2. Build messages from view
+    const view = projectThread(state.graph);
+    const messages = buildMessagesFromView(view);
     messages.push({ role: "user", content: "Hello from web" });
 
     // 3. Stream
@@ -177,24 +227,21 @@ describe("Web Client Integration", () => {
 
     state = reduceConversation(state, { type: "stream_end" });
 
-    // 4. Verify graph structure
+    // 4. Verify graph structure via projectThread
     expect(state.sessionId).toBeDefined();
     expect(state.isConnected).toBe(false);
 
-    // User node is a root
-    const roots = getRoots(state.graph);
-    expect(roots).toContain(userId);
-    expect(getRole(state.graph, userId)).toBe("user");
+    const finalView = projectThread(state.graph);
 
-    // Assistant node exists with response text
-    let foundAssistant = false;
-    for (const [, node] of state.graph.nodes) {
-      if (node.role === "assistant") {
-        const text = getText(state.graph, node.runId);
-        if (text.includes("Web response")) foundAssistant = true;
-      }
-    }
-    expect(foundAssistant).toBe(true);
+    // User node should be in the view
+    const userNode = findNodeByText(finalView, "Hello from web");
+    expect(userNode).toBeDefined();
+    expect(userNode!.role).toBe("user");
+
+    // Assistant response should be in the view
+    const assistantNode = findNodeByText(finalView, "Web response");
+    expect(assistantNode).toBeDefined();
+    expect(assistantNode!.role).toBe("assistant");
   });
 
   test("handleAllow (allow once): clears relay without granting tool", async () => {
@@ -390,7 +437,7 @@ describe("Web Client Integration", () => {
     };
     expect(permissions.allowlist).toEqual([{ tool: "echo" }]);
 
-    // Stream second turn — tool should auto-execute (no relay)
+    // Stream second turn -- tool should auto-execute (no relay)
     const t2Transport = createSSETransport({ baseUrl: setup.baseUrl });
     state = reduceConversation(state, { type: "user", runId: "u2", content: "echo second" });
     state = reduceConversation(state, { type: "stream_start" });
@@ -406,22 +453,22 @@ describe("Web Client Integration", () => {
     }
     state = reduceConversation(state, { type: "stream_end" });
 
-    // No relay in turn 2 — tool auto-approved
+    // No relay in turn 2 -- tool auto-approved
     expect(t2Events.some((e) => e.type === "relay")).toBe(false);
     expect(t2Events.some((e) => e.type === "tool_call")).toBe(true);
     expect(t2Events.some((e) => e.type === "tool_result")).toBe(true);
   });
 
-  test("buildMessagesFromGraph extracts messages in tree order", () => {
+  test("buildMessagesFromView extracts messages in tree order", () => {
     let state = createInitialConversation();
 
-    // Build a simple user → assistant graph manually
+    // Build a simple user -> assistant graph manually
     state = reduceConversation(state, {
       type: "user",
       runId: "user-1",
       content: "What is 2+2?",
     });
-    // Simulate assistant response as root (no parentId — would be a root)
+    // Simulate assistant response as root (no parentId -- would be a root)
     state = reduceConversation(state, {
       type: "text",
       id: "t1",
@@ -430,9 +477,10 @@ describe("Web Client Integration", () => {
       content: "The answer is 4",
     } as ServerEvent);
 
-    const messages = buildMessagesFromGraph(state.graph);
+    const view = projectThread(state.graph);
+    const messages = buildMessagesFromView(view);
 
-    // User message should come first since it's a root with no children that are roots
+    // User message should come first since it's a root
     expect(messages.length).toBe(2);
     expect(messages[0]).toEqual({ role: "user", content: "What is 2+2?" });
     expect(messages[1]).toEqual({ role: "assistant", content: "The answer is 4" });
@@ -480,17 +528,25 @@ describe("CLI Client Integration", () => {
       output: "file.txt",
     } as ServerEvent);
 
-    const apiMessages = buildApiMessages(state.graph);
+    const view = projectThread(state.graph);
+    const apiMessages = buildApiMessages(view);
 
     // User message
     expect(apiMessages[0]).toEqual({ role: "user", content: "Run ls" });
 
     // Assistant message should include tool call in [tool] format
-    const assistantMsg = apiMessages[1]!;
-    expect(assistantMsg.role).toBe("assistant");
-    expect(assistantMsg.content).toContain("[tool] bash:");
-    expect(assistantMsg.content).toContain("file.txt");
-    expect(assistantMsg.content).toContain("Sure, running ls");
+    const assistantMsg = apiMessages.find(
+      (m) => m.role === "assistant" && m.content.includes("[tool]"),
+    );
+    expect(assistantMsg).toBeDefined();
+    expect(assistantMsg!.content).toContain("[tool] bash:");
+    expect(assistantMsg!.content).toContain("file.txt");
+
+    // Text content should also be present
+    const textMsg = apiMessages.find(
+      (m) => m.role === "assistant" && m.content.includes("Sure, running ls"),
+    );
+    expect(textMsg).toBeDefined();
   });
 
   test("relay approval flow: y/yes resolves relay and updates state", async () => {
@@ -505,7 +561,7 @@ describe("CLI Client Integration", () => {
     );
     srv = setup.server;
 
-    // Simulate CLI flow: stream → detect relay → approve
+    // Simulate CLI flow: stream -> detect relay -> approve
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
     const httpTransport = createHTTPTransport({ baseUrl: setup.baseUrl });
     let state = createInitialConversation();
@@ -540,7 +596,7 @@ describe("CLI Client Integration", () => {
     expect(events.some((e) => e.type === "tool_call")).toBe(true);
   });
 
-  test("error events extracted by getErrorMessages", async () => {
+  test("error events appear in graph node with error kind", async () => {
     const setup = startTestServer({
       responses: [
         {
@@ -563,15 +619,15 @@ describe("CLI Client Integration", () => {
       state = reduceConversation(state, event);
     }
 
-    // Find the node with the error
-    let foundErrors: string[] = [];
-    for (const [runId] of state.graph.nodes) {
-      const errors = getErrorMessages(state.graph, runId);
-      if (errors.length > 0) foundErrors = errors;
+    // Find the error node in the graph directly
+    let foundError = false;
+    for (const node of state.graph.nodes.values()) {
+      if (node.kind === "error" && node.message.includes("Something went wrong")) {
+        foundError = true;
+      }
     }
 
-    expect(foundErrors.length).toBeGreaterThan(0);
-    expect(foundErrors[0]).toContain("Something went wrong");
+    expect(foundError).toBe(true);
   });
 
   test("stream lifecycle: stream_start/stream_end toggle isConnected, harness events toggle activeStreams", async () => {
@@ -592,7 +648,7 @@ describe("CLI Client Integration", () => {
     expect(state.isConnected).toBe(true);
     expect(state.activeStreams.size).toBe(0);
 
-    // Stream events — harness_start/harness_end from server populate activeStreams
+    // Stream events -- harness_start/harness_end from server populate activeStreams
     for await (const event of transport.stream({
       model: "deterministic",
       messages: [{ role: "user", content: "go" }],
