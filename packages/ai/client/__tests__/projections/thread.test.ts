@@ -263,7 +263,14 @@ describe("Thread Projection", () => {
       { type: "harness_start", runId: "r1", agentId: "a1" },
       { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "search", input: "auth" },
       { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
-      { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "tc1", content: "Searching..." },
+      {
+        type: "text",
+        id: "t2",
+        runId: "r2",
+        agentId: "a2",
+        parentId: "tc1",
+        content: "Searching...",
+      },
       // No tool_result or harness_end yet — still streaming
     ]);
     const view = projectThread(g);
@@ -273,9 +280,7 @@ describe("Thread Projection", () => {
     expect(tcNode!.branches.length).toBe(1);
     expect(tcNode!.branches[0]!.length).toBeGreaterThan(0);
     // The flat view should NOT contain the subagent text
-    const flatTexts = view.filter(
-      (v) => v.content.kind === "text" && v.runId === "r2",
-    );
+    const flatTexts = view.filter((v) => v.content.kind === "text" && v.runId === "r2");
     expect(flatTexts.length).toBe(0);
   });
 });
