@@ -12,13 +12,29 @@ The result is something that looks like a graph but isn't one. There's no adjace
 
 ## Design
 
+Clean refactor — no backwards compatibility. The old types, selectors, and components are deleted and replaced entirely.
+
 Three cleanly separated layers:
 
 ```
-SSE stream → [Graph Builder] → Graph → [View Projector] → ViewNode[] → [React] → DOM
+SSE stream → [Graph Builder] → Graph → [Projection] → ViewModel → [Component] → DOM
 ```
 
 Each layer has a single input type and a single output type. No layer reaches into another's data.
+
+The graph is the stable core. Projections are pure functions (`Graph → ViewModel`) that live in `packages/ai/client/projections/`. This design supports multiple projections of the same graph (e.g. a force graph visualizer), but the initial implementation is just the thread projection for the chat UI.
+
+```
+packages/ai/client/
+├── graph.ts                    # reduceEvent
+├── types.ts                    # Node, Graph
+├── projections/
+│   └── thread.ts               # Graph → ThreadView
+
+clients/web/src/components/
+├── Thread.tsx                  # renders ThreadView
+└── ...
+```
 
 ### Layer 1: Graph Builder
 
@@ -68,12 +84,12 @@ function reduceEvent(graph: Graph, event: ServerEvent): Graph
 - Adds an edge from the previous node in the same `runId` (sequential ordering)
 - If the event has a `parentId`, adds an edge from that parent node to this node (cross-run spawn)
 
-### Layer 2: View Projector
+### Layer 2: Thread Projection
 
 **Input:** `Graph`
 **Output:** `ViewNode[]` (flat list — the main conversation thread)
 
-Pure function (memoizable). Walks the graph and produces a tree shaped for rendering.
+Pure function (memoizable) in `packages/ai/client/projections/thread.ts`. Walks the graph and produces a tree shaped for the chat UI.
 
 ```typescript
 interface ViewNode {
@@ -94,7 +110,7 @@ type ViewContent =
 
 #### Traversal rule
 
-When a node has outgoing edges, the View Projector classifies each target:
+When a node has outgoing edges, the thread projection classifies each target:
 
 - **Same `runId`** → continuation. Append to the current flat list.
 - **Different `runId`** → branch. Add to `branches` on the current `ViewNode`.
@@ -103,7 +119,7 @@ This is the only heuristic. No special-casing by node kind. Any node can have mu
 
 #### Merging
 
-The View Projector merges consecutive text/reasoning nodes within the same `runId` into a single `ViewNode` with concatenated content. It also attaches `tool_result` output to the preceding `tool_call` `ViewNode` (matched by shared ID).
+The thread projection merges consecutive text/reasoning nodes within the same `runId` into a single `ViewNode` with concatenated content. It also attaches `tool_result` output to the preceding `tool_call` `ViewNode` (matched by shared ID).
 
 ### Layer 3: React Components
 
@@ -131,7 +147,7 @@ function Thread({ nodes }: { nodes: ViewNode[] }) {
 }
 ```
 
-Every node can branch. The component doesn't know why — it just renders flat lists with optional nested sub-threads. The branching logic (tool call with subagent, conversation fork, parallel subagents) is decided entirely by the View Projector.
+Every node can branch. The component doesn't know why — it just renders flat lists with optional nested sub-threads. The branching logic (tool call with subagent, conversation fork, parallel subagents) is decided entirely by the thread projection.
 
 ## Examples
 
@@ -165,7 +181,7 @@ n8 {runId:"r2", kind:"text",        content:"Found auth.ts"}
 Edges: n1→n2, n2→n3, n3→n4, n3→n7, n4→n5, n5→n6, n7→n8
 ```
 
-**View Projector walks n3's outgoing edges:**
+**thread projection walks n3's outgoing edges:**
 - `n3→n7`: same runId ("r2") → continuation (flat)
 - `n3→n4`: different runId ("r3") → branch
 
@@ -208,7 +224,7 @@ n2 has two outgoing edges, both to different `runId`s → two branches. UI can s
 
 ## What gets deleted
 
-- `selectors.ts` — all selectors (`getRoots`, `getChildren`, `getText`, `getContentBlocks`, `getStatus`, `getUsage`, `getToolCallCount`) replaced by the View Projector
+- `selectors.ts` — all selectors (`getRoots`, `getChildren`, `getText`, `getContentBlocks`, `getStatus`, `getUsage`, `getToolCallCount`) replaced by the thread projection
 - `GraphNode.events: ServerEvent[]` — nodes no longer store raw events
 - Dual traversal in `MessageNode` (children by `runId` + children by `tool_call` block ID)
 - `ContentBlock` type — replaced by `ViewContent`
