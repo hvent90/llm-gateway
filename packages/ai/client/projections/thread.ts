@@ -151,14 +151,18 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
     // When there is a same-run continuation, all cross-run edges are branches.
     // When there is NO same-run continuation, the first cross-run edge is
     // promoted to continuation (e.g. user → assistant reply), rest are branches.
+    // Exception: tool_call nodes never promote — a same-run tool_result is
+    // expected but may not have arrived yet during streaming. Promoting the
+    // subagent would render it flat instead of nested.
+    const canPromote = node.kind !== "tool_call";
     let branchStarts: string[];
     if (continuation) {
       branchStarts = crossRunTargets;
-    } else if (crossRunTargets.length > 0) {
+    } else if (crossRunTargets.length > 0 && canPromote) {
       continuation = crossRunTargets[0]!;
       branchStarts = crossRunTargets.slice(1);
     } else {
-      branchStarts = [];
+      branchStarts = crossRunTargets;
     }
 
     // If this node produces content, create or merge a ViewNode

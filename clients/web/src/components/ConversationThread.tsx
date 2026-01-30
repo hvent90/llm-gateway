@@ -13,6 +13,26 @@ interface ConversationThreadProps {
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
+  activeStreams: Set<string>;
+}
+
+interface MessageGroup {
+  runId: string;
+  role: "user" | "assistant";
+  nodes: ViewNode[];
+}
+
+function groupNodes(nodes: ViewNode[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  for (const node of nodes) {
+    const last = groups[groups.length - 1];
+    if (last && last.runId === node.runId) {
+      last.nodes.push(node);
+    } else {
+      groups.push({ runId: node.runId, role: node.role, nodes: [node] });
+    }
+  }
+  return groups;
 }
 
 function ContentView({ content }: { content: ViewContent }) {
@@ -59,29 +79,36 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
   );
 }
 
-const ViewNodeComponent = memo(function ViewNodeComponent({
-  node,
+const MessageGroupComponent = memo(function MessageGroupComponent({
+  group,
   pendingRelays,
   permissionHandlers,
 }: {
-  node: ViewNode;
+  group: MessageGroup;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
 }) {
-  const isUser = node.role === "user";
-  const isStreaming = node.status === "streaming";
-  const nodeRelays = pendingRelays.filter((r) => r.runId === node.runId);
+  const isUser = group.role === "user";
+  const isStreaming = group.nodes.some((n) => n.status === "streaming");
+  const groupRelays = pendingRelays.filter((r) => r.runId === group.runId);
 
   return (
     <div className="mb-4">
       <div className={`font-medium ${isUser ? "text-blue-400" : "text-green-400"}`}>
-        {isUser ? "You" : `Agent-${node.runId.slice(0, 8)}`}
+        {isUser ? "You" : `Agent-${group.runId.slice(0, 8)}`}
         {isStreaming && (
           <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
         )}
       </div>
-      <ContentView content={node.content} />
-      {nodeRelays.map((relay) => (
+      {group.nodes.map((node) => (
+        <NodeContent
+          key={node.id}
+          node={node}
+          pendingRelays={pendingRelays}
+          permissionHandlers={permissionHandlers}
+        />
+      ))}
+      {groupRelays.map((relay) => (
         <PermissionPromptInline
           key={relay.relayId}
           request={relay}
@@ -90,26 +117,45 @@ const ViewNodeComponent = memo(function ViewNodeComponent({
           onDeny={() => permissionHandlers.onDeny(relay)}
         />
       ))}
+    </div>
+  );
+});
+
+function NodeContent({
+  node,
+  pendingRelays,
+  permissionHandlers,
+}: {
+  node: ViewNode;
+  pendingRelays: PendingRelay[];
+  permissionHandlers: PermissionHandlers;
+}) {
+  return (
+    <>
+      <ContentView content={node.content} />
       {node.branches.map((branch, i) => (
         <BranchView
           key={i}
           branch={branch}
           pendingRelays={pendingRelays}
           permissionHandlers={permissionHandlers}
+          activeStreams={new Set()}
         />
       ))}
-    </div>
+    </>
   );
-});
+}
 
 function BranchView({
   branch,
   pendingRelays,
   permissionHandlers,
+  activeStreams,
 }: {
   branch: ViewNode[];
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  activeStreams: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isStreaming = branch.some((n) => n.status === "streaming");
@@ -143,6 +189,7 @@ function BranchView({
         nodes={branch}
         pendingRelays={pendingRelays}
         permissionHandlers={permissionHandlers}
+        activeStreams={activeStreams}
       />
     </div>
   );
@@ -152,21 +199,36 @@ function Thread({
   nodes,
   pendingRelays,
   permissionHandlers,
+  activeStreams,
 }: {
   nodes: ViewNode[];
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  activeStreams: Set<string>;
 }) {
+  const groups = groupNodes(nodes);
+  const representedRunIds = new Set(nodes.map((n) => n.runId));
+
   return (
     <>
-      {nodes.map((node) => (
-        <ViewNodeComponent
-          key={node.id}
-          node={node}
+      {groups.map((group) => (
+        <MessageGroupComponent
+          key={`${group.runId}-${group.nodes[0]!.id}`}
+          group={group}
           pendingRelays={pendingRelays}
           permissionHandlers={permissionHandlers}
         />
       ))}
+      {Array.from(activeStreams)
+        .filter((runId) => !representedRunIds.has(runId))
+        .map((runId) => (
+          <div key={`streaming-${runId}`} className="mb-4">
+            <div className="font-medium text-green-400">
+              Agent-{runId.slice(0, 8)}
+              <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
+            </div>
+          </div>
+        ))}
     </>
   );
 }
@@ -228,6 +290,7 @@ export function ConversationThread({
   pendingRelays,
   permissionHandlers,
   scrollContainerRef,
+  activeStreams,
 }: ConversationThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
@@ -250,7 +313,7 @@ export function ConversationThread({
     }
   }, [graph, pendingRelays]);
 
-  if (viewNodes.length === 0) {
+  if (viewNodes.length === 0 && activeStreams.size === 0) {
     return (
       <div className="flex h-full items-center justify-center text-gray-500">
         Start a conversation below.
@@ -264,6 +327,7 @@ export function ConversationThread({
         nodes={viewNodes}
         pendingRelays={pendingRelays}
         permissionHandlers={permissionHandlers}
+        activeStreams={activeStreams}
       />
       <div ref={bottomRef} />
     </div>

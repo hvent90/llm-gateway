@@ -221,6 +221,7 @@ export default function App() {
           pendingRelays={state.pendingRelays}
           permissionHandlers={permissionHandlers}
           scrollContainerRef={scrollContainerRef}
+          activeStreams={state.activeStreams}
         />
         {streamError && (
           <div className="mt-4 rounded border border-red-600 bg-red-900/20 p-3 text-sm text-red-400">

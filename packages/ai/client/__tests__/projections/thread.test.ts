@@ -137,7 +137,14 @@ describe("Thread Projection", () => {
     const g = buildGraph([
       { type: "user", runId: "u1", content: "Hello" } as any,
       { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
-      { type: "text", id: "t1", runId: "r1", agentId: "a1", parentId: "u1:user", content: "Hi there" },
+      {
+        type: "text",
+        id: "t1",
+        runId: "r1",
+        agentId: "a1",
+        parentId: "u1:user",
+        content: "Hi there",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const view = projectThread(g);
@@ -157,10 +164,24 @@ describe("Thread Projection", () => {
     const g = buildGraph([
       { type: "user", runId: "u1", content: "Hello" } as any,
       { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
-      { type: "text", id: "t1", runId: "r1", agentId: "a1", parentId: "u1:user", content: "Reply A" },
+      {
+        type: "text",
+        id: "t1",
+        runId: "r1",
+        agentId: "a1",
+        parentId: "u1:user",
+        content: "Reply A",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
       { type: "harness_start", runId: "r2", agentId: "a2", parentId: "u1:user" },
-      { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "u1:user", content: "Reply B" },
+      {
+        type: "text",
+        id: "t2",
+        runId: "r2",
+        agentId: "a2",
+        parentId: "u1:user",
+        content: "Reply B",
+      },
       { type: "harness_end", runId: "r2", agentId: "a2" },
     ]);
     const view = projectThread(g);
@@ -189,7 +210,14 @@ describe("Thread Projection", () => {
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Main text" },
       // A cross-run edge from t1 to a child run
       { type: "harness_start", runId: "r2", agentId: "a2", parentId: "t1" },
-      { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "t1", content: "Branch text" },
+      {
+        type: "text",
+        id: "t2",
+        runId: "r2",
+        agentId: "a2",
+        parentId: "t1",
+        content: "Branch text",
+      },
       { type: "harness_end", runId: "r2", agentId: "a2" },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
@@ -225,5 +253,29 @@ describe("Thread Projection", () => {
     const tcNode = view.find((v) => v.content.kind === "tool_call");
     expect(tcNode).toBeDefined();
     expect(tcNode!.branches.length).toBe(2);
+  });
+
+  test("streaming: tool_call with subagent but no tool_result yet keeps subagent as branch", () => {
+    // During streaming, tool_result hasn't arrived yet so tool_call has no
+    // same-run continuation. The subagent harness_start should still be treated
+    // as a branch — NOT promoted to a flat continuation.
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "search", input: "auth" },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
+      { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "tc1", content: "Searching..." },
+      // No tool_result or harness_end yet — still streaming
+    ]);
+    const view = projectThread(g);
+    const tcNode = view.find((v) => v.content.kind === "tool_call");
+    expect(tcNode).toBeDefined();
+    // Subagent content must be nested as a branch, not rendered flat
+    expect(tcNode!.branches.length).toBe(1);
+    expect(tcNode!.branches[0]!.length).toBeGreaterThan(0);
+    // The flat view should NOT contain the subagent text
+    const flatTexts = view.filter(
+      (v) => v.content.kind === "text" && v.runId === "r2",
+    );
+    expect(flatTexts.length).toBe(0);
   });
 });
