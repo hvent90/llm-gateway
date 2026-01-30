@@ -98,7 +98,12 @@ describe("Nested Subagent Integration", () => {
       state = reduceConversation(state, { type: "stream_end" });
 
       // Debug: dump the graph structure
-      const nodeInfo: Array<{ runId: string; parentId?: string; text: string; toolCalls: string[] }> = [];
+      const nodeInfo: Array<{
+        runId: string;
+        parentId?: string;
+        text: string;
+        toolCalls: string[];
+      }> = [];
       for (const [runId, node] of state.graph.nodes) {
         const blocks = getContentBlocks(state.graph, runId);
         const text = getText(state.graph, runId);
@@ -148,7 +153,9 @@ describe("Nested Subagent Integration", () => {
       for (const [runId] of state.graph.nodes) {
         if (!reachable.has(runId)) {
           const node = state.graph.nodes.get(runId)!;
-          unreachable.push(`${runId} (parentId=${node.parentId}, text=${getText(state.graph, runId)})`);
+          unreachable.push(
+            `${runId} (parentId=${node.parentId}, text=${getText(state.graph, runId)})`,
+          );
         }
       }
 

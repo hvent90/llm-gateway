@@ -136,7 +136,13 @@ describe("Nested subagent render count", () => {
    * ToolCallBlock. Returns the total getChildren call count and a map
    * tracking which parent each child was found under.
    */
-  function simulateUITraversal(graph: ReturnType<typeof getRoots extends (g: infer G) => unknown ? () => G : never> extends () => infer G ? G : never) {
+  function simulateUITraversal(
+    graph: ReturnType<
+      typeof getRoots extends (g: infer G) => unknown ? () => G : never
+    > extends () => infer G
+      ? G
+      : never,
+  ) {
     let getChildrenCalls = 0;
     // childId -> parentId that found it
     const childOwnership = new Map<string, string>();
@@ -201,9 +207,10 @@ describe("Nested subagent render count", () => {
     console.log("getChildren calls after each event:");
     for (let i = 0; i < events.length; i++) {
       const evt = events[i];
-      const label = evt.type === "stream_start" || evt.type === "stream_end"
-        ? evt.type
-        : `${evt.type}${"runId" in evt ? `(${evt.runId})` : ""}`;
+      const label =
+        evt.type === "stream_start" || evt.type === "stream_end"
+          ? evt.type
+          : `${evt.type}${"runId" in evt ? `(${evt.runId})` : ""}`;
       console.log(`  [${i}] ${label}: ${callCountsPerEvent[i]} calls`);
     }
 
