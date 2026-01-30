@@ -1,19 +1,13 @@
 // Core graph
-export { createInitialState, reduceEvent } from "./graph";
+export { createInitialGraph, reduceGraphEvent } from "./graph";
+export type { GraphEvent } from "./graph";
 
-// Selectors
-export {
-  getRoots,
-  getChildren,
-  getText,
-  getToolCalls,
-  getStatus,
-  getContentBlocks,
-  getRole,
-  getUsage,
-  getToolCallCount,
-} from "./selectors";
-export type { ContentBlock } from "./selectors";
+// Types
+export type { Node, Graph, GraphBuilderState } from "./types";
+
+// Projections
+export { projectThread } from "./projections/thread";
+export type { ViewNode, ViewContent } from "./projections/thread";
 
 // Conversation layer
 export {
@@ -22,10 +16,6 @@ export {
   getAutoApprovableRelays,
   getSameToolRelays,
 } from "./conversation";
-
-// Types
-export type { GraphState, GraphNode } from "./types";
-
 export type { PendingRelay, ConversationState, ConversationEvent } from "./conversation";
 
 // Server event types
