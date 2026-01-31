@@ -6,21 +6,6 @@ interface ToolCallLike {
   arguments?: Record<string, unknown>;
 }
 
-export function derivePermission(tool: string, params?: Record<string, unknown>): ToolPermission {
-  if (!params || Object.keys(params).length === 0) {
-    return { tool };
-  }
-
-  const derived: Record<string, string> = {};
-  for (const [key, value] of Object.entries(params)) {
-    const str = String(value);
-    const spaceIndex = str.indexOf(" ");
-    derived[key] = spaceIndex === -1 ? str : str.slice(0, spaceIndex) + " **";
-  }
-
-  return { tool, params: derived };
-}
-
 export function matchesPermission(toolCall: ToolCallLike, permission: ToolPermission): boolean {
   if (toolCall.name !== permission.tool) {
     return false;

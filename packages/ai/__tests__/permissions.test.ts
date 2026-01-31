@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { derivePermission, matchesPermission, matchesPermissions } from "../permissions";
+import { matchesPermission, matchesPermissions } from "../permissions";
 import { bashTool } from "../tools/bash";
 
 describe("permissions", () => {
@@ -50,76 +50,6 @@ describe("permissions", () => {
         { tool: "bash", params: { command: "ls *" } },
       );
       expect(result).toBe(false);
-    });
-  });
-
-  describe("derivePermission", () => {
-    it("splits multi-word string param into firstWord + glob", () => {
-      const result = derivePermission("bash", { command: "cat /tmp/foo.txt" });
-      expect(result).toEqual({ tool: "bash", params: { command: "cat **" } });
-    });
-
-    it("splits two-word string param into firstWord + glob", () => {
-      const result = derivePermission("bash", { command: "ls -la" });
-      expect(result).toEqual({ tool: "bash", params: { command: "ls **" } });
-    });
-
-    it("keeps single-word string param as exact value", () => {
-      const result = derivePermission("get_weather", { city: "London" });
-      expect(result).toEqual({ tool: "get_weather", params: { city: "London" } });
-    });
-
-    it("omits params when params object is empty", () => {
-      const result = derivePermission("greet", {});
-      expect(result).toEqual({ tool: "greet" });
-    });
-
-    it("coerces non-string param values with String()", () => {
-      const result = derivePermission("set_volume", { level: 42 });
-      expect(result).toEqual({ tool: "set_volume", params: { level: "42" } });
-    });
-
-    it("handles multiple params independently", () => {
-      const result = derivePermission("file_write", {
-        path: "/tmp/foo.txt",
-        content: "hello world",
-      });
-      expect(result).toEqual({
-        tool: "file_write",
-        params: { path: "/tmp/foo.txt", content: "hello **" },
-      });
-    });
-
-    it("derived permission matches the original call via matchesPermission", () => {
-      const toolCall = { name: "bash", arguments: { command: "cat /tmp/foo.txt" } };
-      const permission = derivePermission("bash", { command: "cat /tmp/foo.txt" });
-      expect(matchesPermission(toolCall, permission)).toBe(true);
-    });
-
-    it("derived permission matches similar calls with same first word", () => {
-      const permission = derivePermission("bash", { command: "ls -la" });
-      expect(
-        matchesPermission({ name: "bash", arguments: { command: "ls /home" } }, permission),
-      ).toBe(true);
-    });
-
-    it("derived permission rejects calls with different first word", () => {
-      const permission = derivePermission("bash", { command: "ls -la" });
-      expect(
-        matchesPermission({ name: "bash", arguments: { command: "rm -rf /" } }, permission),
-      ).toBe(false);
-    });
-
-    it("derived multi-word permission does NOT match bare first-word call", () => {
-      const permission = derivePermission("bash", { command: "cat /tmp/foo.txt" });
-      expect(matchesPermission({ name: "bash", arguments: { command: "cat" } }, permission)).toBe(
-        false,
-      );
-    });
-
-    it("omits params when params is undefined", () => {
-      const result = derivePermission("greet", undefined);
-      expect(result).toEqual({ tool: "greet" });
     });
   });
 
