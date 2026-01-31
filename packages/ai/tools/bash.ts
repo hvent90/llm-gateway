@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { spawn } from "bun";
-import type { ToolDefinition } from "../types";
+import type { ToolDefinition, ToolPermission } from "../types";
 
 const schema = z.object({
   command: z.string().describe("The shell command to execute"),
@@ -31,6 +31,14 @@ export const bashTool: ToolDefinition<typeof schema, BashResult> = {
   name: "bash",
   description: "Execute a non-sudo shell command. Returns stdout, stderr, and exit code.",
   schema,
+  derivePermission: (params): ToolPermission => {
+    const command = String(params.command ?? "");
+    const spaceIndex = command.indexOf(" ");
+    if (spaceIndex === -1) {
+      return { tool: "bash", params: { command } };
+    }
+    return { tool: "bash", params: { command: command.slice(0, spaceIndex) + " **" } };
+  },
   execute: async ({ command, timeout }) => {
     const proc = spawn({
       cmd: ["sh", "-c", command],
