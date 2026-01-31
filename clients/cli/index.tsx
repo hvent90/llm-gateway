@@ -187,7 +187,7 @@ function ChatApp() {
   const [inputValue, setInputValue] = createSignal("");
   const [statusText, setStatusText] = createSignal(`Connected to ${SERVER_URL}`);
 
-  const isStreaming = () => conversation().activeStreams.size > 0;
+  const isStreaming = () => conversation().isConnected;
   const pendingRelay = () => conversation().pendingRelays[0] ?? null;
   const roots = () => getRoots(conversation().graph);
 

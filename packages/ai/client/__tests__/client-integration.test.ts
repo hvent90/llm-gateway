@@ -546,7 +546,7 @@ describe("CLI Client Integration", () => {
     expect(errorNode).toBeDefined();
   });
 
-  test("stream lifecycle: stream_start/stream_end toggle isConnected, harness events toggle activeStreams", async () => {
+  test("stream lifecycle: stream_start/stream_end toggle isConnected", async () => {
     const setup = startTestServer({
       responses: [{ events: [{ type: "text", content: "streaming" }] }],
     });
@@ -557,23 +557,18 @@ describe("CLI Client Integration", () => {
 
     // Before stream
     expect(state.isConnected).toBe(false);
-    expect(state.activeStreams.size).toBe(0);
 
-    // stream_start sets isConnected (not activeStreams)
+    // stream_start sets isConnected
     state = reduceConversation(state, { type: "stream_start" });
     expect(state.isConnected).toBe(true);
-    expect(state.activeStreams.size).toBe(0);
 
-    // Stream events -- harness_start/harness_end from server populate activeStreams
+    // Stream events from server
     for await (const event of transport.stream({
       model: "deterministic",
       messages: [{ role: "user", content: "go" }],
     })) {
       state = reduceConversation(state, event);
     }
-
-    // After all events, harness_end should have cleared activeStreams
-    expect(state.activeStreams.size).toBe(0);
 
     // stream_end clears isConnected
     state = reduceConversation(state, { type: "stream_end" });

@@ -1,6 +1,6 @@
 import { useState, memo } from "react";
 import { Streamdown } from "streamdown";
-import { projectThread } from "../../../../packages/ai/client";
+import { projectThread, getActiveRunIds } from "../../../../packages/ai/client";
 import type { ViewNode, ViewContent, Graph, PendingRelay } from "../types";
 
 export interface PermissionHandlers {
@@ -13,7 +13,7 @@ interface ConversationThreadProps {
   graph: Graph;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
-  activeStreams: Set<string>;
+  isConnected: boolean;
 }
 
 interface MessageGroup {
@@ -210,8 +210,6 @@ function NodeContent({
   );
 }
 
-const emptyStreams: Set<string> = new Set();
-
 function BranchView({
   branch,
   pendingRelays,
@@ -243,7 +241,7 @@ function BranchView({
             nodes={branch}
             pendingRelays={pendingRelays}
             permissionHandlers={permissionHandlers}
-            activeStreams={emptyStreams}
+            isConnected={false}
           />
         </div>
       </div>
@@ -255,15 +253,18 @@ function Thread({
   nodes,
   pendingRelays,
   permissionHandlers,
-  activeStreams,
+  isConnected,
+  graph,
 }: {
   nodes: ViewNode[];
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
-  activeStreams: Set<string>;
+  isConnected: boolean;
+  graph?: Graph;
 }) {
   const groups = groupNodes(nodes);
   const representedRunIds = collectRunIds(nodes);
+  const activeStreams = isConnected && graph ? getActiveRunIds(graph) : new Set<string>();
 
   return (
     <>
@@ -339,11 +340,12 @@ export function ConversationThread({
   graph,
   pendingRelays,
   permissionHandlers,
-  activeStreams,
+  isConnected,
 }: ConversationThreadProps) {
   const viewNodes = projectThread(graph);
+  const activeRunIds = isConnected ? getActiveRunIds(graph) : new Set<string>();
 
-  if (viewNodes.length === 0 && activeStreams.size === 0) {
+  if (viewNodes.length === 0 && activeRunIds.size === 0) {
     return (
       <div className="flex h-full items-center justify-center text-neutral-600">
         start a conversation below.
@@ -357,7 +359,8 @@ export function ConversationThread({
         nodes={viewNodes}
         pendingRelays={pendingRelays}
         permissionHandlers={permissionHandlers}
-        activeStreams={activeStreams}
+        isConnected={isConnected}
+        graph={graph}
       />
     </div>
   );

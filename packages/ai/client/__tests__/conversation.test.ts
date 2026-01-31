@@ -14,7 +14,6 @@ describe("Conversation Reducer", () => {
     expect(state.sessionId).toBe(null);
     expect(state.pendingRelays).toEqual([]);
     expect(state.grantedTools.size).toBe(0);
-    expect(state.activeStreams.size).toBe(0);
     expect(state.isConnected).toBe(false);
   });
 
@@ -86,18 +85,16 @@ describe("Conversation Reducer", () => {
     expect(state.grantedTools.has("bash")).toBe(true);
   });
 
-  test("harness_start adds to activeStreams and delegates to graph", () => {
+  test("harness_start delegates to graph", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, { type: "harness_start", runId: "r1", agentId: "a1" });
-    expect(state.activeStreams.has("r1")).toBe(true);
     expect(state.graph.nodes.has("r1:harness_start")).toBe(true);
   });
 
-  test("harness_end removes from activeStreams and delegates to graph", () => {
+  test("harness_end delegates to graph", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, { type: "harness_start", runId: "r1", agentId: "a1" });
     state = reduceConversation(state, { type: "harness_end", runId: "r1", agentId: "a1" });
-    expect(state.activeStreams.has("r1")).toBe(false);
     expect(state.graph.nodes.has("r1:harness_end")).toBe(true);
   });
 

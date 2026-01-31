@@ -11,7 +11,7 @@ export {
 } from "./conversation";
 
 // Projection
-export { projectThread } from "./projections/thread";
+export { projectThread, getActiveRunIds } from "./projections/thread";
 export type { ViewNode, ViewContent } from "./projections/thread";
 
 // Types

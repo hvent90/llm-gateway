@@ -371,7 +371,7 @@ describe("Conversation Reducer Integration", () => {
     expect(assistantNode).toBeDefined();
 
     // Stream should be inactive
-    expect(state.activeStreams.size).toBe(0);
+    expect(state.isConnected).toBe(false);
   });
 
   test("assistant nodes are reachable via tree traversal (not orphaned)", async () => {

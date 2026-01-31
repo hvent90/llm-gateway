@@ -235,6 +235,21 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
 }
 
 // ---------------------------------------------------------------------------
+// Derived state
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the set of run IDs that are currently streaming from the graph.
+ */
+export function getActiveRunIds(graph: Graph): Set<string> {
+  const active = new Set<string>();
+  for (const runId of graph.lastNodeByRunId.keys()) {
+    if (deriveRunStatus(graph, runId) === "streaming") active.add(runId);
+  }
+  return active;
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
