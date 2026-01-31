@@ -22,6 +22,17 @@ interface MessageGroup {
   nodes: ViewNode[];
 }
 
+function collectRunIds(nodes: ViewNode[]): Set<string> {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    ids.add(node.runId);
+    for (const branch of node.branches) {
+      for (const id of collectRunIds(branch)) ids.add(id);
+    }
+  }
+  return ids;
+}
+
 function groupNodes(nodes: ViewNode[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
   for (const node of nodes) {
@@ -56,6 +67,52 @@ function ContentView({ content }: { content: ViewContent }) {
   }
 }
 
+function CollapsiblePre({
+  label,
+  text,
+  className,
+}: {
+  label: string;
+  text: string;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const oneLine = text.replace(/\n/g, " ").replace(/\s+/g, " ");
+
+  return (
+    <div className="mt-1">
+      <div className="flex w-full items-start gap-1 text-left">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="shrink-0 text-gray-500 hover:text-gray-300"
+        >
+          {expanded ? "▼" : "▶"}
+        </button>
+        {expanded ? (
+          <pre
+            className={`whitespace-pre-wrap break-words select-text ${className ?? "text-gray-400"}`}
+          >
+            {text}
+          </pre>
+        ) : (
+          <span
+            className={`cursor-pointer truncate font-mono ${className ?? "text-gray-400"}`}
+            onClick={() => {
+              const sel = window.getSelection();
+              if (sel && sel.toString().length > 0) return;
+              setExpanded(true);
+            }}
+          >
+            <span className="text-gray-500">{label}: </span>
+            {oneLine}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool_call" }> }) {
   const inputStr =
     typeof content.input === "string" ? content.input : JSON.stringify(content.input, null, 2);
@@ -69,10 +126,10 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
   return (
     <div className="my-2 rounded border border-gray-700 bg-gray-800 p-2 text-sm">
       <div className="font-mono text-yellow-400">{content.name}</div>
-      <pre className="mt-1 whitespace-pre-wrap break-words text-gray-400">{inputStr}</pre>
+      <CollapsiblePre label="params" text={inputStr} className="text-gray-400" />
       {outputStr && (
-        <div className="mt-2 border-t border-gray-700 pt-2">
-          <pre className="whitespace-pre-wrap break-words text-gray-300">{outputStr}</pre>
+        <div className="mt-1 border-t border-gray-700 pt-1">
+          <CollapsiblePre label="result" text={outputStr} className="text-gray-300" />
         </div>
       )}
     </div>
@@ -139,58 +196,49 @@ function NodeContent({
           branch={branch}
           pendingRelays={pendingRelays}
           permissionHandlers={permissionHandlers}
-          activeStreams={new Set()}
         />
       ))}
     </>
   );
 }
 
+const emptyStreams: Set<string> = new Set();
+
 function BranchView({
   branch,
   pendingRelays,
   permissionHandlers,
-  activeStreams,
 }: {
   branch: ViewNode[];
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
-  activeStreams: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const isStreaming = branch.some((n) => n.status === "streaming");
 
   if (branch.length === 0) return null;
 
-  if (!expanded && !isStreaming) {
-    return (
-      <button
-        type="button"
-        onClick={() => setExpanded(true)}
-        className="mt-1 w-full rounded bg-gray-700 px-2 py-1 text-left text-xs text-gray-400 hover:bg-gray-600 hover:text-gray-200"
-      >
-        {branch.length} node{branch.length !== 1 ? "s" : ""} in subthread
-      </button>
-    );
-  }
-
   return (
     <div className="mt-2 border-l-2 border-gray-700 pl-2 sm:pl-4">
-      {!isStreaming && expanded && (
-        <button
-          type="button"
-          onClick={() => setExpanded(false)}
-          className="mb-1 text-xs text-gray-400 hover:text-gray-200"
-        >
-          Collapse
-        </button>
-      )}
-      <Thread
-        nodes={branch}
-        pendingRelays={pendingRelays}
-        permissionHandlers={permissionHandlers}
-        activeStreams={activeStreams}
-      />
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="mb-1 text-xs text-gray-400 hover:text-gray-200"
+      >
+        {expanded ? "▼ Collapse subthread" : "▶ Expand subthread"}
+      </button>
+      <div
+        className={expanded ? "" : "flex max-h-[100px] flex-col-reverse overflow-hidden"}
+        style={expanded ? undefined : { maskImage: "linear-gradient(transparent, black 40%)" }}
+      >
+        <div>
+          <Thread
+            nodes={branch}
+            pendingRelays={pendingRelays}
+            permissionHandlers={permissionHandlers}
+            activeStreams={emptyStreams}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -207,7 +255,7 @@ function Thread({
   activeStreams: Set<string>;
 }) {
   const groups = groupNodes(nodes);
-  const representedRunIds = new Set(nodes.map((n) => n.runId));
+  const representedRunIds = collectRunIds(nodes);
 
   return (
     <>
@@ -322,7 +370,7 @@ export function ConversationThread({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-full flex-col justify-end space-y-4">
       <Thread
         nodes={viewNodes}
         pendingRelays={pendingRelays}

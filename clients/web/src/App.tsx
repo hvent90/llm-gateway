@@ -33,9 +33,13 @@ export default function App() {
   useEffect(() => {
     fetch("/models")
       .then((r) => r.json())
-      .then((data: { models: string[] }) => {
+      .then((data: { models: string[]; defaultModel?: string }) => {
         setModels(data.models);
-        if (data.models.length > 0) setSelectedModel(data.models[0]);
+        if (data.defaultModel) {
+          setSelectedModel(data.defaultModel);
+        } else if (data.models.length > 0) {
+          setSelectedModel(data.models[0]);
+        }
       })
       .catch(() => {});
   }, []);

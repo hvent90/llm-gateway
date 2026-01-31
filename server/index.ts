@@ -15,6 +15,7 @@ import type {
 export interface AppConfig {
   harness?: GeneratorHarnessModule;
   tools?: ToolDefinition[];
+  defaultModel?: string;
 }
 
 interface ChatRequest {
@@ -46,13 +47,15 @@ export function createApp(config?: AppConfig): Hono {
   const app = new Hono();
   const tools = config?.tools ?? [agentTool, bashTool];
   const harness = config?.harness ?? createAgentHarness({ harness: createGeneratorHarness() });
+  const defaultModel = config?.defaultModel;
 
   // Per-app orchestrator map for isolation
   const orchestrators = new Map<string, AgentOrchestrator>();
 
   app.get("/models", async (c) => {
     const models = await harness.supportedModels();
-    return c.json({ models });
+    const validDefault = defaultModel && models.includes(defaultModel) ? defaultModel : undefined;
+    return c.json({ models, ...(validDefault && { defaultModel: validDefault }) });
   });
 
   app.post("/chat", async (c) => {
@@ -63,7 +66,8 @@ export function createApp(config?: AppConfig): Hono {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    if (!body.model || !body.messages) {
+    const model = body.model || defaultModel;
+    if (!model || !body.messages) {
       return c.json({ error: "model and messages are required" }, 400);
     }
 
@@ -84,7 +88,7 @@ export function createApp(config?: AppConfig): Hono {
 
         // Spawn the agent
         const agentId = orchestrator.spawn({
-          model: body.model,
+          model,
           messages: body.messages,
           tools,
           permissions: body.permissions,
@@ -143,7 +147,9 @@ export function createApp(config?: AppConfig): Hono {
 }
 
 // Production app with defaults
-const app = createApp();
+const app = createApp({
+  defaultModel: process.env.DEFAULT_MODEL,
+});
 
 // Start server
 const port = Number(process.env.PORT) || 4000;

@@ -22,7 +22,7 @@ import {
 import type { ConversationState, ContentBlock, PendingRelay } from "../../packages/ai/client";
 
 // Configuration from environment
-const MODEL = process.env.LLM_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
+const MODEL = process.env.DEFAULT_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
 const SERVER_URL = process.env.LLM_GATEWAY_URL ?? "http://localhost:4000";
 
 const sseTransport = createSSETransport({ baseUrl: SERVER_URL });
