@@ -1,4 +1,5 @@
 import { useState, memo } from "react";
+import { Streamdown } from "streamdown";
 import { projectThread } from "../../../../packages/ai/client";
 import type { ViewNode, ViewContent, Graph, PendingRelay } from "../types";
 
@@ -48,14 +49,22 @@ function groupNodes(nodes: ViewNode[]): MessageGroup[] {
 function ContentView({ content }: { content: ViewContent }) {
   switch (content.kind) {
     case "user":
-      return <div className="mt-1 whitespace-pre-wrap text-gray-200">{content.text}</div>;
+      return <div className="mt-1 whitespace-pre-wrap">{content.text}</div>;
     case "text":
-      return <div className="mt-1 whitespace-pre-wrap text-gray-200">{content.text}</div>;
+      return (
+        <div className="mt-1 streamdown">
+          <Streamdown>{content.text}</Streamdown>
+        </div>
+      );
     case "reasoning":
-      return <div className="mt-1 text-sm italic text-gray-500">{content.text}</div>;
+      return (
+        <div className="mt-1 text-sm italic text-neutral-500 streamdown">
+          <Streamdown>{content.text}</Streamdown>
+        </div>
+      );
     case "error":
       return (
-        <div className="mt-1 rounded border border-red-700 bg-red-900/20 p-2 text-sm text-red-400">
+        <div className="mt-1 border border-neutral-700 p-2 text-sm text-red-400">
           {content.message}
         </div>
       );
@@ -84,26 +93,26 @@ function CollapsiblePre({
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
-          className="shrink-0 text-gray-500 hover:text-gray-300"
+          className="shrink-0 text-neutral-600 hover:text-white"
         >
           {expanded ? "▼" : "▶"}
         </button>
         {expanded ? (
           <pre
-            className={`whitespace-pre-wrap break-words select-text ${className ?? "text-gray-400"}`}
+            className={`whitespace-pre-wrap break-words select-text ${className ?? "text-neutral-400"}`}
           >
             {text}
           </pre>
         ) : (
           <span
-            className={`cursor-pointer truncate font-mono ${className ?? "text-gray-400"}`}
+            className={`cursor-pointer truncate font-mono ${className ?? "text-neutral-400"}`}
             onClick={() => {
               const sel = window.getSelection();
               if (sel && sel.toString().length > 0) return;
               setExpanded(true);
             }}
           >
-            <span className="text-gray-500">{label}: </span>
+            <span className="text-neutral-600">{label}: </span>
             {oneLine}
           </span>
         )}
@@ -123,12 +132,12 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
       : null;
 
   return (
-    <div className="my-2 rounded border border-gray-700 bg-gray-800 p-2 text-sm">
-      <div className="font-mono text-yellow-400">{content.name}</div>
-      <CollapsiblePre label="params" text={inputStr} className="text-gray-400" />
+    <div className="my-2 border border-neutral-800 p-2 text-sm">
+      <div className="font-mono text-yellow-500">{content.name}</div>
+      <CollapsiblePre label="params" text={inputStr} className="text-neutral-500" />
       {outputStr && (
-        <div className="mt-1 border-t border-gray-700 pt-1">
-          <CollapsiblePre label="result" text={outputStr} className="text-gray-300" />
+        <div className="mt-1 border-t border-neutral-800 pt-1">
+          <CollapsiblePre label="result" text={outputStr} className="text-neutral-300" />
         </div>
       )}
     </div>
@@ -150,10 +159,10 @@ const MessageGroupComponent = memo(function MessageGroupComponent({
 
   return (
     <div className="mb-4">
-      <div className={`font-medium ${isUser ? "text-blue-400" : "text-green-400"}`}>
-        {isUser ? "You" : `Agent-${group.runId.replace(/-/g, "").slice(-7)}`}
+      <div className={`font-bold ${isUser ? "text-white" : "text-green-400"}`}>
+        &gt; {isUser ? "you" : `agent-${group.runId.replace(/-/g, "").slice(-7)}`}
         {isStreaming && (
-          <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
+          <span className="ml-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
         )}
       </div>
       {group.nodes.map((node) => (
@@ -217,13 +226,13 @@ function BranchView({
   if (branch.length === 0) return null;
 
   return (
-    <div className="mt-2 border-l-2 border-gray-700 pl-2 sm:pl-4">
+    <div className="mt-2 border-l border-neutral-700 pl-2 sm:pl-4">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="mb-1 text-xs text-gray-400 hover:text-gray-200"
+        className="mb-1 text-xs text-neutral-600 hover:text-white"
       >
-        {expanded ? "▼ Collapse subthread" : "▶ Expand subthread"}
+        {expanded ? "▼ collapse" : "▶ expand"}
       </button>
       <div
         className={expanded ? "" : "flex max-h-[100px] flex-col-reverse overflow-hidden"}
@@ -270,9 +279,9 @@ function Thread({
         .filter((runId) => !representedRunIds.has(runId))
         .map((runId) => (
           <div key={`streaming-${runId}`} className="mb-4">
-            <div className="font-medium text-green-400">
-              Agent-{runId.replace(/-/g, "").slice(-7)}
-              <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
+            <div className="font-bold text-green-400">
+              &gt; agent-{runId.replace(/-/g, "").slice(-7)}
+              <span className="ml-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
             </div>
           </div>
         ))}
@@ -294,32 +303,32 @@ function PermissionPromptInline({
   const paramsStr = JSON.stringify(request.params, null, 2);
 
   return (
-    <div className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
-      <div className="mb-2 font-medium text-yellow-400">Permission Required</div>
-      <div className="mb-2 text-sm text-gray-300">
-        Tool: <span className="font-mono text-yellow-300">{request.tool}</span>
+    <div className="my-4 border border-neutral-700 p-4">
+      <div className="mb-2 font-bold">permission required</div>
+      <div className="mb-2 text-sm text-neutral-400">
+        tool: <span className="font-mono text-white">{request.tool}</span>
       </div>
-      <pre className="mb-4 overflow-x-auto rounded bg-gray-800 p-2 text-sm text-gray-400">
+      <pre className="mb-4 overflow-x-auto border border-neutral-800 p-2 text-sm text-neutral-400">
         {paramsStr}
       </pre>
       <div className="flex gap-2">
         <button
           onClick={onAllow}
-          className="rounded bg-green-600 px-3 py-1 text-sm font-medium text-white hover:bg-green-700"
+          className="border border-neutral-600 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-900"
         >
-          Allow
+          allow
         </button>
         <button
           onClick={onAllowAll}
-          className="rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700"
+          className="border border-neutral-600 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-900"
         >
-          Always Allow
+          always allow
         </button>
         <button
           onClick={onDeny}
-          className="rounded bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-700"
+          className="border border-neutral-600 px-3 py-1 text-sm font-medium text-neutral-500 hover:bg-neutral-900 hover:text-white"
         >
-          Deny
+          deny
         </button>
       </div>
     </div>
@@ -336,8 +345,8 @@ export function ConversationThread({
 
   if (viewNodes.length === 0 && activeStreams.size === 0) {
     return (
-      <div className="flex h-full items-center justify-center text-gray-500">
-        Start a conversation below.
+      <div className="flex h-full items-center justify-center text-neutral-600">
+        start a conversation below.
       </div>
     );
   }

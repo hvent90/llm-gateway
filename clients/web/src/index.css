@@ -1,19 +1,138 @@
 @import "tailwindcss";
 
+/* Streamdown markdown rendering */
+.streamdown {
+  line-height: 1.6;
+
+  & p {
+    margin: 0.5em 0;
+  }
+
+  & p:first-child {
+    margin-top: 0;
+  }
+
+  & p:last-child {
+    margin-bottom: 0;
+  }
+
+  & h1,
+  & h2,
+  & h3,
+  & h4 {
+    font-weight: 700;
+    margin: 1em 0 0.5em;
+    color: #fff;
+  }
+
+  & h1 {
+    font-size: 1.5em;
+  }
+
+  & h2 {
+    font-size: 1.25em;
+  }
+
+  & h3 {
+    font-size: 1.1em;
+  }
+
+  & code {
+    background: #111;
+    padding: 0.15em 0.35em;
+    border-radius: 0.25em;
+    font-size: 0.9em;
+    color: #ccc;
+  }
+
+  & pre {
+    background: #111;
+    border: 1px solid #333;
+    padding: 0.75em 1em;
+    border-radius: 0;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+
+  & pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.85em;
+  }
+
+  & ul,
+  & ol {
+    padding-left: 1.5em;
+    margin: 0.5em 0;
+  }
+
+  & ul {
+    list-style-type: disc;
+  }
+
+  & ol {
+    list-style-type: decimal;
+  }
+
+  & li {
+    margin: 0.25em 0;
+  }
+
+  & blockquote {
+    border-left: 2px solid #555;
+    padding-left: 1em;
+    margin: 0.5em 0;
+    color: #999;
+  }
+
+  & a {
+    color: #fff;
+    text-decoration: underline;
+  }
+
+  & hr {
+    border: none;
+    border-top: 1px solid #333;
+    margin: 1em 0;
+  }
+
+  & table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    width: 100%;
+  }
+
+  & th,
+  & td {
+    border: 1px solid #333;
+    padding: 0.4em 0.75em;
+    text-align: left;
+  }
+
+  & th {
+    background: #111;
+    font-weight: 700;
+  }
+
+  & strong {
+    font-weight: 700;
+    color: #fff;
+  }
+}
+
 /* Mobile optimizations */
 html,
 body {
-  touch-action: manipulation; /* Prevent double-tap zoom delay */
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior: none; /* Prevent pull-to-refresh and overscroll */
+  overscroll-behavior: none;
 }
 
-/* Ensure proper height on mobile browsers */
 html {
   height: 100%;
 }
 
 body {
   min-height: 100%;
-  min-height: 100dvh; /* Use dynamic viewport height */
+  min-height: 100dvh;
 }
