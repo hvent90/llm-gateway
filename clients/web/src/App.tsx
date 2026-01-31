@@ -28,7 +28,6 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const resolvingRelaysRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -236,19 +235,20 @@ export default function App() {
       <header className="border-b border-gray-700 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:py-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h1 className="text-lg font-semibold">LLM Gateway</h1>
       </header>
-      <main ref={scrollContainerRef} className="flex-1 overflow-auto p-3 sm:p-4">
-        <ConversationThread
-          graph={state.graph}
-          pendingRelays={state.pendingRelays}
-          permissionHandlers={permissionHandlers}
-          scrollContainerRef={scrollContainerRef}
-          activeStreams={state.activeStreams}
-        />
-        {streamError && (
-          <div className="mt-4 rounded border border-red-600 bg-red-900/20 p-3 text-sm text-red-400">
-            Connection error: {streamError}
-          </div>
-        )}
+      <main className="flex flex-1 flex-col-reverse overflow-y-auto p-3 sm:p-4">
+        <div>
+          <ConversationThread
+            graph={state.graph}
+            pendingRelays={state.pendingRelays}
+            permissionHandlers={permissionHandlers}
+            activeStreams={state.activeStreams}
+          />
+          {streamError && (
+            <div className="mt-4 rounded border border-red-600 bg-red-900/20 p-3 text-sm text-red-400">
+              Connection error: {streamError}
+            </div>
+          )}
+        </div>
       </main>
       <InputArea
         onSubmit={handleSubmit}

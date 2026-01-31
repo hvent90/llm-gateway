@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from "react";
+import { useState, memo } from "react";
 import { projectThread } from "../../../../packages/ai/client";
 import type { ViewNode, ViewContent, Graph, PendingRelay } from "../types";
 
@@ -12,7 +12,6 @@ interface ConversationThreadProps {
   graph: Graph;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   activeStreams: Set<string>;
 }
 
@@ -292,16 +291,10 @@ function PermissionPromptInline({
   onAllowAll: () => void;
   onDeny: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, []);
-
   const paramsStr = JSON.stringify(request.params, null, 2);
 
   return (
-    <div ref={ref} className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
+    <div className="my-4 rounded border border-yellow-600 bg-yellow-900/20 p-4">
       <div className="mb-2 font-medium text-yellow-400">Permission Required</div>
       <div className="mb-2 text-sm text-gray-300">
         Tool: <span className="font-mono text-yellow-300">{request.tool}</span>
@@ -337,29 +330,9 @@ export function ConversationThread({
   graph,
   pendingRelays,
   permissionHandlers,
-  scrollContainerRef,
   activeStreams,
 }: ConversationThreadProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
   const viewNodes = projectThread(graph);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 80;
-    };
-    container.addEventListener("scroll", handleScroll, { passive: true });
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [scrollContainerRef]);
-
-  useEffect(() => {
-    if (isNearBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [graph, pendingRelays]);
 
   if (viewNodes.length === 0 && activeStreams.size === 0) {
     return (
@@ -370,14 +343,13 @@ export function ConversationThread({
   }
 
   return (
-    <div className="flex min-h-full flex-col justify-end space-y-4">
+    <div className="space-y-4">
       <Thread
         nodes={viewNodes}
         pendingRelays={pendingRelays}
         permissionHandlers={permissionHandlers}
         activeStreams={activeStreams}
       />
-      <div ref={bottomRef} />
     </div>
   );
 }
