@@ -27,6 +27,7 @@ export interface ToolDefinition<TSchema extends z.ZodTypeAny = z.ZodTypeAny, TRe
   description: string;
   schema: TSchema;
   execute?: (input: z.infer<TSchema>, ctx: ToolContext) => Promise<ToolExecutionResult<TResult>>;
+  derivePermission?: (params: Record<string, unknown>) => ToolPermission;
 }
 
 // Tool call (in assistant messages)

@@ -1,10 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import {
-  createInitialConversation,
-  reduceConversation,
-  getAutoApprovableRelays,
-  getSameToolRelays,
-} from "../conversation";
+import { createInitialConversation, reduceConversation } from "../conversation";
 
 describe("Conversation Reducer", () => {
   test("createInitialConversation returns empty state", () => {
@@ -13,7 +8,6 @@ describe("Conversation Reducer", () => {
     expect(state.graph.edges.size).toBe(0);
     expect(state.sessionId).toBe(null);
     expect(state.pendingRelays).toEqual([]);
-    expect(state.grantedTools.size).toBe(0);
     expect(state.isConnected).toBe(false);
   });
 
@@ -63,7 +57,7 @@ describe("Conversation Reducer", () => {
     expect(state.graph.nodes.has("r-1")).toBe(true);
   });
 
-  test("relay_resolved removes relay and grants tool if approved", () => {
+  test("relay_resolved removes relay from pendingRelays", () => {
     let state = createInitialConversation();
     state = reduceConversation(state, {
       type: "relay",
@@ -82,7 +76,6 @@ describe("Conversation Reducer", () => {
       approved: true,
     });
     expect(state.pendingRelays.length).toBe(0);
-    expect(state.grantedTools.has("bash")).toBe(true);
   });
 
   test("harness_start delegates to graph", () => {
@@ -104,84 +97,5 @@ describe("Conversation Reducer", () => {
     expect(state.isConnected).toBe(true);
     state = reduceConversation(state, { type: "stream_end" });
     expect(state.isConnected).toBe(false);
-  });
-
-  test("getAutoApprovableRelays returns relays whose tool is already granted", () => {
-    let state = createInitialConversation();
-    state = reduceConversation(state, {
-      type: "relay",
-      kind: "permission",
-      id: "r-0",
-      runId: "r1",
-      agentId: "a1",
-      toolCallId: "tc-0",
-      tool: "read_file",
-      params: {},
-    });
-    state = reduceConversation(state, {
-      type: "relay_resolved",
-      relayId: "r-0",
-      tool: "read_file",
-      approved: true,
-    });
-    state = reduceConversation(state, {
-      type: "relay",
-      kind: "permission",
-      id: "r-1",
-      runId: "r1",
-      agentId: "a1",
-      toolCallId: "tc-1",
-      tool: "read_file",
-      params: { path: "/a" },
-    });
-    state = reduceConversation(state, {
-      type: "relay",
-      kind: "permission",
-      id: "r-2",
-      runId: "r1",
-      agentId: "a1",
-      toolCallId: "tc-2",
-      tool: "bash",
-      params: { command: "ls" },
-    });
-    const auto = getAutoApprovableRelays(state);
-    expect(auto.length).toBe(1);
-    expect(auto[0]!.relayId).toBe("r-1");
-  });
-
-  test("getSameToolRelays returns all pending relays matching a tool type", () => {
-    let state = createInitialConversation();
-    state = reduceConversation(state, {
-      type: "relay",
-      kind: "permission",
-      id: "r-1",
-      runId: "r1",
-      agentId: "a1",
-      toolCallId: "tc-1",
-      tool: "read_file",
-      params: {},
-    });
-    state = reduceConversation(state, {
-      type: "relay",
-      kind: "permission",
-      id: "r-2",
-      runId: "r1",
-      agentId: "a1",
-      toolCallId: "tc-2",
-      tool: "read_file",
-      params: {},
-    });
-    state = reduceConversation(state, {
-      type: "relay",
-      kind: "permission",
-      id: "r-3",
-      runId: "r1",
-      agentId: "a1",
-      toolCallId: "tc-3",
-      tool: "bash",
-      params: {},
-    });
-    const same = getSameToolRelays(state, "read_file");
-    expect(same.length).toBe(2);
   });
 });

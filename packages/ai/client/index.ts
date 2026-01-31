@@ -3,12 +3,7 @@ export { createGraph, reduceEvent } from "./graph";
 export type { GraphEvent } from "./graph";
 
 // Conversation layer
-export {
-  createInitialConversation,
-  reduceConversation,
-  getAutoApprovableRelays,
-  getSameToolRelays,
-} from "./conversation";
+export { createInitialConversation, reduceConversation } from "./conversation";
 
 // Projection
 export { projectThread, getActiveRunIds } from "./projections/thread";

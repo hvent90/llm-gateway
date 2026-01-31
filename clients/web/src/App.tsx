@@ -6,8 +6,6 @@ import {
   createSSETransport,
   createHTTPTransport,
   projectThread,
-  getAutoApprovableRelays,
-  getSameToolRelays,
 } from "../../../packages/ai/client";
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
 import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
@@ -28,7 +26,6 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
-  const resolvingRelaysRef = useRef(new Set<string>());
 
   useEffect(() => {
     fetch("/models")
@@ -120,10 +117,7 @@ export default function App() {
       const current = stateRef.current;
       const messages = buildMessagesFromGraph(current.graph);
       messages.push({ role: "user", content });
-      const permissions: Permissions = {
-        allowlist: Array.from(current.grantedTools).map((tool) => ({ tool })),
-      };
-      await sendChat(selectedModel, messages, permissions);
+      await sendChat(selectedModel, messages, {});
     },
     [sendChat, selectedModel],
   );
@@ -147,7 +141,7 @@ export default function App() {
   const handleAllowAll = useCallback(
     async (relay: PendingRelay) => {
       if (!state.sessionId) return;
-      const sameTypeRelays = getSameToolRelays(state, relay.tool);
+      const sameTypeRelays = state.pendingRelays.filter((r) => r.tool === relay.tool);
       setState((s) => {
         let current = s;
         for (const r of sameTypeRelays) {
@@ -198,35 +192,6 @@ export default function App() {
     onAllowAll: handleAllowAll,
     onDeny: handleDeny,
   };
-
-  useEffect(() => {
-    if (!state.sessionId) return;
-    const autoApprovable = getAutoApprovableRelays(state).filter(
-      (r) => !resolvingRelaysRef.current.has(r.relayId),
-    );
-    if (autoApprovable.length === 0) return;
-
-    const sessionId = state.sessionId;
-    for (const r of autoApprovable) {
-      resolvingRelaysRef.current.add(r.relayId);
-      httpTransport
-        .resolveRelay(sessionId, r.relayId, { approved: true })
-        .then(() => {
-          resolvingRelaysRef.current.delete(r.relayId);
-          setState((s) =>
-            reduceConversation(s, {
-              type: "relay_resolved",
-              relayId: r.relayId,
-              tool: r.tool,
-              approved: false,
-            }),
-          );
-        })
-        .catch(() => {
-          resolvingRelaysRef.current.delete(r.relayId);
-        });
-    }
-  }, [state.pendingRelays, state.grantedTools, state.sessionId]);
 
   const isStreaming = state.isConnected;
 

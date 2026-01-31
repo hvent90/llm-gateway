@@ -14,7 +14,6 @@ export interface ConversationState {
   graph: Graph;
   sessionId: string | null;
   pendingRelays: PendingRelay[];
-  grantedTools: Set<string>;
   isConnected: boolean;
 }
 
@@ -38,17 +37,8 @@ export function createInitialConversation(): ConversationState {
     graph: createGraph(),
     sessionId: null,
     pendingRelays: [],
-    grantedTools: new Set(),
     isConnected: false,
   };
-}
-
-export function getAutoApprovableRelays(state: ConversationState): PendingRelay[] {
-  return state.pendingRelays.filter((r) => state.grantedTools.has(r.tool));
-}
-
-export function getSameToolRelays(state: ConversationState, tool: string): PendingRelay[] {
-  return state.pendingRelays.filter((r) => r.tool === tool);
 }
 
 export function reduceConversation(
@@ -79,10 +69,7 @@ export function reduceConversation(
 
     case "relay_resolved": {
       const pendingRelays = state.pendingRelays.filter((r) => r.relayId !== event.relayId);
-      const grantedTools = event.approved
-        ? new Set([...state.grantedTools, event.tool])
-        : state.grantedTools;
-      return { ...state, pendingRelays, grantedTools };
+      return { ...state, pendingRelays };
     }
 
     case "stream_start":

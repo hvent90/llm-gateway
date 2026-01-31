@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { z } from "zod";
 import { AgentOrchestrator, type ConsumerHarnessEvent } from "../orchestrator";
-import type { ToolDefinition } from "../types";
+import type { ToolDefinition, ToolPermission } from "../types";
 import type { MultiplexedEvent } from "../multiplexer";
 import { createAgentHarness } from "../harness/agent";
 import { createGeneratorHarness } from "../harness/providers/openrouter";
@@ -253,7 +253,7 @@ describe("AgentOrchestrator", () => {
         for await (const { event } of orchestrator.events()) {
           events.push(event);
           if (event.type === "relay") {
-            orchestrator.resolveRelay(event.id, { approved: true, reason: "user approved" });
+            orchestrator.resolveRelay(event.id, { approved: true });
           }
         }
 
@@ -573,7 +573,7 @@ describe("AgentOrchestrator (deterministic)", () => {
       }
     });
 
-    it("parallel subagent tool calls stream concurrently", async () => {
+    it("parallel subagent tool calls stream concurrently (deterministic)", async () => {
       // Provider: parent emits two agent tool calls, then two subagent responses, then parent final
       const provider = createDeterministicHarness({
         responses: [
@@ -623,6 +623,352 @@ describe("AgentOrchestrator (deterministic)", () => {
         (e) => e.agentId === parentAgentId && e.event.type === "text",
       );
       expect(parentTextEvents.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("mutable permissions (always allow)", () => {
+    it("resolveRelay with always:true adds derived permission to allowlist", async () => {
+      // Response 0: LLM emits tool_call for "greet" -> triggers relay (empty allowlist)
+      // After approval: tool executes, loop continues
+      // Response 1: Final text (no more tool calls)
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "greet", input: { name: "Alice" } }] },
+          { events: [{ type: "text", content: "Done" }] },
+        ],
+      });
+
+      const greetSchema = z.object({ name: z.string() });
+      const greetTool: ToolDefinition<typeof greetSchema, string> = {
+        name: "greet",
+        description: "Greet someone",
+        schema: greetSchema,
+        execute: async ({ name }) => ({
+          context: `Greeted ${name}`,
+          result: `Hello, ${name}!`,
+        }),
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Greet Alice" }],
+        tools: [greetTool],
+        permissions,
+      });
+
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          orchestrator.resolveRelay(event.id, { approved: true, always: true });
+        }
+      }
+
+      // After always:true resolution, the permissions object should have the derived permission
+      expect(permissions.allowlist.length).toBe(1);
+      expect(permissions.allowlist[0]!.tool).toBe("greet");
+    });
+
+    it("after always:true, subsequent matching tool calls do NOT trigger a relay", async () => {
+      // Response 0: LLM calls "greet" with { name: "Alice in wonderland" } -> triggers relay
+      // After always:true approval: derives permission { tool: "greet", params: { name: "Alice **" } }
+      // Response 1: LLM calls "greet" again with { name: "Alice at home" } -> should match "Alice **"
+      // Response 2: Final text
+      const provider = createDeterministicHarness({
+        responses: [
+          {
+            events: [{ type: "tool_call", name: "greet", input: { name: "Alice in wonderland" } }],
+          },
+          { events: [{ type: "tool_call", name: "greet", input: { name: "Alice at home" } }] },
+          { events: [{ type: "text", content: "All done" }] },
+        ],
+      });
+
+      const greetSchema = z.object({ name: z.string() });
+      const greetTool: ToolDefinition<typeof greetSchema, string> = {
+        name: "greet",
+        description: "Greet someone",
+        schema: greetSchema,
+        execute: async ({ name }) => ({
+          context: `Greeted ${name}`,
+          result: `Hello, ${name}!`,
+        }),
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Greet Alice twice" }],
+        tools: [greetTool],
+        permissions,
+      });
+
+      const relayEvents: ConsumerHarnessEvent[] = [];
+      const allEvents: ConsumerHarnessEvent[] = [];
+
+      for await (const { event } of orchestrator.events()) {
+        allEvents.push(event);
+        if (event.type === "relay") {
+          relayEvents.push(event);
+          orchestrator.resolveRelay(event.id, { approved: true, always: true });
+        }
+      }
+
+      // Only ONE relay should have fired (for the first greet call)
+      // The second greet call should have been auto-approved via the mutated allowlist
+      expect(relayEvents.length).toBe(1);
+
+      // Both tool calls should have executed successfully
+      const toolResults = allEvents.filter((e) => e.type === "tool_result");
+      expect(toolResults.length).toBe(2);
+    });
+
+    it("resolveRelay with approved:true but no always does NOT add to allowlist", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "greet", input: { name: "Bob" } }] },
+          { events: [{ type: "text", content: "Done" }] },
+        ],
+      });
+
+      const greetSchema = z.object({ name: z.string() });
+      const greetTool: ToolDefinition<typeof greetSchema, string> = {
+        name: "greet",
+        description: "Greet someone",
+        schema: greetSchema,
+        execute: async ({ name }) => ({
+          context: `Greeted ${name}`,
+          result: `Hello, ${name}!`,
+        }),
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Greet Bob" }],
+        tools: [greetTool],
+        permissions,
+      });
+
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          // Approve without always
+          orchestrator.resolveRelay(event.id, { approved: true });
+        }
+      }
+
+      // Allowlist should remain empty — no derived permission was added
+      expect(permissions.allowlist.length).toBe(0);
+    });
+
+    it("resolveRelay with approved:false denies and does NOT add to allowlist", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          {
+            events: [{ type: "tool_call", name: "danger", input: { action: "delete everything" } }],
+          },
+          { events: [{ type: "text", content: "Ok, denied" }] },
+        ],
+      });
+
+      const dangerSchema = z.object({ action: z.string() });
+      const dangerTool: ToolDefinition<typeof dangerSchema, string> = {
+        name: "danger",
+        description: "Dangerous action",
+        schema: dangerSchema,
+        execute: async ({ action }) => ({
+          context: `Did: ${action}`,
+          result: action,
+        }),
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Do danger" }],
+        tools: [dangerTool],
+        permissions,
+      });
+
+      const allEvents: ConsumerHarnessEvent[] = [];
+      for await (const { event } of orchestrator.events()) {
+        allEvents.push(event);
+        if (event.type === "relay") {
+          orchestrator.resolveRelay(event.id, { approved: false, reason: "too dangerous" });
+        }
+      }
+
+      // Allowlist should remain empty
+      expect(permissions.allowlist.length).toBe(0);
+
+      // Should have a denied tool_result
+      const deniedResult = allEvents.find(
+        (e) => e.type === "tool_result" && (e.output as { status?: string })?.status === "denied",
+      );
+      expect(deniedResult).toBeDefined();
+    });
+
+    it("without always:true, second call to same tool still triggers a relay", async () => {
+      // Response 0: tool_call greet -> relay (approved, no always)
+      // Response 1: tool_call greet again -> should still relay (not auto-approved)
+      // Response 2: final text
+      const provider = createDeterministicHarness({
+        responses: [
+          {
+            events: [{ type: "tool_call", name: "greet", input: { name: "Alice in wonderland" } }],
+          },
+          { events: [{ type: "tool_call", name: "greet", input: { name: "Alice at home" } }] },
+          { events: [{ type: "text", content: "All done" }] },
+        ],
+      });
+
+      const greetSchema = z.object({ name: z.string() });
+      const greetTool: ToolDefinition<typeof greetSchema, string> = {
+        name: "greet",
+        description: "Greet someone",
+        schema: greetSchema,
+        execute: async ({ name }) => ({
+          context: `Greeted ${name}`,
+          result: `Hello, ${name}!`,
+        }),
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Greet Alice twice" }],
+        tools: [greetTool],
+        permissions,
+      });
+
+      const relayEvents: ConsumerHarnessEvent[] = [];
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          relayEvents.push(event);
+          // Approve without always — each call should still relay
+          orchestrator.resolveRelay(event.id, { approved: true });
+        }
+      }
+
+      // TWO relays: one for each tool call (no auto-approval)
+      expect(relayEvents.length).toBe(2);
+    });
+
+    it("always:true on tool with derivePermission override uses tool-specific derivation", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "bash", input: { command: "ls -la" } }] },
+          { events: [{ type: "tool_call", name: "bash", input: { command: "ls /tmp" } }] },
+          { events: [{ type: "text", content: "Done" }] },
+        ],
+      });
+
+      const bashSchema = z.object({ command: z.string() });
+      const bashLikeTool: ToolDefinition<typeof bashSchema, string> = {
+        name: "bash",
+        description: "Run a command",
+        schema: bashSchema,
+        execute: async ({ command }) => ({
+          context: `ran: ${command}`,
+          result: command,
+        }),
+        derivePermission: (params) => {
+          const cmd = String(params.command ?? "");
+          const space = cmd.indexOf(" ");
+          return space === -1
+            ? { tool: "bash", params: { command: cmd } }
+            : { tool: "bash", params: { command: cmd.slice(0, space) + " **" } };
+        },
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Run ls twice" }],
+        tools: [bashLikeTool],
+        permissions,
+      });
+
+      const relayEvents: ConsumerHarnessEvent[] = [];
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          relayEvents.push(event);
+          orchestrator.resolveRelay(event.id, { approved: true, always: true });
+        }
+      }
+
+      // Only one relay — second "ls /tmp" matches "ls **" derived from first
+      expect(relayEvents.length).toBe(1);
+      // Permission should use tool-specific derivation, not tool-wide
+      expect(permissions.allowlist[0]).toEqual({
+        tool: "bash",
+        params: { command: "ls **" },
+      });
+    });
+
+    it("always:true on tool WITHOUT derivePermission defaults to tool-wide allow", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "agent", input: { task: "Write code" } }] },
+          { events: [{ type: "text", content: "Code written" }] },
+          { events: [{ type: "tool_call", name: "agent", input: { task: "Read docs" } }] },
+          { events: [{ type: "text", content: "Docs read" }] },
+          { events: [{ type: "text", content: "All done" }] },
+        ],
+      });
+
+      const agentSchema = z.object({ task: z.string() });
+      const agentLikeTool: ToolDefinition<typeof agentSchema, string> = {
+        name: "agent",
+        description: "Spawn subagent",
+        schema: agentSchema,
+        execute: async ({ task }, ctx) => {
+          const result = await ctx.spawn!(task);
+          return { context: result, result };
+        },
+        // No derivePermission — should default to { tool: "agent" }
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Do two tasks" }],
+        tools: [agentLikeTool],
+        permissions,
+      });
+
+      const relayEvents: ConsumerHarnessEvent[] = [];
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          relayEvents.push(event);
+          orchestrator.resolveRelay(event.id, { approved: true, always: true });
+        }
+      }
+
+      // Only one relay — second agent call auto-approved by tool-wide permission
+      expect(relayEvents.length).toBe(1);
+      // Default derivation: tool-wide, no params
+      expect(permissions.allowlist[0]).toEqual({ tool: "agent" });
     });
   });
 });

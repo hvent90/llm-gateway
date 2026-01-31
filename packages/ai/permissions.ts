@@ -1,4 +1,4 @@
-import { minimatch } from "minimatch";
+import picomatch from "picomatch";
 import type { Permissions, ToolPermission } from "./types";
 
 interface ToolCallLike {
@@ -20,7 +20,7 @@ export function matchesPermission(toolCall: ToolCallLike, permission: ToolPermis
     if (value === undefined) {
       return false;
     }
-    if (!minimatch(String(value), pattern)) {
+    if (!picomatch.isMatch(String(value), pattern, { bash: true })) {
       return false;
     }
   }

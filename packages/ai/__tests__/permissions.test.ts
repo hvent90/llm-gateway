@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { matchesPermission, matchesPermissions } from "../permissions";
+import { bashTool } from "../tools/bash";
 
 describe("permissions", () => {
   describe("matchesPermission", () => {
@@ -85,6 +86,18 @@ describe("permissions", () => {
     it("returns false for undefined permissions", () => {
       const result = matchesPermissions({ name: "any_tool", arguments: {} }, undefined);
       expect(result).toBe(false);
+    });
+  });
+
+  describe("bashTool.derivePermission", () => {
+    it("derives first-word glob from command", () => {
+      const result = bashTool.derivePermission!({ command: "cat /tmp/foo.txt" });
+      expect(result).toEqual({ tool: "bash", params: { command: "cat **" } });
+    });
+
+    it("keeps single-word command exact", () => {
+      const result = bashTool.derivePermission!({ command: "ls" });
+      expect(result).toEqual({ tool: "bash", params: { command: "ls" } });
     });
   });
 });
