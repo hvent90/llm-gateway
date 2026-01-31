@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync } from "fs";
+import { mkdirSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 
 export type Level = "D" | "I" | "W" | "E";
@@ -6,9 +6,22 @@ export type Level = "D" | "I" | "W" | "E";
 const LEVEL_ORDER: Record<Level, number> = { D: 0, I: 1, W: 2, E: 3 };
 const LOG_DIR = join(import.meta.dir, "../../logs");
 const LOG_FILE = join(LOG_DIR, "gateway.log");
+const MAX_EVENTS = 20;
 
-let writer: ReturnType<ReturnType<typeof Bun.file>["writer"]> | null = null;
-let initialized = false;
+const DONE_PHASES = new Set(["no_tools", "req_end", "max_iter", "subagent_done"]);
+
+interface AgentState {
+  shortId: string;
+  phase: string;
+  detail: string;
+  phaseStart: number;
+  parentShortId: string | null;
+  done: boolean;
+  events: string[];
+}
+
+const agents = new Map<string, AgentState>();
+let dirEnsured = false;
 
 function getMinLevel(): Level {
   const env = process.env.LOG_LEVEL;
@@ -16,15 +29,8 @@ function getMinLevel(): Level {
   return "I";
 }
 
-function ensureWriter(): ReturnType<ReturnType<typeof Bun.file>["writer"]> {
-  if (!writer) {
-    if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
-    // Truncate on first open per process
-    Bun.write(LOG_FILE, "");
-    writer = Bun.file(LOG_FILE).writer();
-    initialized = false;
-  }
-  return writer;
+function shortId(run: string): string {
+  return run.replace(/-/g, "").slice(-7);
 }
 
 function formatTime(): string {
@@ -36,42 +42,159 @@ function formatTime(): string {
   return `${h}:${m}:${s}.${ms}`;
 }
 
-function csvEscape(value: string): string {
-  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function ensureDir(): void {
+  if (!dirEnsured) {
+    if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
+    dirEnsured = true;
   }
-  return value;
+}
+
+function parseParentFromDetail(detail: string): string | null {
+  const match = detail.match(/parent=([^\s,]+)/);
+  if (!match) return null;
+  // parent value is like "aaaa-1111/tc1" — extract the run part before the slash
+  const parentRun = match[1]!.split("/")[0]!;
+  return shortId(parentRun);
+}
+
+function getOrCreateAgent(run: string): AgentState {
+  const sid = shortId(run);
+  let agent = agents.get(sid);
+  if (!agent) {
+    agent = {
+      shortId: sid,
+      phase: "",
+      detail: "",
+      phaseStart: Date.now(),
+      parentShortId: null,
+      done: false,
+      events: [],
+    };
+    agents.set(sid, agent);
+  }
+  return agent;
+}
+
+function buildTree(): AgentState[] {
+  // Find roots (no parent) and build ordered list
+  const result: AgentState[] = [];
+  const children = new Map<string | null, AgentState[]>();
+
+  for (const agent of agents.values()) {
+    const parent = agent.parentShortId;
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent)!.push(agent);
+  }
+
+  function walk(parentId: string | null) {
+    const kids = children.get(parentId) ?? [];
+    for (const kid of kids) {
+      result.push(kid);
+      walk(kid.shortId);
+    }
+  }
+
+  walk(null);
+
+  // If some agents weren't reached (no parent link), append them
+  for (const agent of agents.values()) {
+    if (!result.includes(agent)) result.push(agent);
+  }
+
+  return result;
+}
+
+function renderSnapshot(): string {
+  const now = Date.now();
+  const tree = buildTree();
+  if (tree.length === 0) return "";
+
+  // Find the agent stuck longest (not done)
+  let maxStuckId: string | null = null;
+  let maxStuckDur = -1;
+  for (const agent of tree) {
+    if (!agent.done) {
+      const dur = now - agent.phaseStart;
+      if (dur > maxStuckDur) {
+        maxStuckDur = dur;
+        maxStuckId = agent.shortId;
+      }
+    }
+  }
+
+  const lines: string[] = ["=== agents ==="];
+
+  for (let i = 0; i < tree.length; i++) {
+    const agent = tree[i]!;
+    const isChild = agent.parentShortId !== null;
+    const isLast =
+      isChild && !tree.slice(i + 1).some((a) => a.parentShortId === agent.parentShortId);
+    const prefix = isChild ? (isLast ? "└─" : "├─") : "";
+    const phase = agent.done ? "done" : agent.phase;
+    const dur = formatDuration(now - agent.phaseStart);
+    const detail = agent.detail ? `  ${agent.detail}` : "";
+    const stuck =
+      !agent.done && agent.shortId === maxStuckId && tree.filter((a) => !a.done).length > 1
+        ? "  <<<"
+        : "";
+    lines.push(`${agent.shortId} ${prefix}${phase}${detail}  ${dur}${stuck}`);
+  }
+
+  // Per-agent event sections
+  for (const agent of tree) {
+    const label = agent.parentShortId === null ? "root" : "sub";
+    lines.push("");
+    lines.push(`=== ${agent.shortId} (${label}) last ${MAX_EVENTS} ===`);
+    for (const event of agent.events) {
+      lines.push(event);
+    }
+  }
+
+  return lines.join("\n") + "\n";
+}
+
+function writeSnapshot(): void {
+  ensureDir();
+  writeFileSync(LOG_FILE, renderSnapshot());
 }
 
 export function log(level: Level, run: string, phase: string, detail?: string): void {
-  if (LEVEL_ORDER[level] < LEVEL_ORDER[getMinLevel()]) {
-    // Still ensure file is initialized so header is written even if first call is filtered
-    if (!initialized) {
-      const w = ensureWriter();
-      w.write("time,level,run,phase,detail\n");
-      w.flush();
-      initialized = true;
-    }
-    return;
+  if (LEVEL_ORDER[level] < LEVEL_ORDER[getMinLevel()]) return;
+
+  // Skip the bash tool's "-------" placeholder — these are covered by agent harness
+  if (run === "-------") return;
+
+  const agent = getOrCreateAgent(run);
+  agent.phase = phase;
+  agent.detail = detail ?? "";
+  agent.phaseStart = Date.now();
+
+  if (DONE_PHASES.has(phase)) agent.done = true;
+
+  // Handle parent tracking
+  if (phase === "subagent_spawn" && detail) {
+    agent.parentShortId = parseParentFromDetail(detail);
+  }
+  if (phase === "agent_spawn") {
+    agent.parentShortId = null; // explicit root
   }
 
-  const w = ensureWriter();
-  if (!initialized) {
-    w.write("time,level,run,phase,detail\n");
-    initialized = true;
+  // Push to event buffer (circular)
+  const eventLine = `${formatTime()},${phase}${detail ? "," + detail : ""}`;
+  agent.events.push(eventLine);
+  if (agent.events.length > MAX_EVENTS) {
+    agent.events.shift();
   }
 
-  const shortRun = run.replace(/-/g, "").slice(0, 7);
-  const detailStr = detail ? csvEscape(detail) : "";
-  w.write(`${formatTime()},${level},${shortRun},${phase},${detailStr}\n`);
-  w.flush();
+  writeSnapshot();
 }
 
 export function resetForTesting(): void {
-  if (writer) {
-    writer.flush();
-    writer.end();
-  }
-  writer = null;
-  initialized = false;
+  agents.clear();
+  dirEnsured = false;
 }

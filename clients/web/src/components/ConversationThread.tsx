@@ -151,7 +151,7 @@ const MessageGroupComponent = memo(function MessageGroupComponent({
   return (
     <div className="mb-4">
       <div className={`font-medium ${isUser ? "text-blue-400" : "text-green-400"}`}>
-        {isUser ? "You" : `Agent-${group.runId.slice(0, 8)}`}
+        {isUser ? "You" : `Agent-${group.runId.replace(/-/g, "").slice(-7)}`}
         {isStreaming && (
           <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
         )}
@@ -271,7 +271,7 @@ function Thread({
         .map((runId) => (
           <div key={`streaming-${runId}`} className="mb-4">
             <div className="font-medium text-green-400">
-              Agent-{runId.slice(0, 8)}
+              Agent-{runId.replace(/-/g, "").slice(-7)}
               <span className="ml-2 inline-block h-2 w-2 animate-pulse rounded-full bg-green-400" />
             </div>
           </div>
