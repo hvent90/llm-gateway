@@ -111,9 +111,9 @@ describe("permissions", () => {
 
     it("derived multi-word permission does NOT match bare first-word call", () => {
       const permission = derivePermission("bash", { command: "cat /tmp/foo.txt" });
-      expect(
-        matchesPermission({ name: "bash", arguments: { command: "cat" } }, permission),
-      ).toBe(false);
+      expect(matchesPermission({ name: "bash", arguments: { command: "cat" } }, permission)).toBe(
+        false,
+      );
     });
 
     it("omits params when params is undefined", () => {

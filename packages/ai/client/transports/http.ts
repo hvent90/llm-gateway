@@ -1,3 +1,5 @@
+import type { ResolveResponse } from "../../orchestrator";
+
 /**
  * Create an HTTP transport for client→server commands.
  */
@@ -10,9 +12,13 @@ export function createHTTPTransport(config: { baseUrl: string }) {
      *
      * @param sessionId The session that owns the relay
      * @param relayId The relay event ID to resolve
-     * @param response The response payload (shape depends on relay kind)
+     * @param response The response payload
      */
-    async resolveRelay(sessionId: string, relayId: string, response: unknown): Promise<void> {
+    async resolveRelay(
+      sessionId: string,
+      relayId: string,
+      response: ResolveResponse,
+    ): Promise<void> {
       const res = await fetch(`${baseUrl}/chat/relay/${relayId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

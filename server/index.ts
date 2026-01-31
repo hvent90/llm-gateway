@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { v7 } from "uuid";
-import { AgentOrchestrator, type ConsumerHarnessEvent } from "../packages/ai/orchestrator.ts";
+import {
+  AgentOrchestrator,
+  type ConsumerHarnessEvent,
+  type ResolveResponse,
+} from "../packages/ai/orchestrator.ts";
 import { agentTool, bashTool } from "../packages/ai/tools";
 import { createAgentHarness } from "../packages/ai/harness/agent.ts";
 import { createGeneratorHarness } from "../packages/ai/harness/providers/zen.ts";
@@ -27,7 +31,7 @@ interface ChatRequest {
 
 interface RelayRequest {
   sessionId: string;
-  response: unknown;
+  response: ResolveResponse;
 }
 
 // Serialize a ConsumerHarnessEvent to JSON-safe format, adding agentId

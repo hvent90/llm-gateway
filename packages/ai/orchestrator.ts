@@ -1,9 +1,15 @@
 import { v7 } from "uuid";
-import type { HarnessEvent, GeneratorInvokeParams, GeneratorHarnessModule } from "./types";
+import type {
+  HarnessEvent,
+  GeneratorInvokeParams,
+  GeneratorHarnessModule,
+  Permissions,
+} from "./types";
 import { createGeneratorHarness } from "./harness/providers/zen";
 import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 import { createPassthrough } from "./primitives";
+import { derivePermission } from "./permissions";
 import { log } from "./logger";
 
 /**
@@ -11,8 +17,18 @@ import { log } from "./logger";
  */
 export interface PendingRelay {
   agentId: string;
+  tool: string;
+  params: Record<string, unknown>;
+  permissions?: Permissions;
   respond: (response: any) => void;
 }
+
+/**
+ * Typed response for resolveRelay.
+ */
+export type ResolveResponse =
+  | { approved: true; always?: boolean }
+  | { approved: false; reason?: string };
 
 /**
  * HarnessEvent without the respond callback (for consumers).
@@ -64,6 +80,7 @@ export class AgentOrchestrator {
   private harness: GeneratorHarnessModule;
   private mux = new AgentMultiplexer<HarnessEvent>();
   private pendingRelays = new Map<string, PendingRelay>();
+  private agentPermissions = new Map<string, Permissions>();
 
   /**
    * Create a new orchestrator.
@@ -82,6 +99,9 @@ export class AgentOrchestrator {
   spawn(params: GeneratorInvokeParams): string {
     const agentId = v7();
     log("I", agentId, "agent_spawn", `model=${params.model}`);
+    if (params.permissions) {
+      this.agentPermissions.set(agentId, params.permissions);
+    }
     const stream = this.harness.invoke({
       ...params,
       context: {
@@ -109,6 +129,9 @@ export class AgentOrchestrator {
     const agentId = v7();
     const subStart = Date.now();
     log("I", agentId, "subagent_spawn", `parent=${parentId}`);
+    if (parentParams.permissions) {
+      this.agentPermissions.set(agentId, parentParams.permissions);
+    }
     const passthrough = createPassthrough<HarnessEvent>();
 
     // Register passthrough with multiplexer so events stream to client
@@ -154,21 +177,40 @@ export class AgentOrchestrator {
         this.pendingRelays.delete(relayId);
       }
     }
+    // Clean up agent permissions
+    this.agentPermissions.delete(agentId);
   }
 
   /**
    * Resolve a pending relay request.
    *
+   * When `approved: true` with `always: true`, derives a permission from the
+   * tool call and pushes it onto the agent's permissions allowlist. Future
+   * calls matching the derived permission will be auto-approved without
+   * generating relay events.
+   *
    * @param relayId The ID of the relay awaiting resolution
    * @param response The response to send back to the relay
    * @returns true if the relay was found and resolved, false otherwise
    */
-  resolveRelay(relayId: string, response: unknown): boolean {
+  resolveRelay(relayId: string, response: ResolveResponse): boolean {
     const pending = this.pendingRelays.get(relayId);
     if (!pending) return false;
 
     log("I", pending.agentId, "relay_resolve", `relay=${relayId}`);
-    pending.respond(response);
+
+    if (response.approved) {
+      if (response.always && pending.permissions) {
+        const derived = derivePermission(pending.tool, pending.params);
+        pending.permissions.allowlist ??= [];
+        pending.permissions.allowlist.push(derived);
+        log("I", pending.agentId, "perm_always", `relay=${relayId} tool=${pending.tool}`);
+      }
+      pending.respond({ approved: true });
+    } else {
+      pending.respond({ approved: false, reason: response.reason });
+    }
+
     this.mux.resume(pending.agentId);
     this.pendingRelays.delete(relayId);
     return true;
@@ -192,10 +234,13 @@ export class AgentOrchestrator {
         // Pause this agent until relay resolved
         this.mux.pause(agentId);
 
-        // Stash the responder
+        // Stash the responder with tool/params/permissions for always-allow
         log("I", agentId, "relay_stash", `relay=${event.id} tool=${event.tool}`);
         this.pendingRelays.set(event.id, {
           agentId,
+          tool: event.tool,
+          params: event.params,
+          permissions: this.agentPermissions.get(agentId),
           respond: event.respond,
         });
 
