@@ -10,6 +10,7 @@ export type ViewContent =
   | { kind: "tool_call"; name: string; input: unknown; output?: unknown }
   | { kind: "user"; text: string }
   | { kind: "error"; message: string }
+  | { kind: "pending" }
   | {
       kind: "relay";
       relayKind: "permission";
@@ -213,6 +214,22 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
           result.push(...branch);
         }
       }
+
+      // A harness_start with no continuation yet (subagent just spawned)
+      // emits a pending placeholder so the branch isn't discarded.
+      if (node.kind === "harness_start" && !continuation && result.length === 0) {
+        const status = deriveRunStatus(graph, node.runId);
+        if (status === "streaming") {
+          result.push({
+            id: node.id,
+            runId: node.runId,
+            role: "assistant",
+            content: { kind: "pending" },
+            status,
+            branches: [],
+          });
+        }
+      }
     }
 
     // If the node is tool_result, attach its output to the last tool_call ViewNode
@@ -232,21 +249,6 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
   }
 
   return result;
-}
-
-// ---------------------------------------------------------------------------
-// Derived state
-// ---------------------------------------------------------------------------
-
-/**
- * Derive the set of run IDs that are currently streaming from the graph.
- */
-export function getActiveRunIds(graph: Graph): Set<string> {
-  const active = new Set<string>();
-  for (const runId of graph.lastNodeByRunId.keys()) {
-    if (deriveRunStatus(graph, runId) === "streaming") active.add(runId);
-  }
-  return active;
 }
 
 // ---------------------------------------------------------------------------

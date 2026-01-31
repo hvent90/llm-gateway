@@ -6,7 +6,7 @@ export type { GraphEvent } from "./graph";
 export { createInitialConversation, reduceConversation } from "./conversation";
 
 // Projection
-export { projectThread, getActiveRunIds } from "./projections/thread";
+export { projectThread } from "./projections/thread";
 export type { ViewNode, ViewContent } from "./projections/thread";
 
 // Types

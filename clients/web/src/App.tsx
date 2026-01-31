@@ -206,7 +206,6 @@ export default function App() {
             graph={state.graph}
             pendingRelays={state.pendingRelays}
             permissionHandlers={permissionHandlers}
-            isConnected={state.isConnected}
           />
           {streamError && (
             <div className="mt-4 border border-neutral-700 p-3 text-sm text-red-400">

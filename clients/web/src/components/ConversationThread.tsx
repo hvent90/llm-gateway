@@ -1,6 +1,6 @@
 import { useState, memo } from "react";
 import { Streamdown } from "streamdown";
-import { projectThread, getActiveRunIds } from "../../../../packages/ai/client";
+import { projectThread } from "../../../../packages/ai/client";
 import type { ViewNode, ViewContent, Graph, PendingRelay } from "../types";
 
 export interface PermissionHandlers {
@@ -13,24 +13,12 @@ interface ConversationThreadProps {
   graph: Graph;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
-  isConnected: boolean;
 }
 
 interface MessageGroup {
   runId: string;
   role: "user" | "assistant";
   nodes: ViewNode[];
-}
-
-function collectRunIds(nodes: ViewNode[]): Set<string> {
-  const ids = new Set<string>();
-  for (const node of nodes) {
-    ids.add(node.runId);
-    for (const branch of node.branches) {
-      for (const id of collectRunIds(branch)) ids.add(id);
-    }
-  }
-  return ids;
 }
 
 function groupNodes(nodes: ViewNode[]): MessageGroup[] {
@@ -72,6 +60,8 @@ function ContentView({ content }: { content: ViewContent }) {
       return null;
     case "tool_call":
       return <ToolCallView content={content} />;
+    case "pending":
+      return null;
   }
 }
 
@@ -253,18 +243,12 @@ function Thread({
   nodes,
   pendingRelays,
   permissionHandlers,
-  isConnected,
-  graph,
 }: {
   nodes: ViewNode[];
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
-  isConnected: boolean;
-  graph?: Graph;
 }) {
   const groups = groupNodes(nodes);
-  const representedRunIds = collectRunIds(nodes);
-  const activeStreams = isConnected && graph ? getActiveRunIds(graph) : new Set<string>();
 
   return (
     <>
@@ -276,16 +260,6 @@ function Thread({
           permissionHandlers={permissionHandlers}
         />
       ))}
-      {Array.from(activeStreams)
-        .filter((runId) => !representedRunIds.has(runId))
-        .map((runId) => (
-          <div key={`streaming-${runId}`} className="mb-4">
-            <div className="font-bold text-green-400">
-              &gt; agent-{runId.replace(/-/g, "").slice(-7)}
-              <span className="ml-2 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
-            </div>
-          </div>
-        ))}
     </>
   );
 }
@@ -340,12 +314,10 @@ export function ConversationThread({
   graph,
   pendingRelays,
   permissionHandlers,
-  isConnected,
 }: ConversationThreadProps) {
   const viewNodes = projectThread(graph);
-  const activeRunIds = isConnected ? getActiveRunIds(graph) : new Set<string>();
 
-  if (viewNodes.length === 0 && activeRunIds.size === 0) {
+  if (viewNodes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-neutral-600">
         start a conversation below.
@@ -359,8 +331,6 @@ export function ConversationThread({
         nodes={viewNodes}
         pendingRelays={pendingRelays}
         permissionHandlers={permissionHandlers}
-        isConnected={isConnected}
-        graph={graph}
       />
     </div>
   );

@@ -283,4 +283,53 @@ describe("Thread Projection", () => {
     const flatTexts = view.filter((v) => v.content.kind === "text" && v.runId === "r2");
     expect(flatTexts.length).toBe(0);
   });
+
+  test("streaming: subagent with only harness_start produces a pending branch", () => {
+    // When a subagent has just started (harness_start only, no content yet),
+    // the projection should still produce a branch with a pending ViewNode
+    // so the subagent's runId is represented — not orphaned to the bottom.
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "search", input: "auth" },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
+      // No content yet — subagent just started
+    ]);
+    const view = projectThread(g);
+    const tcNode = view.find((v) => v.content.kind === "tool_call");
+    expect(tcNode).toBeDefined();
+    // Should have a branch with a pending ViewNode
+    expect(tcNode!.branches.length).toBe(1);
+    expect(tcNode!.branches[0]!.length).toBe(1);
+    expect(tcNode!.branches[0]![0]!.content.kind).toBe("pending");
+    expect(tcNode!.branches[0]![0]!.runId).toBe("r2");
+    expect(tcNode!.branches[0]![0]!.status).toBe("streaming");
+  });
+
+  test("streaming: pending node replaced by real content once subagent streams text", () => {
+    // Once the subagent emits content, the pending placeholder should not appear.
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "search", input: "auth" },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
+      {
+        type: "text",
+        id: "t2",
+        runId: "r2",
+        agentId: "a2",
+        parentId: "tc1",
+        content: "Working...",
+      },
+      // Still streaming — no harness_end
+    ]);
+    const view = projectThread(g);
+    const tcNode = view.find((v) => v.content.kind === "tool_call");
+    expect(tcNode).toBeDefined();
+    expect(tcNode!.branches.length).toBe(1);
+    // Branch should contain the text node, not a pending node
+    expect(tcNode!.branches[0]![0]!.content.kind).toBe("text");
+    const allNodes = view.flatMap(function collect(n: ViewNode): ViewNode[] {
+      return [n, ...n.branches.flatMap((b) => b.flatMap(collect))];
+    });
+    expect(allNodes.some((n) => n.content.kind === "pending")).toBe(false);
+  });
 });

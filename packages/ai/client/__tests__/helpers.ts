@@ -51,4 +51,5 @@ export const renderableKinds = new Set([
   "user",
   "error",
   "relay",
+  "pending",
 ]);
