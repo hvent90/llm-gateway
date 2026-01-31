@@ -4,6 +4,7 @@ import { createGeneratorHarness } from "./harness/providers/zen";
 import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 import { createPassthrough } from "./primitives";
+import { log } from "./logger";
 
 /**
  * A pending relay request, stashed until resolved.
@@ -80,6 +81,7 @@ export class AgentOrchestrator {
    */
   spawn(params: GeneratorInvokeParams): string {
     const agentId = v7();
+    log("I", agentId, "agent_spawn", `model=${params.model}`);
     const stream = this.harness.invoke({
       ...params,
       context: {
@@ -105,6 +107,8 @@ export class AgentOrchestrator {
     parentParams: GeneratorInvokeParams,
   ): Promise<string> {
     const agentId = v7();
+    const subStart = Date.now();
+    log("I", agentId, "subagent_spawn", `parent=${parentId}`);
     const passthrough = createPassthrough<HarnessEvent>();
 
     // Register passthrough with multiplexer so events stream to client
@@ -129,6 +133,7 @@ export class AgentOrchestrator {
         passthrough.push(next.value);
         next = await iterator.next();
       }
+      log("I", agentId, "subagent_done", `dur=${Date.now() - subStart}ms`);
       return next.value as string; // The final assistant text
     } finally {
       passthrough.end();
@@ -162,6 +167,7 @@ export class AgentOrchestrator {
     const pending = this.pendingRelays.get(relayId);
     if (!pending) return false;
 
+    log("I", pending.agentId, "relay_resolve", `relay=${relayId}`);
     pending.respond(response);
     this.mux.resume(pending.agentId);
     this.pendingRelays.delete(relayId);
@@ -187,6 +193,7 @@ export class AgentOrchestrator {
         this.mux.pause(agentId);
 
         // Stash the responder
+        log("I", agentId, "relay_stash", `relay=${event.id} tool=${event.tool}`);
         this.pendingRelays.set(event.id, {
           agentId,
           respond: event.respond,

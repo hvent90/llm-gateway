@@ -11,6 +11,7 @@ import type {
 } from "../types";
 import { matchesPermissions } from "../permissions";
 import { deferred } from "../primitives";
+import { log } from "../logger";
 
 interface AgentHarnessOptions {
   harness: GeneratorHarnessModule;
@@ -64,10 +65,14 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           });
         }
 
+        log("I", myRunId, "loop_iter", `iter=${iterations} max=${maxIterations}`);
+
         const toolCalls: ToolCall[] = [];
         assistantText = "";
 
         // Single iteration - collect events from provider harness
+        const llmStart = Date.now();
+        log("I", myRunId, "llm_call_start", `model=${params.model}`);
         for await (const event of harness.invoke({
           ...params,
           messages,
@@ -97,9 +102,16 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           // Note: provider harness should not emit tool_result or permission_required
           // Those are handled by this agent wrapper
         }
+        log(
+          "I",
+          myRunId,
+          "llm_call_end",
+          `dur=${Date.now() - llmStart}ms tools=${toolCalls.length}`,
+        );
 
         // No tool calls - we're done
         if (toolCalls.length === 0) {
+          log("I", myRunId, "no_tools");
           yield tag({ type: "harness_end", runId: myRunId });
           return assistantText;
         }
@@ -144,6 +156,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             matchesPermissions({ name: tc.name, arguments: args }, params.permissions);
 
           if (!isAllowed) {
+            log("I", myRunId, "perm_check", `tool=${tc.name}`);
             // Need permission - create deferred and yield permission_required
             const { promise, resolve } = deferred<PermissionResponse>();
             yield tag({
@@ -158,7 +171,15 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             });
 
             // Generator pauses here until respond() is called
+            const permStart = Date.now();
+            log("I", myRunId, "perm_wait", `tool=${tc.name} toolCallId=${nsId(tc.id)}`);
             const decision = await promise;
+            log(
+              "I",
+              myRunId,
+              "perm_resolved",
+              `tool=${tc.name} approved=${decision.approved} waited=${Date.now() - permStart}ms`,
+            );
 
             if (!decision.approved) {
               const output = { status: "denied", reason: decision.reason };
@@ -207,6 +228,8 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         }
 
         // Pass 2: execute approved tools concurrently
+        const execStart = Date.now();
+        log("I", myRunId, "tool_exec_start", `count=${approved.length}`);
         const results = await Promise.all(
           approved.map(async ({ tc, toolDef }) => {
             const toolCtx: ToolContext = {
@@ -253,6 +276,8 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           }),
         );
 
+        log("I", myRunId, "tool_exec_end", `dur=${Date.now() - execStart}ms`);
+
         // Yield results and add to messages
         for (const { event, message } of results) {
           yield event;
@@ -264,6 +289,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         // Loop continues - will call LLM again with tool results
       }
 
+      log("W", myRunId, "max_iter", `iter=${iterations - 1}`);
       yield tag({ type: "harness_end", runId: myRunId });
       return assistantText;
     },

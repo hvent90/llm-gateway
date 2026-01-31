@@ -11,6 +11,7 @@ import type {
   Permissions,
   ToolDefinition,
 } from "../packages/ai/types.ts";
+import { log } from "../packages/ai/logger.ts";
 
 export interface AppConfig {
   harness?: GeneratorHarnessModule;
@@ -73,6 +74,8 @@ export function createApp(config?: AppConfig): Hono {
 
     // Generate session ID for this connection
     const sessionId = v7();
+    const reqStart = Date.now();
+    log("I", sessionId, "req_start", `model=${model}`);
 
     return streamSSE(c, async (stream) => {
       // Create orchestrator for this session
@@ -111,6 +114,7 @@ export function createApp(config?: AppConfig): Hono {
         });
       } finally {
         // Clean up orchestrator when stream ends
+        log("I", sessionId, "req_end", `dur=${Date.now() - reqStart}ms`);
         orchestrators.delete(sessionId);
       }
     });

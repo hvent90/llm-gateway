@@ -7,6 +7,7 @@ import type {
   Message,
   ToolDefinition,
 } from "../../types";
+import { log } from "../../logger";
 
 const BASE_URL = "https://opencode.ai/zen/v1";
 
@@ -143,6 +144,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
       }
 
       let response: Response;
+      log("I", runId, "api_req", `model=${params.model}`);
       try {
         response = await fetch(`${BASE_URL}/chat/completions`, {
           method: "POST",
@@ -153,6 +155,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
           body: JSON.stringify(body),
         });
       } catch (error) {
+        log("E", runId, "api_err", `msg=${error instanceof Error ? error.message : String(error)}`);
         yield tag({
           type: "error" as const,
           runId,
@@ -160,6 +163,8 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
         });
         return;
       }
+
+      log("I", runId, "api_res", `status=${response.status}`);
 
       if (!response.ok) {
         let message = `Zen API returned ${response.status}`;
@@ -180,6 +185,8 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
       const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
       let usageData: { prompt_tokens: number; completion_tokens: number } | undefined;
 
+      const streamStart = Date.now();
+      log("I", runId, "stream_start");
       try {
         for await (const data of parseSSE(response.body)) {
           let chunk: ChatCompletionChunk;
@@ -237,6 +244,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
           }
         }
       } catch (error) {
+        log("E", runId, "api_err", `msg=${error instanceof Error ? error.message : String(error)}`);
         yield tag({
           type: "error" as const,
           runId,
@@ -244,6 +252,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
         });
         return;
       }
+      log("I", runId, "stream_end", `dur=${Date.now() - streamStart}ms`);
 
       // Yield tool_call events for the agent wrapper to process
       for (const tc of Object.values(toolCallsMap)) {

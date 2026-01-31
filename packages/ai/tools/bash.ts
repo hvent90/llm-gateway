@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { spawn } from "bun";
 import type { ToolDefinition } from "../types";
+import { log } from "../logger";
 
 const schema = z.object({
   command: z.string().describe("The shell command to execute"),
@@ -32,6 +33,8 @@ export const bashTool: ToolDefinition<typeof schema, BashResult> = {
   description: "Execute a non-sudo shell command. Returns stdout, stderr, and exit code.",
   schema,
   execute: async ({ command, timeout }) => {
+    const bashStart = Date.now();
+    log("I", "-------", "bash_start", `cmd=${JSON.stringify(command).slice(0, 200)}`);
     const proc = spawn({
       cmd: ["sh", "-c", command],
       stdout: "pipe",
@@ -82,6 +85,12 @@ export const bashTool: ToolDefinition<typeof schema, BashResult> = {
     clearTimeout(timer!);
 
     if (raceResult.timedOut) {
+      log(
+        "W",
+        "-------",
+        "bash_timeout",
+        `timeout=${timeout}s cmd=${JSON.stringify(command).slice(0, 200)}`,
+      );
       return {
         context: `Command timed out after ${timeout} seconds`,
         result: { exitCode: -1, stdout: "", stderr: "" },
@@ -90,6 +99,7 @@ export const bashTool: ToolDefinition<typeof schema, BashResult> = {
 
     const { stdout, stderr, exitCode } = raceResult;
     const result: BashResult = { exitCode, stdout, stderr };
+    log("I", "-------", "bash_end", `dur=${Date.now() - bashStart}ms exit=${exitCode}`);
 
     let context = "";
     if (stdout) context += `stdout:\n${stdout}\n`;

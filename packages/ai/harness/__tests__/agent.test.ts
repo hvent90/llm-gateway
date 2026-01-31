@@ -668,7 +668,12 @@ describe("graceful exit on maxIterations exhaustion", () => {
         const hasTools = params.tools && params.tools.length > 0;
         if (!hasTools) {
           // Summarizing call — no tools offered, produce text
-          yield { type: "text", runId: "r1", id: `t-${invokeCount}`, content: "Here is my summary." };
+          yield {
+            type: "text",
+            runId: "r1",
+            id: `t-${invokeCount}`,
+            content: "Here is my summary.",
+          };
         } else {
           // Normal call — emit a tool_call
           yield {
