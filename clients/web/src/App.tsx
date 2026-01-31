@@ -29,6 +29,7 @@ export default function App() {
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const resolvingRelaysRef = useRef(new Set<string>());
 
   useEffect(() => {
     fetch("/models")
@@ -201,23 +202,30 @@ export default function App() {
 
   useEffect(() => {
     if (!state.sessionId) return;
-    const autoApprovable = getAutoApprovableRelays(state);
+    const autoApprovable = getAutoApprovableRelays(state).filter(
+      (r) => !resolvingRelaysRef.current.has(r.relayId),
+    );
     if (autoApprovable.length === 0) return;
-    setState((s) => {
-      let current = s;
-      for (const r of autoApprovable) {
-        current = reduceConversation(current, {
-          type: "relay_resolved",
-          relayId: r.relayId,
-          tool: r.tool,
-          approved: false,
-        });
-      }
-      return current;
-    });
+
     const sessionId = state.sessionId;
     for (const r of autoApprovable) {
-      httpTransport.resolveRelay(sessionId, r.relayId, { approved: true });
+      resolvingRelaysRef.current.add(r.relayId);
+      httpTransport
+        .resolveRelay(sessionId, r.relayId, { approved: true })
+        .then(() => {
+          resolvingRelaysRef.current.delete(r.relayId);
+          setState((s) =>
+            reduceConversation(s, {
+              type: "relay_resolved",
+              relayId: r.relayId,
+              tool: r.tool,
+              approved: false,
+            }),
+          );
+        })
+        .catch(() => {
+          resolvingRelaysRef.current.delete(r.relayId);
+        });
     }
   }, [state.pendingRelays, state.grantedTools, state.sessionId]);
 

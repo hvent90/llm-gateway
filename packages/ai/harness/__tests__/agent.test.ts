@@ -641,6 +641,116 @@ describe("harness_start / harness_end lifecycle events", () => {
   });
 });
 
+describe("graceful exit on maxIterations exhaustion", () => {
+  test("makes a final summarizing call with no tools when maxIterations exhausted with pending tool calls", async () => {
+    const loopSchema = z.object({});
+    let invokeCount = 0;
+    const capturedParams: Array<{ tools?: unknown[]; messages: unknown[] }> = [];
+
+    const loopTool: ToolDefinition<typeof loopSchema, string> = {
+      name: "loop",
+      description: "Always loops.",
+      schema: loopSchema,
+      execute: async () => ({
+        context: "call again",
+        result: "looped",
+      }),
+    };
+
+    // Mock harness that tracks invocations:
+    // - Normal iterations: emits a tool_call
+    // - Summarizing iteration (no tools provided): emits text summary
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke(params) {
+        invokeCount++;
+        capturedParams.push({ tools: params.tools as unknown[], messages: [...params.messages] });
+
+        const hasTools = params.tools && params.tools.length > 0;
+        if (!hasTools) {
+          // Summarizing call — no tools offered, produce text
+          yield { type: "text", runId: "r1", id: `t-${invokeCount}`, content: "Here is my summary." };
+        } else {
+          // Normal call — emit a tool_call
+          yield {
+            type: "tool_call",
+            runId: "r1",
+            id: `tc-${invokeCount}`,
+            name: "loop",
+            input: {},
+          };
+        }
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness, maxIterations: 2 });
+
+    const stream = agentHarness.invoke({
+      model: "test-model",
+      messages: [{ role: "user", content: "Loop forever" }],
+      tools: [loopTool],
+      permissions: { allowlist: [{ tool: "loop" }] },
+    });
+
+    const iterator = stream[Symbol.asyncIterator]();
+    let next = await iterator.next();
+    while (!next.done) {
+      next = await iterator.next();
+    }
+
+    // Return value should be the summary text, not empty
+    expect(next.value).toBe("Here is my summary.");
+
+    // Should have made 3 invocations: 2 normal + 1 summarizing
+    expect(invokeCount).toBe(3);
+
+    // The last invocation should have received no tools
+    const lastParams = capturedParams[capturedParams.length - 1]!;
+    expect(lastParams.tools).toEqual([]);
+
+    // The last invocation's messages should contain a system message about summarizing
+    const lastMessages = lastParams.messages as Array<{ role: string; content: string }>;
+    const systemMsg = lastMessages.find(
+      (m) => m.role === "system" && m.content.includes("maximum number of tool call iterations"),
+    );
+    expect(systemMsg).toBeDefined();
+  });
+
+  test("does not make summarizing call when model finishes naturally before maxIterations", async () => {
+    let invokeCount = 0;
+
+    // Provider emits text (no tool calls) on first invocation — model finishes naturally
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        invokeCount++;
+        yield { type: "text", runId: "r1", id: "t1", content: "Done naturally" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness, maxIterations: 5 });
+
+    const stream = agentHarness.invoke({
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+    });
+
+    const iterator = stream[Symbol.asyncIterator]();
+    let next = await iterator.next();
+    while (!next.done) {
+      next = await iterator.next();
+    }
+
+    expect(next.value).toBe("Done naturally");
+    // Should have made exactly 1 invocation — no extra summarizing call
+    expect(invokeCount).toBe(1);
+  });
+});
+
 test("passes spawn from context through to tool execute, wrapping with tool call ID", async () => {
   let receivedSpawn: ((task: string) => Promise<string>) | undefined;
   const spawnCalls: Array<{ task: string; parentId: string }> = [];

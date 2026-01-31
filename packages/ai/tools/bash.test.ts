@@ -55,4 +55,19 @@ describe("bashTool", () => {
     expect(context).toContain("hello");
     expect(context).not.toContain("timed out");
   });
+
+  test("returns within bounded time for du pipeline that blocks on sort", async () => {
+    // du -ah / produces massive output, sort -rh buffers it all,
+    // head -n 10 waits for sort — stdout produces nothing until pipeline completes.
+    // Timeout must kill process group and resolve promptly.
+    const timeoutSec = 2;
+    const start = Date.now();
+    const { context } = await bashTool.execute!(
+      { command: "du -ah / 2>/dev/null | sort -rh | head -n 10", timeout: timeoutSec },
+      ctx,
+    );
+    const elapsed = (Date.now() - start) / 1000;
+    expect(context).toContain(`timed out after ${timeoutSec} seconds`);
+    expect(elapsed).toBeLessThan(timeoutSec + 2);
+  });
 });

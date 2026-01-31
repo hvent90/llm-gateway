@@ -48,8 +48,22 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
       const messages: Message[] = [...params.messages];
       let iterations = 0;
       let assistantText = "";
+      let lastHadToolCalls = false;
 
-      while (iterations++ < maxIterations) {
+      while (iterations++ < maxIterations + 1) {
+        const isSummarizing = iterations > maxIterations;
+
+        if (isSummarizing && !lastHadToolCalls) break;
+
+        if (isSummarizing) {
+          messages.push({
+            role: "system",
+            content:
+              "You have reached the maximum number of tool call iterations. " +
+              "Summarize your progress and provide your final response.",
+          });
+        }
+
         const toolCalls: ToolCall[] = [];
         assistantText = "";
 
@@ -57,6 +71,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         for await (const event of harness.invoke({
           ...params,
           messages,
+          tools: isSummarizing ? [] : params.tools,
           context: { parentId: myRunId },
         })) {
           // Pass through text, reasoning, and error events
@@ -243,6 +258,8 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           yield event;
           messages.push(message);
         }
+
+        lastHadToolCalls = toolCalls.length > 0;
 
         // Loop continues - will call LLM again with tool results
       }
