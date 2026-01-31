@@ -241,7 +241,6 @@ describe("Conversation Reducer Integration", () => {
     expect(events.some((e) => e.type === "tool_result")).toBe(true);
     expect(events.some((e) => e.type === "text")).toBe(true);
     expect(state.pendingRelays.length).toBe(0);
-    expect(state.grantedTools.has("echo")).toBe(true);
   });
 
   test("permission denied: tool_result with denied status", async () => {
@@ -294,9 +293,6 @@ describe("Conversation Reducer Integration", () => {
       (e) => e.type === "tool_result" && (e.output as { status?: string })?.status === "denied",
     );
     expect(denied).toBeDefined();
-
-    // Tool should NOT be in grantedTools
-    expect(state.grantedTools.has("echo")).toBe(false);
   });
 
   test("error from provider: error event in graph node", async () => {

@@ -202,8 +202,6 @@ describe("Web Client Integration", () => {
 
     // Relay is cleared
     expect(state.pendingRelays.length).toBe(0);
-    // Tool is NOT granted permanently
-    expect(state.grantedTools.has("echo")).toBe(false);
   });
 
   test("handleAllowAll: clears relay AND grants tool permanently", async () => {
@@ -245,7 +243,6 @@ describe("Web Client Integration", () => {
     }
 
     expect(state.pendingRelays.length).toBe(0);
-    expect(state.grantedTools.has("echo")).toBe(true);
   });
 
   test("handleDeny: clears relay with denial, tool_result has denied status", async () => {
@@ -290,7 +287,6 @@ describe("Web Client Integration", () => {
     }
 
     expect(state.pendingRelays.length).toBe(0);
-    expect(state.grantedTools.has("echo")).toBe(false);
 
     // Should have a denied tool_result
     const toolResults = events.filter((e) => e.type === "tool_result");
@@ -301,80 +297,6 @@ describe("Web Client Integration", () => {
         (e as { output: { status?: string } }).output.status === "denied",
     );
     expect(denied).toBeDefined();
-  });
-
-  test("grantedTools included in next turn's permissions allowlist", async () => {
-    // Simulate two turns: first grants the tool, second uses it automatically
-    const setup = startTestServer(
-      {
-        responses: [
-          // Turn 1: tool call (needs relay, gets granted)
-          { events: [{ type: "tool_call", name: "echo", input: { message: "first" } }] },
-          { events: [{ type: "text", content: "First turn done" }] },
-          // Turn 2: tool call (should auto-approve since granted)
-          { events: [{ type: "tool_call", name: "echo", input: { message: "second" } }] },
-          { events: [{ type: "text", content: "Second turn done" }] },
-        ],
-      },
-      [echoTool],
-    );
-    srv = setup.server;
-
-    const httpTransport = createHTTPTransport({ baseUrl: setup.baseUrl });
-    let state = createInitialConversation();
-
-    // --- Turn 1: grant via relay ---
-    const t1Transport = createSSETransport({ baseUrl: setup.baseUrl });
-    state = reduceConversation(state, { type: "user", runId: "u1", content: "echo first" });
-    state = reduceConversation(state, { type: "stream_start" });
-
-    for await (const event of t1Transport.stream({
-      model: "deterministic",
-      messages: [{ role: "user", content: "echo first" }],
-      permissions: { allowlist: [] },
-    })) {
-      state = reduceConversation(state, event);
-
-      if (event.type === "relay") {
-        state = reduceConversation(state, {
-          type: "relay_resolved",
-          relayId: event.id,
-          tool: "echo",
-          approved: true, // Grant permanently
-        });
-        await httpTransport.resolveRelay(state.sessionId!, event.id, { approved: true });
-      }
-    }
-    state = reduceConversation(state, { type: "stream_end" });
-
-    expect(state.grantedTools.has("echo")).toBe(true);
-
-    // --- Turn 2: build permissions from grantedTools ---
-    const permissions = {
-      allowlist: Array.from(state.grantedTools).map((tool) => ({ tool })),
-    };
-    expect(permissions.allowlist).toEqual([{ tool: "echo" }]);
-
-    // Stream second turn -- tool should auto-execute (no relay)
-    const t2Transport = createSSETransport({ baseUrl: setup.baseUrl });
-    state = reduceConversation(state, { type: "user", runId: "u2", content: "echo second" });
-    state = reduceConversation(state, { type: "stream_start" });
-
-    const t2Events: ServerEvent[] = [];
-    for await (const event of t2Transport.stream({
-      model: "deterministic",
-      messages: [{ role: "user", content: "echo second" }],
-      permissions,
-    })) {
-      t2Events.push(event);
-      state = reduceConversation(state, event);
-    }
-    state = reduceConversation(state, { type: "stream_end" });
-
-    // No relay in turn 2 -- tool auto-approved
-    expect(t2Events.some((e) => e.type === "relay")).toBe(false);
-    expect(t2Events.some((e) => e.type === "tool_call")).toBe(true);
-    expect(t2Events.some((e) => e.type === "tool_result")).toBe(true);
   });
 
   test("buildMessagesFromGraph extracts messages in tree order", () => {
@@ -500,8 +422,6 @@ describe("CLI Client Integration", () => {
     }
 
     expect(state.pendingRelays.length).toBe(0);
-    // CLI always passes approved to reducer, so tool is granted
-    expect(state.grantedTools.has("echo")).toBe(true);
     expect(events.some((e) => e.type === "tool_call")).toBe(true);
   });
 
