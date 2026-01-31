@@ -867,5 +867,108 @@ describe("AgentOrchestrator (deterministic)", () => {
       // TWO relays: one for each tool call (no auto-approval)
       expect(relayEvents.length).toBe(2);
     });
+
+    it("always:true on tool with derivePermission override uses tool-specific derivation", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "bash", input: { command: "ls -la" } }] },
+          { events: [{ type: "tool_call", name: "bash", input: { command: "ls /tmp" } }] },
+          { events: [{ type: "text", content: "Done" }] },
+        ],
+      });
+
+      const bashSchema = z.object({ command: z.string() });
+      const bashLikeTool: ToolDefinition<typeof bashSchema, string> = {
+        name: "bash",
+        description: "Run a command",
+        schema: bashSchema,
+        execute: async ({ command }) => ({
+          context: `ran: ${command}`,
+          result: command,
+        }),
+        derivePermission: (params) => {
+          const cmd = String(params.command ?? "");
+          const space = cmd.indexOf(" ");
+          return space === -1
+            ? { tool: "bash", params: { command: cmd } }
+            : { tool: "bash", params: { command: cmd.slice(0, space) + " **" } };
+        },
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Run ls twice" }],
+        tools: [bashLikeTool],
+        permissions,
+      });
+
+      const relayEvents: ConsumerHarnessEvent[] = [];
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          relayEvents.push(event);
+          orchestrator.resolveRelay(event.id, { approved: true, always: true });
+        }
+      }
+
+      // Only one relay — second "ls /tmp" matches "ls **" derived from first
+      expect(relayEvents.length).toBe(1);
+      // Permission should use tool-specific derivation, not tool-wide
+      expect(permissions.allowlist[0]).toEqual({
+        tool: "bash",
+        params: { command: "ls **" },
+      });
+    });
+
+    it("always:true on tool WITHOUT derivePermission defaults to tool-wide allow", async () => {
+      const provider = createDeterministicHarness({
+        responses: [
+          { events: [{ type: "tool_call", name: "agent", input: { task: "Write code" } }] },
+          { events: [{ type: "text", content: "Code written" }] },
+          { events: [{ type: "tool_call", name: "agent", input: { task: "Read docs" } }] },
+          { events: [{ type: "text", content: "Docs read" }] },
+          { events: [{ type: "text", content: "All done" }] },
+        ],
+      });
+
+      const agentSchema = z.object({ task: z.string() });
+      const agentLikeTool: ToolDefinition<typeof agentSchema, string> = {
+        name: "agent",
+        description: "Spawn subagent",
+        schema: agentSchema,
+        execute: async ({ task }, ctx) => {
+          const result = await ctx.spawn!(task);
+          return { context: result, result };
+        },
+        // No derivePermission — should default to { tool: "agent" }
+      };
+
+      const permissions = { allowlist: [] as ToolPermission[] };
+      const harness = createAgentHarness({ harness: provider });
+      const orchestrator = new AgentOrchestrator(harness);
+
+      orchestrator.spawn({
+        model: "deterministic",
+        messages: [{ role: "user", content: "Do two tasks" }],
+        tools: [agentLikeTool],
+        permissions,
+      });
+
+      const relayEvents: ConsumerHarnessEvent[] = [];
+      for await (const { event } of orchestrator.events()) {
+        if (event.type === "relay") {
+          relayEvents.push(event);
+          orchestrator.resolveRelay(event.id, { approved: true, always: true });
+        }
+      }
+
+      // Only one relay — second agent call auto-approved by tool-wide permission
+      expect(relayEvents.length).toBe(1);
+      // Default derivation: tool-wide, no params
+      expect(permissions.allowlist[0]).toEqual({ tool: "agent" });
+    });
   });
 });

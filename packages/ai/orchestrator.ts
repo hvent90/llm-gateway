@@ -4,12 +4,12 @@ import type {
   GeneratorInvokeParams,
   GeneratorHarnessModule,
   Permissions,
+  ToolDefinition,
 } from "./types";
 import { createGeneratorHarness } from "./harness/providers/zen";
 import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 import { createPassthrough } from "./primitives";
-import { derivePermission } from "./permissions";
 import { log } from "./logger";
 
 /**
@@ -20,6 +20,7 @@ export interface PendingRelay {
   tool: string;
   params: Record<string, unknown>;
   permissions?: Permissions;
+  tools?: ToolDefinition[];
   respond: (response: any) => void;
 }
 
@@ -81,6 +82,7 @@ export class AgentOrchestrator {
   private mux = new AgentMultiplexer<HarnessEvent>();
   private pendingRelays = new Map<string, PendingRelay>();
   private agentPermissions = new Map<string, Permissions>();
+  private agentTools = new Map<string, ToolDefinition[]>();
 
   /**
    * Create a new orchestrator.
@@ -101,6 +103,9 @@ export class AgentOrchestrator {
     log("I", agentId, "agent_spawn", `model=${params.model}`);
     if (params.permissions) {
       this.agentPermissions.set(agentId, params.permissions);
+    }
+    if (params.tools) {
+      this.agentTools.set(agentId, params.tools);
     }
     const stream = this.harness.invoke({
       ...params,
@@ -131,6 +136,9 @@ export class AgentOrchestrator {
     log("I", agentId, "subagent_spawn", `parent=${parentId}`);
     if (parentParams.permissions) {
       this.agentPermissions.set(agentId, parentParams.permissions);
+    }
+    if (parentParams.tools) {
+      this.agentTools.set(agentId, parentParams.tools);
     }
     const passthrough = createPassthrough<HarnessEvent>();
 
@@ -177,8 +185,9 @@ export class AgentOrchestrator {
         this.pendingRelays.delete(relayId);
       }
     }
-    // Clean up agent permissions
+    // Clean up agent permissions and tools
     this.agentPermissions.delete(agentId);
+    this.agentTools.delete(agentId);
   }
 
   /**
@@ -201,7 +210,10 @@ export class AgentOrchestrator {
 
     if (response.approved) {
       if (response.always && pending.permissions) {
-        const derived = derivePermission(pending.tool, pending.params);
+        const toolDef = pending.tools?.find((t) => t.name === pending.tool);
+        const derived = toolDef?.derivePermission
+          ? toolDef.derivePermission(pending.params)
+          : { tool: pending.tool };
         pending.permissions.allowlist ??= [];
         pending.permissions.allowlist.push(derived);
         log("I", pending.agentId, "perm_always", `relay=${relayId} tool=${pending.tool}`);
@@ -241,6 +253,7 @@ export class AgentOrchestrator {
           tool: event.tool,
           params: event.params,
           permissions: this.agentPermissions.get(agentId),
+          tools: this.agentTools.get(agentId),
           respond: event.respond,
         });
 
