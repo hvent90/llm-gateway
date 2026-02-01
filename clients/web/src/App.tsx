@@ -157,7 +157,7 @@ export default function App() {
       const sessionId = state.sessionId;
       await Promise.all(
         sameTypeRelays.map((r) =>
-          httpTransport.resolveRelay(sessionId, r.relayId, { approved: true }),
+          httpTransport.resolveRelay(sessionId, r.relayId, { approved: true, always: true }),
         ),
       );
     },

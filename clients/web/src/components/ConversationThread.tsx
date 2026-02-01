@@ -112,6 +112,7 @@ function CollapsiblePre({
 }
 
 function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool_call" }> }) {
+  const [expanded, setExpanded] = useState(false);
   const inputStr =
     typeof content.input === "string" ? content.input : JSON.stringify(content.input, null, 2);
   const outputStr =
@@ -120,14 +121,33 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
         ? content.output
         : JSON.stringify(content.output, null, 2)
       : null;
+  const paramsOneLine =
+    typeof content.input === "string"
+      ? content.input.replace(/\n/g, " ")
+      : JSON.stringify(content.input).replace(/,/g, ", ");
 
   return (
-    <div className="my-2 border border-neutral-800 p-2 text-sm">
-      <div className="font-mono text-yellow-500">{content.name}</div>
-      <CollapsiblePre label="params" text={inputStr} className="text-neutral-500" />
-      {outputStr && (
-        <div className="mt-1 border-t border-neutral-800 pt-1">
-          <CollapsiblePre label="result" text={outputStr} className="text-neutral-300" />
+    <div className="my-1 border border-neutral-800 text-sm">
+      <div
+        className="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-neutral-900"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="shrink-0 text-neutral-600">{expanded ? "▼" : "▶"}</span>
+        <span className="font-mono text-yellow-500">{content.name}</span>
+        {!expanded && (
+          <span className="min-w-0 flex-1 truncate font-mono text-neutral-500">
+            {paramsOneLine}
+          </span>
+        )}
+      </div>
+      {expanded && (
+        <div className="border-t border-neutral-800 px-2 py-1">
+          <CollapsiblePre label="params" text={inputStr} className="text-neutral-500" />
+          {outputStr && (
+            <div className="mt-1 border-t border-neutral-800 pt-1">
+              <CollapsiblePre label="result" text={outputStr} className="text-neutral-300" />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -213,14 +233,16 @@ function BranchView({
 
   if (branch.length === 0) return null;
 
+  const agentLabel = `agent-${branch[0]!.runId.replace(/-/g, "").slice(-7)}`;
+
   return (
-    <div className="mt-2 border-l border-neutral-700 pl-2 sm:pl-4">
+    <div className="mt-2 border-l-4 border-neutral-700 pl-2 sm:pl-4">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
         className="mb-1 text-xs text-neutral-600 hover:text-white"
       >
-        {expanded ? "▼ collapse" : "▶ expand"}
+        {expanded ? "▼" : "▶"} <span className="text-green-700">{agentLabel}</span>
       </button>
       <div
         className={expanded ? "" : "flex max-h-[100px] flex-col-reverse overflow-hidden"}
@@ -235,6 +257,15 @@ function BranchView({
           />
         </div>
       </div>
+      {expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="mt-1 text-xs text-neutral-600 hover:text-white"
+        >
+          ▲ collapse
+        </button>
+      )}
     </div>
   );
 }
@@ -275,37 +306,32 @@ function PermissionPromptInline({
   onAllowAll: () => void;
   onDeny: () => void;
 }) {
-  const paramsStr = JSON.stringify(request.params, null, 2);
+  const paramsOneLine = JSON.stringify(request.params).replace(/,/g, ", ");
 
   return (
-    <div className="my-4 border border-neutral-700 p-4">
-      <div className="mb-2 font-bold">permission required</div>
-      <div className="mb-2 text-sm text-neutral-400">
-        tool: <span className="font-mono text-white">{request.tool}</span>
-      </div>
-      <pre className="mb-4 overflow-x-auto border border-neutral-800 p-2 text-sm text-neutral-400">
-        {paramsStr}
-      </pre>
-      <div className="flex gap-2">
+    <div className="my-1 flex items-center gap-2 border border-neutral-700 px-2 py-1 text-sm">
+      <span className="font-mono text-yellow-500">{request.tool}</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-neutral-500">{paramsOneLine}</span>
+      <span className="flex shrink-0 gap-1">
         <button
           onClick={onAllow}
-          className="border border-neutral-600 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-900"
+          className="border border-neutral-600 px-2 py-0.5 text-xs text-white hover:bg-neutral-900"
         >
           allow
         </button>
         <button
           onClick={onAllowAll}
-          className="border border-neutral-600 px-3 py-1 text-sm font-medium text-white hover:bg-neutral-900"
+          className="border border-neutral-600 px-2 py-0.5 text-xs text-white hover:bg-neutral-900"
         >
-          always allow
+          always
         </button>
         <button
           onClick={onDeny}
-          className="border border-neutral-600 px-3 py-1 text-sm font-medium text-neutral-500 hover:bg-neutral-900 hover:text-white"
+          className="border border-neutral-600 px-2 py-0.5 text-xs text-neutral-500 hover:bg-neutral-900 hover:text-white"
         >
           deny
         </button>
-      </div>
+      </span>
     </div>
   );
 }

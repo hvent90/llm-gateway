@@ -101,17 +101,18 @@ export class AgentOrchestrator {
   spawn(params: GeneratorInvokeParams): string {
     const agentId = v7();
     log("I", agentId, "agent_spawn", `model=${params.model}`);
-    if (params.permissions) {
-      this.agentPermissions.set(agentId, params.permissions);
-    }
+    const permissions = params.permissions ?? { allowlist: [] };
+    this.agentPermissions.set(agentId, permissions);
     if (params.tools) {
       this.agentTools.set(agentId, params.tools);
     }
     const stream = this.harness.invoke({
       ...params,
+      permissions,
       context: {
         ...params.context,
-        spawn: (task: string, parentId: string) => this.spawnSubagent(task, parentId, params),
+        spawn: (task: string, parentId: string) =>
+          this.spawnSubagent(task, parentId, { ...params, permissions }),
       },
     });
     this.mux.register(agentId, stream);
@@ -134,9 +135,8 @@ export class AgentOrchestrator {
     const agentId = v7();
     const subStart = Date.now();
     log("I", agentId, "subagent_spawn", `parent=${parentId}`);
-    if (parentParams.permissions) {
-      this.agentPermissions.set(agentId, parentParams.permissions);
-    }
+    const permissions = parentParams.permissions ?? { allowlist: [] };
+    this.agentPermissions.set(agentId, permissions);
     if (parentParams.tools) {
       this.agentTools.set(agentId, parentParams.tools);
     }
@@ -216,7 +216,9 @@ export class AgentOrchestrator {
           : { tool: pending.tool };
         pending.permissions.allowlist ??= [];
         pending.permissions.allowlist.push(derived);
-        log("I", pending.agentId, "perm_always", `relay=${relayId} tool=${pending.tool}`);
+        log("I", pending.agentId, "perm_always", `relay=${relayId} tool=${pending.tool} derived=${JSON.stringify(derived)} allowlist=${JSON.stringify(pending.permissions.allowlist)}`);
+      } else {
+        log("I", pending.agentId, "perm_once", `relay=${relayId} always=${response.always} hasPerms=${!!pending.permissions} hasTools=${!!pending.tools}`);
       }
       pending.respond({ approved: true });
     } else {
