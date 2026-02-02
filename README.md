@@ -8,15 +8,15 @@ The components are composable — pick what you need:
 
 ### Stream an LLM call
 
-A provider harness ([`anthropic`](packages/ai/harness/providers/anthropic.ts), [`openai`](packages/ai/harness/providers/openai.ts), or [`openrouter`](packages/ai/harness/providers/openrouter.ts)) is all you need:
+A provider harness ([`zen`](packages/ai/harness/providers/zen.ts), [`anthropic`](packages/ai/harness/providers/anthropic.ts), [`openai`](packages/ai/harness/providers/openai.ts), or [`openrouter`](packages/ai/harness/providers/openrouter.ts)) is all you need:
 
 ```typescript
-import { createGeneratorHarness } from "./packages/ai/harness/providers/anthropic";
+import { createGeneratorHarness } from "./packages/ai/harness/providers/zen";
 
 const harness = createGeneratorHarness();
 
 for await (const event of harness.invoke({
-  model: "claude-sonnet-4-5-20250929",
+  model: "glm-4.7",
   messages: [{ role: "user", content: "What is the sum of the first 10 primes?" }],
 })) {
   if (event.type === "reasoning") process.stderr.write(event.content); // thinking
@@ -30,13 +30,13 @@ Wrap a provider with [`createAgentHarness`](packages/ai/harness/agent.ts) to get
 
 ```typescript
 import { createAgentHarness } from "./packages/ai/harness/agent";
-import { createGeneratorHarness } from "./packages/ai/harness/providers/anthropic";
+import { createGeneratorHarness } from "./packages/ai/harness/providers/zen";
 import { bashTool } from "./packages/ai/tools";
 
 const agent = createAgentHarness({ harness: createGeneratorHarness() });
 
 for await (const event of agent.invoke({
-  model: "claude-sonnet-4-5-20250929",
+  model: "glm-4.7",
   messages: [{ role: "user", content: "List the files in this directory" }],
   tools: [bashTool],
   permissions: { allowlist: [{ tool: "bash" }] },
@@ -55,7 +55,7 @@ The [`AgentOrchestrator`](packages/ai/orchestrator.ts) manages concurrent agents
 ```typescript
 import { AgentOrchestrator } from "./packages/ai/orchestrator";
 import { createAgentHarness } from "./packages/ai/harness/agent";
-import { createGeneratorHarness } from "./packages/ai/harness/providers/anthropic";
+import { createGeneratorHarness } from "./packages/ai/harness/providers/zen";
 import { bashTool, agentTool } from "./packages/ai/tools";
 
 const orchestrator = new AgentOrchestrator(
@@ -63,7 +63,7 @@ const orchestrator = new AgentOrchestrator(
 );
 
 orchestrator.spawn({
-  model: "claude-sonnet-4-5-20250929",
+  model: "glm-4.7",
   messages: [{ role: "user", content: "Refactor the auth module" }],
   tools: [bashTool, agentTool],
 });
@@ -93,7 +93,7 @@ const http = createHTTPTransport({ baseUrl: "/api" });
 
 let state = createInitialConversation();
 
-for await (const event of sse.stream({ model: "claude-sonnet-4-5-20250929", messages })) {
+for await (const event of sse.stream({ model: "glm-4.7", messages })) {
   state = reduceConversation(state, event);
   const view = projectThread(state.graph);
   render(view); // ViewNode[] — your UI takes it from here
@@ -112,13 +112,13 @@ The [`server`](server/index.ts) wires together the orchestrator, harnesses, and 
 ```typescript
 import { createApp } from "./server";
 import { createAgentHarness } from "./packages/ai/harness/agent";
-import { createGeneratorHarness } from "./packages/ai/harness/providers/anthropic";
+import { createGeneratorHarness } from "./packages/ai/harness/providers/zen";
 import { bashTool, agentTool } from "./packages/ai/tools";
 
 const app = createApp({
   harness: createAgentHarness({ harness: createGeneratorHarness() }),
   tools: [bashTool, agentTool],
-  defaultModel: "claude-sonnet-4-5-20250929",
+  defaultModel: "glm-4.7",
 });
 
 export default { port: 4000, fetch: app.fetch };
@@ -129,7 +129,7 @@ export default { port: 4000, fetch: app.fetch };
 The built-in `createAgentHarness` handles tools, permissions, and subagents. But the pattern is simple enough to write yourself — it's a while loop around a provider harness:
 
 ```typescript
-import { createGeneratorHarness } from "./packages/ai/harness/providers/anthropic";
+import { createGeneratorHarness } from "./packages/ai/harness/providers/zen";
 import type { GeneratorHarnessModule, GeneratorInvokeParams, HarnessEvent, Message } from "./packages/ai/types";
 
 function createMyCoolAgent(provider: GeneratorHarnessModule): GeneratorHarnessModule {
@@ -177,14 +177,14 @@ interface GeneratorHarnessModule {
 
 A `HarnessEvent` is a discriminated union: `text`, `reasoning`, `tool_call`, `tool_result`, `error`, `usage`, and a few lifecycle/control variants. Every event carries a `runId` (which run produced it) and an optional `parentId` (which run spawned this one).
 
-That's the entire interface. A provider harness for Anthropic or OpenRouter implements this by making one API call and yielding streamed deltas. It knows nothing about tool execution, looping, or permissions.
+That's the entire interface. A provider harness for Zen, Anthropic, or OpenRouter implements this by making one API call and yielding streamed deltas. It knows nothing about tool execution, looping, or permissions.
 
 ### Harnesses Compose
 
 A harness that takes another harness as input and returns the same interface is how behavior layers on:
 
 ```typescript
-createAgentHarness({ harness: createAnthropicHarness() })
+createAgentHarness({ harness: createGeneratorHarness() })
 // input: GeneratorHarnessModule
 // output: GeneratorHarnessModule
 ```
@@ -253,7 +253,7 @@ Tool execution is gated by glob-pattern matching (picomatch). An `allowlist` aut
 
 ## What's Included
 
-**Provider harnesses:** Anthropic, OpenAI, OpenRouter — each a thin streaming adapter behind the same `GeneratorHarnessModule` interface.
+**Provider harnesses:** Zen, Anthropic, OpenAI, OpenRouter — each a thin streaming adapter behind the same `GeneratorHarnessModule` interface.
 
 **Agent harness:** Wraps any provider harness with an agentic tool-calling loop, permission checks, and subagent spawning.
 
