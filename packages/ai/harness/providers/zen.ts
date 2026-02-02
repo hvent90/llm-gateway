@@ -1,6 +1,7 @@
 import { v7 } from "uuid";
 import { toJSONSchema } from "zod";
 import type {
+  ContentPart,
   GeneratorHarnessModule,
   GeneratorInvokeParams,
   HarnessEvent,
@@ -11,13 +12,33 @@ import { log } from "../../logger";
 
 const BASE_URL = "https://opencode.ai/zen/v1";
 
+function contentPartsToZen(parts: ContentPart[]) {
+  return parts.map((part) => {
+    if (part.type === "text") {
+      return { type: "text" as const, text: part.text };
+    } else if (part.type === "image") {
+      return {
+        type: "image_url" as const,
+        image_url: { url: `data:${part.mediaType};base64,${part.data}` },
+      };
+    } else {
+      // document (PDF) — fallback since Chat Completions doesn't support PDF natively
+      return { type: "text" as const, text: "[PDF document]" };
+    }
+  });
+}
+
 /**
  * Convert our Message[] format to OpenAI Chat Completions format.
  */
 function convertMessages(messages: Message[]) {
   return messages.map((msg) => {
     if (msg.role === "tool") {
-      return { role: "tool" as const, tool_call_id: msg.tool_call_id, content: msg.content };
+      return {
+        role: "tool" as const,
+        tool_call_id: msg.tool_call_id,
+        content: Array.isArray(msg.content) ? JSON.stringify(msg.content) : msg.content,
+      };
     }
     if (msg.role === "assistant" && msg.tool_calls?.length) {
       return {
@@ -33,6 +54,9 @@ function convertMessages(messages: Message[]) {
           },
         })),
       };
+    }
+    if (msg.role === "user" && Array.isArray(msg.content)) {
+      return { role: "user" as const, content: contentPartsToZen(msg.content) };
     }
     return { role: msg.role, content: msg.content };
   });

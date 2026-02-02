@@ -7,6 +7,7 @@ import type {
 import { v7 } from "uuid";
 import { toJSONSchema } from "zod";
 import type {
+  ContentPart,
   GeneratorHarnessModule,
   GeneratorInvokeParams,
   HarnessEvent,
@@ -23,6 +24,25 @@ function supportsThinking(model: string): boolean {
   );
 }
 
+function contentPartsToAnthropic(parts: ContentPart[]): ContentBlockParam[] {
+  return parts.map((part) => {
+    if (part.type === "text") {
+      return { type: "text" as const, text: part.text };
+    } else if (part.type === "image") {
+      return {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: part.mediaType, data: part.data },
+      } as ContentBlockParam;
+    } else {
+      // document (PDF)
+      return {
+        type: "document" as const,
+        source: { type: "base64" as const, media_type: part.mediaType, data: part.data },
+      } as ContentBlockParam;
+    }
+  });
+}
+
 function convertMessages(messages: Message[]): MessageParam[] {
   const result: MessageParam[] = [];
 
@@ -33,10 +53,11 @@ function convertMessages(messages: Message[]): MessageParam[] {
     }
 
     if (msg.role === "user") {
-      result.push({
-        role: "user",
-        content: msg.content,
-      });
+      if (Array.isArray(msg.content)) {
+        result.push({ role: "user", content: contentPartsToAnthropic(msg.content) });
+      } else {
+        result.push({ role: "user", content: msg.content });
+      }
     } else if (msg.role === "assistant") {
       const contentBlocks: ContentBlockParam[] = [];
 
@@ -71,7 +92,7 @@ function convertMessages(messages: Message[]): MessageParam[] {
       const toolResult: ToolResultBlockParam = {
         type: "tool_result",
         tool_use_id: msg.tool_call_id,
-        content: msg.content,
+        content: Array.isArray(msg.content) ? contentPartsToAnthropic(msg.content) : msg.content,
       };
 
       // Check if the last message is a user message with tool results

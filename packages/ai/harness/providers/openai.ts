@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { v7 } from "uuid";
 import { toJSONSchema } from "zod";
 import type {
+  ContentPart,
   GeneratorHarnessModule,
   GeneratorInvokeParams,
   HarnessEvent,
@@ -10,6 +11,25 @@ import type {
 } from "../../types";
 
 type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
+
+function contentPartsToOpenAI(parts: ContentPart[]) {
+  return parts.map((part) => {
+    if (part.type === "text") {
+      return { type: "input_text" as const, text: part.text };
+    } else if (part.type === "image") {
+      return {
+        type: "input_image" as const,
+        image_url: `data:${part.mediaType};base64,${part.data}`,
+      };
+    } else {
+      // document (PDF)
+      return {
+        type: "input_file" as const,
+        file_data: `data:${part.mediaType};base64,${part.data}`,
+      };
+    }
+  });
+}
 
 /**
  * Convert our Message[] format to OpenAI Responses API input format.
@@ -31,11 +51,19 @@ function convertMessages(messages: Message[]): {
       // Accumulate system messages into instructions
       instructions = instructions ? `${instructions}\n\n${msg.content}` : msg.content;
     } else if (msg.role === "user") {
-      input.push({
-        role: "user",
-        content: msg.content,
-        type: "message",
-      });
+      if (Array.isArray(msg.content)) {
+        input.push({
+          role: "user",
+          content: contentPartsToOpenAI(msg.content),
+          type: "message",
+        } as ResponseInputItem);
+      } else {
+        input.push({
+          role: "user",
+          content: msg.content,
+          type: "message",
+        });
+      }
     } else if (msg.role === "assistant") {
       // If the assistant has tool_calls, we need to add those as separate items
       if (msg.tool_calls && msg.tool_calls.length > 0) {
@@ -70,7 +98,7 @@ function convertMessages(messages: Message[]): {
       input.push({
         type: "function_call_output",
         call_id: msg.tool_call_id,
-        output: msg.content,
+        output: Array.isArray(msg.content) ? JSON.stringify(msg.content) : msg.content,
       });
     }
   }
