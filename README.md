@@ -6,7 +6,8 @@ An agent framework built on three simple ideas: a harness yields events, harness
 
 The components are composable — pick what you need:
 
-### Stream an LLM call
+<details>
+<summary><strong>Stream an LLM call</strong></summary>
 
 A provider harness ([`zen`](packages/ai/harness/providers/zen.ts), [`anthropic`](packages/ai/harness/providers/anthropic.ts), [`openai`](packages/ai/harness/providers/openai.ts), or [`openrouter`](packages/ai/harness/providers/openrouter.ts)) is all you need:
 
@@ -24,7 +25,10 @@ for await (const event of harness.invoke({
 }
 ```
 
-### Single agent with tool calling
+</details>
+
+<details>
+<summary><strong>Single agent with tool calling</strong></summary>
 
 Wrap a provider with [`createAgentHarness`](packages/ai/harness/agent.ts) to get an agentic loop. Add your own tools or use the built-in [`bash`](packages/ai/tools/bash.ts) and [`agent`](packages/ai/tools/agent.ts):
 
@@ -48,7 +52,10 @@ for await (const event of agent.invoke({
 }
 ```
 
-### Multi-agent with human-in-the-loop approval
+</details>
+
+<details>
+<summary><strong>Multi-agent with human-in-the-loop approval</strong></summary>
 
 The [`AgentOrchestrator`](packages/ai/orchestrator.ts) manages concurrent agents and pauses them on [`permission`](packages/ai/permissions.ts) relays until a human decides:
 
@@ -77,7 +84,10 @@ for await (const { agentId, event } of orchestrator.events()) {
 }
 ```
 
-### Client-side conversation rendering
+</details>
+
+<details>
+<summary><strong>Client-side conversation rendering</strong></summary>
 
 Use the [`graph`](packages/ai/client/graph.ts) and [`projection`](packages/ai/client/projections/thread.ts) without any server dependency — just feed events from whatever source you have:
 
@@ -105,7 +115,10 @@ for (const relay of state.pendingRelays) {
 }
 ```
 
-### Full product stack
+</details>
+
+<details>
+<summary><strong>Full product stack</strong></summary>
 
 The [`server`](server/index.ts) wires together the orchestrator, harnesses, and tools behind SSE endpoints. The [`client library`](packages/ai/client/) consumes them:
 
@@ -162,7 +175,10 @@ while (true) {
 }
 ```
 
-### Write your own agent
+</details>
+
+<details>
+<summary><strong>Write your own agent</strong></summary>
 
 The built-in `createAgentHarness` handles tools, permissions, and subagents. But the pattern is simple enough to write yourself — it's a while loop around a provider harness:
 
@@ -201,9 +217,12 @@ function createMyCoolAgent(provider: GeneratorHarnessModule): GeneratorHarnessMo
 const agent = createMyCoolAgent(createGeneratorHarness());
 ```
 
+</details>
+
 ## Concepts
 
-### The Harness
+<details>
+<summary><strong>The Harness</strong></summary>
 
 The fundamental primitive is the harness — an async generator that takes a prompt and yields events:
 
@@ -217,7 +236,10 @@ A `HarnessEvent` is a discriminated union: `text`, `reasoning`, `tool_call`, `to
 
 That's the entire interface. A provider harness for Zen, Anthropic, or OpenRouter implements this by making one API call and yielding streamed deltas. It knows nothing about tool execution, looping, or permissions.
 
-### Harnesses Compose
+</details>
+
+<details>
+<summary><strong>Harnesses Compose</strong></summary>
 
 A harness that takes another harness as input and returns the same interface is how behavior layers on:
 
@@ -231,7 +253,10 @@ The agent harness wraps a provider harness and adds an agentic loop — call the
 
 This is the composition pattern. Any harness can wrap any other harness. A logging harness, a caching harness, a rate-limiting harness — they all take a `GeneratorHarnessModule` and return one.
 
-### Events Form a Graph
+</details>
+
+<details>
+<summary><strong>Events Form a Graph</strong></summary>
 
 Because every event carries `runId` and `parentId`, a flat stream of events naturally forms a directed acyclic graph without any explicit graph construction. Sequential events within a run are connected by their shared `runId`. When an agent spawns a subagent, the child's events carry the parent's `runId` as `parentId` — creating a cross-run edge.
 
@@ -250,7 +275,10 @@ graph = reduceEvent(graph, event);
 
 Each event becomes a `Node`. Edges are derived from `runId` continuations and `parentId` links. The graph is the source of truth for the entire conversation.
 
-### The Graph Can Be Projected
+</details>
+
+<details>
+<summary><strong>The Graph Can Be Projected</strong></summary>
 
 A graph of fine-grained nodes (every text delta, every tool call, every lifecycle event) isn't what you render. You project it:
 
@@ -268,7 +296,10 @@ const view: ViewNode[] = projectThread(graph);
 
 Different projections can walk the same graph differently. `projectThread` gives you a threaded chat view. A timeline projection, a token-usage summary, or a tool-call audit log would all read the same graph.
 
-### Primitives
+</details>
+
+<details>
+<summary><strong>Primitives</strong></summary>
 
 Everything above is built on a few async coordination primitives:
 
@@ -276,9 +307,14 @@ Everything above is built on a few async coordination primitives:
 - **Deferred** — externalizes a promise's `resolve`/`reject`. Used for permission relays: the agent yields a relay event carrying `resolve`, then `await`s the promise until a human decides.
 - **Multiplexer** — races multiple agents' async iterables via `Promise.race()` with a wakeup mechanism that prevents deadlocks when subagents are spawned mid-race.
 
-### Permissions
+</details>
+
+<details>
+<summary><strong>Permissions</strong></summary>
 
 Tool execution is gated by glob-pattern matching (picomatch). An `allowlist` auto-approves, `allowOnce` is consumed on match, and `deny` vetoes immediately. Unmatched calls pause the agent and yield a `relay` event to the consumer for human decision. If approved with "always", the tool's `derivePermission()` generates a reusable pattern rule.
+
+</details>
 
 ## Stack
 
