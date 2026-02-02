@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { FileTime } from "./tools/lib/filetime";
 
 // Core types for LLM Gateway harness interface
 
@@ -25,6 +26,7 @@ export interface ToolExecutionResult<T = unknown> {
 export interface ToolContext {
   parentId?: string; // The tool_call ID that spawned this execution context
   spawn?: (task: string) => Promise<string>;
+  fileTime?: FileTime;
 }
 
 // Tool definition (passed at request level)
@@ -117,6 +119,7 @@ export interface GeneratorInvokeParams {
   context?: {
     parentId?: string;
     spawn?: (task: string, parentId: string) => Promise<string>;
+    fileTime?: FileTime;
   };
   permissions?: Permissions;
 }

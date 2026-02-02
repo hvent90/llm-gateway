@@ -13,7 +13,11 @@ describe("ContentPart types", () => {
   });
 
   test("DocumentContentPart is assignable to ContentPart", () => {
-    const part: ContentPart = { type: "document", mediaType: "application/pdf", data: "base64data" };
+    const part: ContentPart = {
+      type: "document",
+      mediaType: "application/pdf",
+      data: "base64data",
+    };
     expect(part.type).toBe("document");
   });
 

@@ -237,6 +237,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
               spawn: params.context?.spawn
                 ? (task: string) => params.context!.spawn!(task, nsId(tc.id))
                 : undefined,
+              fileTime: params.context?.fileTime,
             };
             try {
               const { context: toolContext, result: toolResult } = await toolDef.execute!(
