@@ -2,12 +2,18 @@ import type { z } from "zod";
 
 // Core types for LLM Gateway harness interface
 
+// Content part types for multipart messages (images, documents)
+export type TextContentPart = { type: "text"; text: string };
+export type ImageContentPart = { type: "image"; mediaType: string; data: string };
+export type DocumentContentPart = { type: "document"; mediaType: string; data: string };
+export type ContentPart = TextContentPart | ImageContentPart | DocumentContentPart;
+
 // Message structure (follows OpenAI's pattern with dedicated tool role)
 export type Message =
   | { role: "system"; content: string }
-  | { role: "user"; content: string }
+  | { role: "user"; content: string | ContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
-  | { role: "tool"; tool_call_id: string; content: string };
+  | { role: "tool"; tool_call_id: string; content: string | ContentPart[] };
 
 // Result from executing a tool
 export interface ToolExecutionResult<T = unknown> {
