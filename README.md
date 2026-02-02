@@ -124,6 +124,44 @@ const app = createApp({
 export default { port: 4000, fetch: app.fetch };
 ```
 
+Then talk to it from a CLI:
+
+```typescript
+import { createSSETransport, createHTTPTransport } from "./packages/ai/client";
+
+const sse = createSSETransport({ baseUrl: "http://localhost:4000" });
+const http = createHTTPTransport({ baseUrl: "http://localhost:4000" });
+
+const prompt = (q: string) => {
+  process.stdout.write(q);
+  for await (const line of console) return line;
+};
+
+let sessionId: string | null = null;
+
+while (true) {
+  const input = await prompt("\n> ");
+  if (!input) continue;
+
+  for await (const event of sse.stream({
+    model: "glm-4.7",
+    messages: [{ role: "user", content: input }],
+  })) {
+    if (event.type === "connected") sessionId = event.sessionId;
+    if (event.type === "reasoning") process.stderr.write(event.content);
+    if (event.type === "text") process.stdout.write(event.content);
+    if (event.type === "tool_call") console.log(`\n[${event.name}]`);
+    if (event.type === "relay" && sessionId) {
+      const answer = await prompt(`Allow ${event.tool}? [y/n/always] `);
+      const always = answer === "always";
+      const approved = always || answer === "y";
+      await http.resolveRelay(sessionId, event.id, { approved, always });
+    }
+  }
+  console.log();
+}
+```
+
 ### Write your own agent
 
 The built-in `createAgentHarness` handles tools, permissions, and subagents. But the pattern is simple enough to write yourself — it's a while loop around a provider harness:
