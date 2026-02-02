@@ -163,7 +163,9 @@ function createMyCoolAgent(provider: GeneratorHarnessModule): GeneratorHarnessMo
 const agent = createMyCoolAgent(createGeneratorHarness());
 ```
 
-## The Harness
+## Concepts
+
+### The Harness
 
 The fundamental primitive is the harness — an async generator that takes a prompt and yields events:
 
@@ -177,7 +179,7 @@ A `HarnessEvent` is a discriminated union: `text`, `reasoning`, `tool_call`, `to
 
 That's the entire interface. A provider harness for Anthropic or OpenRouter implements this by making one API call and yielding streamed deltas. It knows nothing about tool execution, looping, or permissions.
 
-## Harnesses Compose
+### Harnesses Compose
 
 A harness that takes another harness as input and returns the same interface is how behavior layers on:
 
@@ -191,7 +193,7 @@ The agent harness wraps a provider harness and adds an agentic loop — call the
 
 This is the composition pattern. Any harness can wrap any other harness. A logging harness, a caching harness, a rate-limiting harness — they all take a `GeneratorHarnessModule` and return one.
 
-## Events Form a Graph
+### Events Form a Graph
 
 Because every event carries `runId` and `parentId`, a flat stream of events naturally forms a directed acyclic graph without any explicit graph construction. Sequential events within a run are connected by their shared `runId`. When an agent spawns a subagent, the child's events carry the parent's `runId` as `parentId` — creating a cross-run edge.
 
@@ -210,7 +212,7 @@ graph = reduceEvent(graph, event);
 
 Each event becomes a `Node`. Edges are derived from `runId` continuations and `parentId` links. The graph is the source of truth for the entire conversation.
 
-## The Graph Can Be Projected
+### The Graph Can Be Projected
 
 A graph of fine-grained nodes (every text delta, every tool call, every lifecycle event) isn't what you render. You project it:
 
@@ -228,7 +230,7 @@ const view: ViewNode[] = projectThread(graph);
 
 Different projections can walk the same graph differently. `projectThread` gives you a threaded chat view. A timeline projection, a token-usage summary, or a tool-call audit log would all read the same graph.
 
-## Primitives
+### Primitives
 
 Everything above is built on a few async coordination primitives:
 
@@ -236,7 +238,7 @@ Everything above is built on a few async coordination primitives:
 - **Deferred** — externalizes a promise's `resolve`/`reject`. Used for permission relays: the agent yields a relay event carrying `resolve`, then `await`s the promise until a human decides.
 - **Multiplexer** — races multiple agents' async iterables via `Promise.race()` with a wakeup mechanism that prevents deadlocks when subagents are spawned mid-race.
 
-## Permissions
+### Permissions
 
 Tool execution is gated by glob-pattern matching (picomatch). An `allowlist` auto-approves, `allowOnce` is consumed on match, and `deny` vetoes immediately. Unmatched calls pause the agent and yield a `relay` event to the consumer for human decision. If approved with "always", the tool's `derivePermission()` generates a reusable pattern rule.
 
