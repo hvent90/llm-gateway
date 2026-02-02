@@ -216,9 +216,19 @@ export class AgentOrchestrator {
           : { tool: pending.tool };
         pending.permissions.allowlist ??= [];
         pending.permissions.allowlist.push(derived);
-        log("I", pending.agentId, "perm_always", `relay=${relayId} tool=${pending.tool} derived=${JSON.stringify(derived)} allowlist=${JSON.stringify(pending.permissions.allowlist)}`);
+        log(
+          "I",
+          pending.agentId,
+          "perm_always",
+          `relay=${relayId} tool=${pending.tool} derived=${JSON.stringify(derived)} allowlist=${JSON.stringify(pending.permissions.allowlist)}`,
+        );
       } else {
-        log("I", pending.agentId, "perm_once", `relay=${relayId} always=${response.always} hasPerms=${!!pending.permissions} hasTools=${!!pending.tools}`);
+        log(
+          "I",
+          pending.agentId,
+          "perm_once",
+          `relay=${relayId} always=${response.always} hasPerms=${!!pending.permissions} hasTools=${!!pending.tools}`,
+        );
       }
       pending.respond({ approved: true });
     } else {
