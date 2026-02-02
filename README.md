@@ -1,36 +1,92 @@
 # LLM Gateway
 
-Opinionated work-in-progress implementation of an agent harness and the gateway to deliver LLM requests.
+An agent framework built on three simple ideas: a harness yields events, harnesses compose, and the events form a graph.
 
-## Core Principles
+## The Harness
 
-- Simple agent `while-loop` that streams events
-- An individual agent's events can be paused (ex: human-in-the-loop, tool call permissions) without affecting any other streams
-- Events naturally form a directed acyclic graph
-- Expose "power-user"-esque interactions for managing a conversation:
-  - the user can interact with any message (including subagents before, during, and after their execution) 
-  - any message can be branched any amount of times
-  - multi-select messages and tool calls to:
-    - remove from context window
-    - compact via separate LLM call
-    - edit
-    - ...future requirements
-- Subagents can be resurrected or queried even after they are finished
-- The message history should go through a reducer with middlewares, the result being the final context given to the agent.
+The fundamental primitive is the harness — an async generator that takes a prompt and yields events:
 
-## Why is this being made
+```typescript
+interface GeneratorHarnessModule {
+  invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent>;
+}
+```
 
-I want an agent framework that I am intimately familiar with, is made of simple primitives that can be extended easily, and fills current UX gaps with how a user interacts with an agent.
+A `HarnessEvent` is a discriminated union: `text`, `reasoning`, `tool_call`, `tool_result`, `error`, `usage`, and a few lifecycle/control variants. Every event carries a `runId` (which run produced it) and an optional `parentId` (which run spawned this one).
 
-If all goes well, this is what will happen:
-- it will be the agent framework that powers all future LLM requirements across all of my projects
-- I will build a set of core interaction principles and then ship PRs to the popular agent frameworks that introduce those principles to their UX.
+That's the entire interface. A provider harness for Anthropic or OpenRouter implements this by making one API call and yielding streamed deltas. It knows nothing about tool execution, looping, or permissions.
+
+## Harnesses Compose
+
+A harness that takes another harness as input and returns the same interface is how behavior layers on:
+
+```typescript
+createAgentHarness({ harness: createAnthropicHarness() })
+// input: GeneratorHarnessModule
+// output: GeneratorHarnessModule
+```
+
+The agent harness wraps a provider harness and adds an agentic loop — call the inner harness, check permissions on any tool calls, execute approved tools, feed results back as messages, call the inner harness again. From the outside it's still just `invoke() → AsyncIterable<HarnessEvent>`. The consumer doesn't know or care how many LLM round-trips happened inside.
+
+This is the composition pattern. Any harness can wrap any other harness. A logging harness, a caching harness, a rate-limiting harness — they all take a `GeneratorHarnessModule` and return one.
+
+## Events Form a Graph
+
+Because every event carries `runId` and `parentId`, a flat stream of events naturally forms a directed acyclic graph without any explicit graph construction. Sequential events within a run are connected by their shared `runId`. When an agent spawns a subagent, the child's events carry the parent's `runId` as `parentId` — creating a cross-run edge.
+
+```
+user message
+  └─ agent run (text, tool_call, tool_result, text, ...)
+       └─ subagent run (text, tool_call, tool_result, text, ...)
+       └─ subagent run (text, ...)
+```
+
+On the client, events are reduced into an immutable `Graph` via a pure function:
+
+```typescript
+graph = reduceEvent(graph, event);
+```
+
+Each event becomes a `Node`. Edges are derived from `runId` continuations and `parentId` links. The graph is the source of truth for the entire conversation.
+
+## The Graph Can Be Projected
+
+A graph of fine-grained nodes (every text delta, every tool call, every lifecycle event) isn't what you render. You project it:
+
+```typescript
+const view: ViewNode[] = projectThread(graph);
+```
+
+`projectThread` walks the graph and produces a flat list of `ViewNode`s where:
+
+- Consecutive text deltas are merged into single blocks
+- Tool results are attached back to their tool calls
+- Subagent runs become nested `branches` arrays on the parent's tool call
+- Structural nodes (harness lifecycle, usage) are filtered out
+- Streaming status is derived from which lifecycle nodes exist
+
+Different projections can walk the same graph differently. `projectThread` gives you a threaded chat view. A timeline projection, a token-usage summary, or a tool-call audit log would all read the same graph.
+
+## Primitives
+
+Everything above is built on a few async coordination primitives:
+
+- **Passthrough** — bridges push-based event production with pull-based async iteration. Used to pipe subagent events into the multiplexer.
+- **Deferred** — externalizes a promise's `resolve`/`reject`. Used for permission relays: the agent yields a relay event carrying `resolve`, then `await`s the promise until a human decides.
+- **Multiplexer** — races multiple agents' async iterables via `Promise.race()` with a wakeup mechanism that prevents deadlocks when subagents are spawned mid-race.
+
+## Permissions
+
+Tool execution is gated by glob-pattern matching (picomatch). An `allowlist` auto-approves, `allowOnce` is consumed on match, and `deny` vetoes immediately. Unmatched calls pause the agent and yield a `relay` event to the consumer for human decision. If approved with "always", the tool's `derivePermission()` generates a reusable pattern rule.
 
 ## Stack
 
-- **Bun** - Runtime & package manager
-- **Hono** - Web framework
-- **Effect** - Error handling & retries
+| Tool | Purpose |
+|------|---------|
+| Bun | Runtime & package manager |
+| Hono | Web framework |
+| Effect | Error handling & retries |
+| oxfmt | Formatting |
 
 ## Setup
 
