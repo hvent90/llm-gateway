@@ -12,8 +12,8 @@ describe("parsePatch", () => {
 
     const ops = parsePatch(input);
     expect(ops).toHaveLength(1);
-    expect(ops[0].type).toBe("add");
-    expect(ops[0].path).toBe("src/new.ts");
+    expect(ops[0]!.type).toBe("add");
+    expect(ops[0]!.path).toBe("src/new.ts");
     expect((ops[0] as any).content).toBe("export const x = 1;\nexport const y = 2;\n");
   });
 
@@ -24,8 +24,8 @@ describe("parsePatch", () => {
 
     const ops = parsePatch(input);
     expect(ops).toHaveLength(1);
-    expect(ops[0].type).toBe("delete");
-    expect(ops[0].path).toBe("src/old.ts");
+    expect(ops[0]!.type).toBe("delete");
+    expect(ops[0]!.path).toBe("src/old.ts");
   });
 
   test("parses UpdateFile with single hunk", () => {
@@ -41,11 +41,11 @@ describe("parsePatch", () => {
 
     const ops = parsePatch(input);
     expect(ops).toHaveLength(1);
-    expect(ops[0].type).toBe("update");
-    const update = ops[0] as Extract<PatchOp, { type: "update" }>;
+    expect(ops[0]!.type).toBe("update");
+    const update = ops[0]! as Extract<PatchOp, { type: "update" }>;
     expect(update.hunks).toHaveLength(1);
-    expect(update.hunks[0].contextLines).toContain('import { Hono } from "hono"');
-    expect(update.hunks[0].changes).toHaveLength(2);
+    expect(update.hunks[0]!.contextLines).toContain('import { Hono } from "hono"');
+    expect(update.hunks[0]!.changes).toHaveLength(2);
   });
 
   test("parses UpdateFile with multiple hunks", () => {
@@ -82,9 +82,9 @@ describe("parsePatch", () => {
 
     const ops = parsePatch(input);
     expect(ops).toHaveLength(3);
-    expect(ops[0].type).toBe("add");
-    expect(ops[1].type).toBe("delete");
-    expect(ops[2].type).toBe("update");
+    expect(ops[0]!.type).toBe("add");
+    expect(ops[1]!.type).toBe("delete");
+    expect(ops[2]!.type).toBe("update");
   });
 
   test("rejects patch without Begin marker", () => {
@@ -131,8 +131,8 @@ describe("parsePatch", () => {
 *** End Patch`;
 
     const ops = parsePatch(input);
-    const update = ops[0] as Extract<PatchOp, { type: "update" }>;
-    expect(update.hunks[0].header).toBe("class MyClass");
+    const update = ops[0]! as Extract<PatchOp, { type: "update" }>;
+    expect(update.hunks[0]!.header).toBe("class MyClass");
   });
 
   test("parses lines with only whitespace prefix as context", () => {
@@ -147,8 +147,8 @@ describe("parsePatch", () => {
 *** End Patch`;
 
     const ops = parsePatch(input);
-    const update = ops[0] as Extract<PatchOp, { type: "update" }>;
-    const hunk = update.hunks[0];
+    const update = ops[0]! as Extract<PatchOp, { type: "update" }>;
+    const hunk = update.hunks[0]!;
     // 3 context lines + 2 changes
     expect(hunk.contextLines.length + hunk.changes.length).toBe(5);
   });

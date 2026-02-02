@@ -26,14 +26,14 @@ const HUNK_START = "@@";
 export function parsePatch(input: string): PatchOp[] {
   const rawLines = input.split("\n");
   // Trim trailing empty lines
-  while (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === "") {
+  while (rawLines.length > 0 && rawLines[rawLines.length - 1]!.trim() === "") {
     rawLines.pop();
   }
 
-  if (rawLines.length === 0 || rawLines[0].trim() !== BEGIN) {
+  if (rawLines.length === 0 || rawLines[0]!.trim() !== BEGIN) {
     throw new Error(`Patch must start with "${BEGIN}"`);
   }
-  if (rawLines[rawLines.length - 1].trim() !== END) {
+  if (rawLines[rawLines.length - 1]!.trim() !== END) {
     throw new Error(`Patch must end with "${END}"`);
   }
 
@@ -42,14 +42,14 @@ export function parsePatch(input: string): PatchOp[] {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    const line = lines[i]!;
 
     if (line.startsWith(ADD_FILE)) {
       const path = line.slice(ADD_FILE.length).trim();
       i++;
       const contentLines: string[] = [];
-      while (i < lines.length && lines[i].startsWith("+")) {
-        contentLines.push(lines[i].slice(1));
+      while (i < lines.length && lines[i]!.startsWith("+")) {
+        contentLines.push(lines[i]!.slice(1));
         i++;
       }
       if (contentLines.length === 0) {
@@ -65,18 +65,18 @@ export function parsePatch(input: string): PatchOp[] {
       i++;
       const hunks: Hunk[] = [];
 
-      while (i < lines.length && lines[i].startsWith(HUNK_START)) {
-        const headerLine = lines[i];
+      while (i < lines.length && lines[i]!.startsWith(HUNK_START)) {
+        const headerLine = lines[i]!;
         const header = headerLine.length > 2 ? headerLine.slice(2).trim() : undefined;
         i++;
 
         const hunkLines: HunkLine[] = [];
         while (
           i < lines.length &&
-          !lines[i].startsWith(HUNK_START) &&
-          !lines[i].startsWith("*** ")
+          !lines[i]!.startsWith(HUNK_START) &&
+          !lines[i]!.startsWith("*** ")
         ) {
-          const l = lines[i];
+          const l = lines[i]!;
           if (l.startsWith("+")) {
             hunkLines.push({ type: "add", content: l.slice(1) });
           } else if (l.startsWith("-")) {

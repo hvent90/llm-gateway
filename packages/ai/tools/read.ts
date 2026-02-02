@@ -113,7 +113,7 @@ export const readTool: ToolDefinition<typeof schema, ContentPart[]> = {
     const outputLines: string[] = [];
 
     for (let i = 0; i < sliced.length; i++) {
-      let line = sliced[i];
+      let line = sliced[i]!;
       if (line.length > MAX_LINE_LENGTH) {
         line = line.slice(0, MAX_LINE_LENGTH) + " [truncated]";
       }

@@ -22,7 +22,7 @@ function extractPaths(patchText: string): string[] {
   const paths: string[] = [];
   for (const line of patchText.split("\n")) {
     const match = line.match(/^\*\*\* (?:Add|Delete|Update) File: (.+)$/);
-    if (match) paths.push(match[1].trim());
+    if (match) paths.push(match[1]!.trim());
   }
   return paths;
 }
@@ -32,13 +32,14 @@ function extractPaths(patchText: string): string[] {
  */
 function commonDir(paths: string[]): string {
   if (paths.length === 0) return "**";
-  if (paths.length === 1) return dirname(paths[0]) + "/**";
+  if (paths.length === 1) return dirname(paths[0]!) + "/**";
 
   const dirs = paths.map((p) => dirname(p).split("/"));
+  const first = dirs[0]!;
   const common: string[] = [];
-  for (let i = 0; i < dirs[0].length; i++) {
-    if (dirs.every((d) => d[i] === dirs[0][i])) {
-      common.push(dirs[0][i]);
+  for (let i = 0; i < first.length; i++) {
+    if (dirs.every((d) => d[i] === first[i])) {
+      common.push(first[i]!);
     } else {
       break;
     }

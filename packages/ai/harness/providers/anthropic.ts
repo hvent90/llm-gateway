@@ -3,6 +3,9 @@ import type {
   MessageParam,
   ContentBlockParam,
   ToolResultBlockParam,
+  TextBlockParam,
+  ImageBlockParam,
+  DocumentBlockParam,
 } from "@anthropic-ai/sdk/resources/messages";
 import { v7 } from "uuid";
 import { toJSONSchema } from "zod";
@@ -24,21 +27,23 @@ function supportsThinking(model: string): boolean {
   );
 }
 
-function contentPartsToAnthropic(parts: ContentPart[]): ContentBlockParam[] {
-  return parts.map((part) => {
+type ToolResultContent = TextBlockParam | ImageBlockParam | DocumentBlockParam;
+
+function contentPartsToAnthropic(parts: ContentPart[]): ToolResultContent[] {
+  return parts.map((part): ToolResultContent => {
     if (part.type === "text") {
       return { type: "text" as const, text: part.text };
     } else if (part.type === "image") {
       return {
         type: "image" as const,
         source: { type: "base64" as const, media_type: part.mediaType, data: part.data },
-      } as ContentBlockParam;
+      } as ImageBlockParam;
     } else {
       // document (PDF)
       return {
         type: "document" as const,
         source: { type: "base64" as const, media_type: part.mediaType, data: part.data },
-      } as ContentBlockParam;
+      } as DocumentBlockParam;
     }
   });
 }
@@ -54,7 +59,7 @@ function convertMessages(messages: Message[]): MessageParam[] {
 
     if (msg.role === "user") {
       if (Array.isArray(msg.content)) {
-        result.push({ role: "user", content: contentPartsToAnthropic(msg.content) });
+        result.push({ role: "user", content: contentPartsToAnthropic(msg.content) as ContentBlockParam[] });
       } else {
         result.push({ role: "user", content: msg.content });
       }
