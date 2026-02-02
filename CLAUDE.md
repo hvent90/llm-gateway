@@ -22,9 +22,14 @@ Hono server proxying LLM requests through a harness interface.
 
 ## Project Structure
 
-- `src/` - Core server & routing
-- `src/harnesses/` - Provider implementations
-- Tests are co-located with source files (e.g., `foo.test.ts` next to `foo.ts`)
+- `server/` - Hono HTTP server & SSE endpoints
+- `packages/ai/` - Core AI orchestration package
+  - `harness/` - Provider & agent harnesses
+  - `tools/` - Tool implementations
+  - `client/` - Client-side libraries
+  - `primitives/` - Utility structures
+- `clients/` - Web and CLI clients
+- Tests live in `__tests__/` folders co-located within each module directory (e.g., `tools/__tests__/read.test.ts` for `tools/read.ts`)
 
 ## Commands
 
