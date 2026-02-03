@@ -2,6 +2,7 @@ import { OpenRouter, tool } from "@openrouter/sdk";
 import type { z } from "zod";
 import { v7 } from "uuid";
 import type {
+  ContentPart,
   GeneratorHarnessModule,
   GeneratorInvokeParams,
   HarnessEvent,
@@ -9,6 +10,25 @@ import type {
   ToolDefinition,
   ToolCall,
 } from "../../types";
+
+function contentPartsToOpenRouter(parts: ContentPart[]) {
+  return parts.map((part) => {
+    if (part.type === "text") {
+      return { type: "input_text" as const, text: part.text };
+    } else if (part.type === "image") {
+      return {
+        type: "input_image" as const,
+        image_url: `data:${part.mediaType};base64,${part.data}`,
+      };
+    } else {
+      // document (PDF)
+      return {
+        type: "input_file" as const,
+        file_data: `data:${part.mediaType};base64,${part.data}`,
+      };
+    }
+  });
+}
 
 /**
  * Convert our Message[] format to OpenRouter SDK input format.
@@ -25,8 +45,11 @@ function convertMessages(messages: Message[]) {
       return {
         type: "function_call_output" as const,
         callId: msg.tool_call_id,
-        output: msg.content,
+        output: Array.isArray(msg.content) ? JSON.stringify(msg.content) : msg.content,
       };
+    }
+    if (msg.role === "user" && Array.isArray(msg.content)) {
+      return { role: "user" as const, content: contentPartsToOpenRouter(msg.content) };
     }
     return msg;
   });

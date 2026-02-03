@@ -6,7 +6,7 @@ import {
   type ConsumerHarnessEvent,
   type ResolveResponse,
 } from "../packages/ai/orchestrator.ts";
-import { agentTool, bashTool } from "../packages/ai/tools";
+import { agentTool, bashTool, readTool, patchTool } from "../packages/ai/tools";
 import { createAgentHarness } from "../packages/ai/harness/agent.ts";
 import { createGeneratorHarness } from "../packages/ai/harness/providers/zen.ts";
 import type {
@@ -50,7 +50,7 @@ function serializeEvent(event: ConsumerHarnessEvent, agentId: string): object {
 
 export function createApp(config?: AppConfig): Hono {
   const app = new Hono();
-  const tools = config?.tools ?? [agentTool, bashTool];
+  const tools = config?.tools ?? [agentTool, bashTool, readTool, patchTool];
   const harness = config?.harness ?? createAgentHarness({ harness: createGeneratorHarness() });
   const defaultModel = config?.defaultModel;
 

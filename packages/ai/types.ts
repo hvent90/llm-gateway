@@ -1,13 +1,20 @@
 import type { z } from "zod";
+import type { FileTime } from "./tools/lib/filetime";
 
 // Core types for LLM Gateway harness interface
+
+// Content part types for multipart messages (images, documents)
+export type TextContentPart = { type: "text"; text: string };
+export type ImageContentPart = { type: "image"; mediaType: string; data: string };
+export type DocumentContentPart = { type: "document"; mediaType: string; data: string };
+export type ContentPart = TextContentPart | ImageContentPart | DocumentContentPart;
 
 // Message structure (follows OpenAI's pattern with dedicated tool role)
 export type Message =
   | { role: "system"; content: string }
-  | { role: "user"; content: string }
+  | { role: "user"; content: string | ContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
-  | { role: "tool"; tool_call_id: string; content: string };
+  | { role: "tool"; tool_call_id: string; content: string | ContentPart[] };
 
 // Result from executing a tool
 export interface ToolExecutionResult<T = unknown> {
@@ -19,6 +26,7 @@ export interface ToolExecutionResult<T = unknown> {
 export interface ToolContext {
   parentId?: string; // The tool_call ID that spawned this execution context
   spawn?: (task: string) => Promise<string>;
+  fileTime?: FileTime;
 }
 
 // Tool definition (passed at request level)
@@ -111,6 +119,7 @@ export interface GeneratorInvokeParams {
   context?: {
     parentId?: string;
     spawn?: (task: string, parentId: string) => Promise<string>;
+    fileTime?: FileTime;
   };
   permissions?: Permissions;
 }

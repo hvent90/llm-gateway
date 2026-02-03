@@ -3,10 +3,14 @@ import type {
   MessageParam,
   ContentBlockParam,
   ToolResultBlockParam,
+  TextBlockParam,
+  ImageBlockParam,
+  DocumentBlockParam,
 } from "@anthropic-ai/sdk/resources/messages";
 import { v7 } from "uuid";
 import { toJSONSchema } from "zod";
 import type {
+  ContentPart,
   GeneratorHarnessModule,
   GeneratorInvokeParams,
   HarnessEvent,
@@ -23,6 +27,27 @@ function supportsThinking(model: string): boolean {
   );
 }
 
+type ToolResultContent = TextBlockParam | ImageBlockParam | DocumentBlockParam;
+
+function contentPartsToAnthropic(parts: ContentPart[]): ToolResultContent[] {
+  return parts.map((part): ToolResultContent => {
+    if (part.type === "text") {
+      return { type: "text" as const, text: part.text };
+    } else if (part.type === "image") {
+      return {
+        type: "image" as const,
+        source: { type: "base64" as const, media_type: part.mediaType, data: part.data },
+      } as ImageBlockParam;
+    } else {
+      // document (PDF)
+      return {
+        type: "document" as const,
+        source: { type: "base64" as const, media_type: part.mediaType, data: part.data },
+      } as DocumentBlockParam;
+    }
+  });
+}
+
 function convertMessages(messages: Message[]): MessageParam[] {
   const result: MessageParam[] = [];
 
@@ -33,10 +58,11 @@ function convertMessages(messages: Message[]): MessageParam[] {
     }
 
     if (msg.role === "user") {
-      result.push({
-        role: "user",
-        content: msg.content,
-      });
+      if (Array.isArray(msg.content)) {
+        result.push({ role: "user", content: contentPartsToAnthropic(msg.content) as ContentBlockParam[] });
+      } else {
+        result.push({ role: "user", content: msg.content });
+      }
     } else if (msg.role === "assistant") {
       const contentBlocks: ContentBlockParam[] = [];
 
@@ -71,7 +97,7 @@ function convertMessages(messages: Message[]): MessageParam[] {
       const toolResult: ToolResultBlockParam = {
         type: "tool_result",
         tool_use_id: msg.tool_call_id,
-        content: msg.content,
+        content: Array.isArray(msg.content) ? contentPartsToAnthropic(msg.content) : msg.content,
       };
 
       // Check if the last message is a user message with tool results

@@ -11,6 +11,7 @@ import { createAgentHarness } from "./harness/agent";
 import { AgentMultiplexer, type MultiplexedEvent } from "./multiplexer";
 import { createPassthrough } from "./primitives";
 import { log } from "./logger";
+import { FileTime } from "./tools/lib/filetime";
 
 /**
  * A pending relay request, stashed until resolved.
@@ -83,6 +84,7 @@ export class AgentOrchestrator {
   private pendingRelays = new Map<string, PendingRelay>();
   private agentPermissions = new Map<string, Permissions>();
   private agentTools = new Map<string, ToolDefinition[]>();
+  private fileTime = new FileTime();
 
   /**
    * Create a new orchestrator.
@@ -111,6 +113,7 @@ export class AgentOrchestrator {
       permissions,
       context: {
         ...params.context,
+        fileTime: this.fileTime,
         spawn: (task: string, parentId: string) =>
           this.spawnSubagent(task, parentId, { ...params, permissions }),
       },
@@ -152,6 +155,7 @@ export class AgentOrchestrator {
       permissions: parentParams.permissions,
       context: {
         parentId,
+        fileTime: this.fileTime,
         spawn: (t: string, pid: string) => this.spawnSubagent(t, pid, parentParams),
       },
     });
