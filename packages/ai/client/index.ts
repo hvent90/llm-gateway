@@ -5,9 +5,10 @@ export type { GraphEvent } from "./graph";
 // Conversation layer
 export { createInitialConversation, reduceConversation } from "./conversation";
 
-// Projection
+// Projections
 export { projectThread } from "./projections/thread";
 export type { ViewNode, ViewContent } from "./projections/thread";
+export { projectMessages } from "./projections/messages";
 
 // Types
 export type { Graph, Node } from "./types";

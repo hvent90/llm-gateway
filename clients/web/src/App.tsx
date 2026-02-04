@@ -5,7 +5,7 @@ import type { PermissionHandlers } from "./components/ConversationThread";
 import {
   createSSETransport,
   createHTTPTransport,
-  projectThread,
+  projectMessages,
 } from "../../../packages/ai/client";
 import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
 import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
@@ -40,25 +40,6 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
-
-  function buildMessagesFromGraph(graph: ConversationState["graph"]): Message[] {
-    const messages: Message[] = [];
-    const viewNodes = projectThread(graph);
-    const collect = (nodes: typeof viewNodes) => {
-      for (const node of nodes) {
-        if (node.content.kind === "text") {
-          messages.push({ role: node.role, content: node.content.text });
-        } else if (node.content.kind === "user") {
-          messages.push({ role: node.role, content: node.content.content });
-        }
-        for (const branch of node.branches) {
-          collect(branch);
-        }
-      }
-    };
-    collect(viewNodes);
-    return messages;
-  }
 
   const sendChat = useCallback(
     async (model: string, messages: Message[], permissions: Permissions) => {
@@ -117,8 +98,7 @@ export default function App() {
       const userId = nextUserId();
       setState((s) => reduceConversation(s, { type: "user", runId: userId, content }));
       const current = stateRef.current;
-      const messages = buildMessagesFromGraph(current.graph);
-      messages.push({ role: "user", content });
+      const messages = [...projectMessages(current.graph), { role: "user" as const, content }];
       await sendChat(selectedModel, messages, {});
     },
     [sendChat, selectedModel],

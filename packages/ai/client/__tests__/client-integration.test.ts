@@ -7,88 +7,16 @@
  */
 import { describe, test, expect, afterEach } from "bun:test";
 import type { Server } from "bun";
-import type { Message } from "../../types";
 import type { ServerEvent } from "../server-event";
-import type { ConversationState } from "../conversation";
 import {
   createSSETransport,
   createHTTPTransport,
   createInitialConversation,
   reduceConversation,
   projectThread,
+  projectMessages,
 } from "../index";
 import { collectAllViewNodes, startTestServer, echoTool } from "./helpers";
-
-// --- Web client helper functions (using projectThread instead of old selectors) ---
-
-function buildMessagesFromGraph(graph: ConversationState["graph"]): Message[] {
-  const messages: Message[] = [];
-  const viewNodes = projectThread(graph);
-  const all = collectAllViewNodes(viewNodes);
-
-  for (const n of all) {
-    if (n.content.kind === "text") {
-      messages.push({ role: "assistant", content: n.content.text });
-    } else if (n.content.kind === "user" && typeof n.content.content === "string") {
-      messages.push({ role: "user", content: n.content.content });
-    }
-  }
-  return messages;
-}
-
-// --- CLI client helper functions (using projectThread instead of old selectors) ---
-
-function formatOutput(output: unknown): string {
-  const str = typeof output === "string" ? output : JSON.stringify(output, null, 2);
-  const lines = str.split("\n");
-  if (lines.length <= 6) return str;
-  return lines.slice(0, 5).join("\n") + `\n... (${lines.length - 5} more lines)`;
-}
-
-function buildApiMessages(
-  graph: ConversationState["graph"],
-): Array<{ role: string; content: string }> {
-  const messages: Array<{ role: string; content: string }> = [];
-  const viewNodes = projectThread(graph);
-  const all = collectAllViewNodes(viewNodes);
-
-  // Group consecutive ViewNodes by runId to build per-run messages
-  let currentRunId: string | null = null;
-  let currentRole: string | null = null;
-  let parts: string[] = [];
-
-  function flush() {
-    if (parts.length > 0 && currentRole) {
-      messages.push({ role: currentRole, content: parts.join("\n") });
-    }
-    parts = [];
-  }
-
-  for (const n of all) {
-    if (n.runId !== currentRunId) {
-      flush();
-      currentRunId = n.runId;
-      currentRole = n.role;
-    }
-
-    if (n.content.kind === "text") {
-      parts.push(n.content.text);
-    } else if (n.content.kind === "user" && typeof n.content.content === "string") {
-      parts.push(n.content.content);
-    } else if (n.content.kind === "tool_call") {
-      const inputStr =
-        typeof n.content.input === "string" ? n.content.input : JSON.stringify(n.content.input);
-      parts.push(`[tool] ${n.content.name}: ${inputStr}`);
-      if (n.content.output !== undefined) {
-        parts.push(`   -> ${formatOutput(n.content.output)}`);
-      }
-    }
-    // Skip reasoning blocks -- not sent to API
-  }
-  flush();
-
-  return messages;
-}
 
 // --- Shared test state ---
 
@@ -120,8 +48,7 @@ describe("Web Client Integration", () => {
     state = reduceConversation(state, { type: "user", runId: userId, content: "Hello from web" });
 
     // 2. Build messages from graph
-    const messages = buildMessagesFromGraph(state.graph);
-    messages.push({ role: "user", content: "Hello from web" });
+    const messages = [...projectMessages(state.graph), { role: "user" as const, content: "Hello from web" }];
 
     // 3. Stream
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
@@ -299,7 +226,7 @@ describe("Web Client Integration", () => {
     expect(denied).toBeDefined();
   });
 
-  test("buildMessagesFromGraph extracts messages in tree order", () => {
+  test("projectMessages extracts messages in tree order", () => {
     let state = createInitialConversation();
 
     // Build a simple user -> assistant graph manually
@@ -317,12 +244,12 @@ describe("Web Client Integration", () => {
       content: "The answer is 4",
     } as ServerEvent);
 
-    const messages = buildMessagesFromGraph(state.graph);
+    const messages = projectMessages(state.graph);
 
     // User message should come first since it's a root with no children that are roots
     expect(messages.length).toBe(2);
     expect(messages[0]).toEqual({ role: "user", content: "What is 2+2?" });
-    expect(messages[1]).toEqual({ role: "assistant", content: "The answer is 4" });
+    expect(messages[1]).toEqual({ role: "assistant", content: "The answer is 4", tool_calls: undefined });
   });
 });
 
@@ -331,7 +258,7 @@ describe("Web Client Integration", () => {
 // =====================================================================
 
 describe("CLI Client Integration", () => {
-  test("buildApiMessages includes tool history as [tool] format", () => {
+  test("projectMessages includes tool calls and results", () => {
     let state = createInitialConversation();
 
     // Build graph with user message and assistant with tool call + result
@@ -367,17 +294,24 @@ describe("CLI Client Integration", () => {
       output: "file.txt",
     } as ServerEvent);
 
-    const apiMessages = buildApiMessages(state.graph);
+    const apiMessages = projectMessages(state.graph);
 
     // User message
     expect(apiMessages[0]).toEqual({ role: "user", content: "Run ls" });
 
-    // Assistant message should include tool call in [tool] format
-    const assistantMsg = apiMessages[1]!;
-    expect(assistantMsg.role).toBe("assistant");
-    expect(assistantMsg.content).toContain("[tool] bash:");
-    expect(assistantMsg.content).toContain("file.txt");
-    expect(assistantMsg.content).toContain("Sure, running ls");
+    // Assistant message with tool_calls
+    expect(apiMessages[1]).toEqual({
+      role: "assistant",
+      content: "Sure, running ls",
+      tool_calls: [{ id: "tc-1", name: "bash", arguments: { command: "ls" } }],
+    });
+
+    // Tool result message
+    expect(apiMessages[2]).toEqual({
+      role: "tool",
+      tool_call_id: "tc-1",
+      content: "file.txt",
+    });
   });
 
   test("relay approval flow: y/yes resolves relay and updates state", async () => {
