@@ -1,3 +1,4 @@
+import type { ContentPart } from "../../types";
 import type { Graph, Node } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -8,7 +9,7 @@ export type ViewContent =
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string }
   | { kind: "tool_call"; name: string; input: unknown; output?: unknown }
-  | { kind: "user"; text: string }
+  | { kind: "user"; content: string | ContentPart[] }
   | { kind: "error"; message: string }
   | { kind: "pending" }
   | {
@@ -81,7 +82,7 @@ function nodeToViewContent(node: Node): ViewContent | null {
     case "tool_call":
       return { kind: "tool_call", name: node.name, input: node.input };
     case "user":
-      return { kind: "user", text: node.content };
+      return { kind: "user", content: node.content };
     case "error":
       return { kind: "error", message: node.message };
     case "relay":

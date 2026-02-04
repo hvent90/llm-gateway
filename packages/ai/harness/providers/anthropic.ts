@@ -59,7 +59,10 @@ function convertMessages(messages: Message[]): MessageParam[] {
 
     if (msg.role === "user") {
       if (Array.isArray(msg.content)) {
-        result.push({ role: "user", content: contentPartsToAnthropic(msg.content) as ContentBlockParam[] });
+        result.push({
+          role: "user",
+          content: contentPartsToAnthropic(msg.content) as ContentBlockParam[],
+        });
       } else {
         result.push({ role: "user", content: msg.content });
       }

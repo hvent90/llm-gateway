@@ -1,3 +1,4 @@
+import type { ContentPart } from "../types";
 import type { ServerEvent } from "./server-event";
 import type { Node, Graph } from "./types";
 
@@ -8,7 +9,7 @@ export interface UserEvent {
   type: "user";
   runId: string;
   parentId?: string;
-  content: string;
+  content: string | ContentPart[];
 }
 
 /**

@@ -46,8 +46,10 @@ export default function App() {
     const viewNodes = projectThread(graph);
     const collect = (nodes: typeof viewNodes) => {
       for (const node of nodes) {
-        if (node.content.kind === "text" || node.content.kind === "user") {
+        if (node.content.kind === "text") {
           messages.push({ role: node.role, content: node.content.text });
+        } else if (node.content.kind === "user") {
+          messages.push({ role: node.role, content: node.content.content });
         }
         for (const branch of node.branches) {
           collect(branch);

@@ -1,5 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import type { Server } from "bun";
+import type { Message } from "../../types";
 import type { ServerEvent } from "../server-event";
 import type { ConversationState } from "../conversation";
 import {
@@ -17,7 +18,7 @@ import { collectAllViewNodes, startTestServer, echoTool, renderableKinds } from 
  */
 async function streamToState(
   baseUrl: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: Message[],
   permissions?: { allowlist?: Array<{ tool: string }> },
 ): Promise<{ state: ConversationState; events: ServerEvent[] }> {
   const transport = createSSETransport({ baseUrl });
@@ -353,7 +354,8 @@ describe("Conversation Reducer Integration", () => {
 
     // Find user ViewNode
     const userNode = all.find(
-      (n) => n.role === "user" && n.content.kind === "user" && n.content.text === "Hello assistant",
+      (n) =>
+        n.role === "user" && n.content.kind === "user" && n.content.content === "Hello assistant",
     );
     expect(userNode).toBeDefined();
 

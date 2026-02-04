@@ -1,3 +1,4 @@
+import type { ContentPart } from "../types";
 import type { ServerEvent } from "./server-event";
 import type { Graph } from "./types";
 import { createGraph, reduceEvent, type GraphEvent } from "./graph";
@@ -21,7 +22,7 @@ type UserEvent = {
   type: "user";
   runId: string;
   parentId?: string;
-  content: string;
+  content: string | ContentPart[];
   timestamp?: number;
 };
 

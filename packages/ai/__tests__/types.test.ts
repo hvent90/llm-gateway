@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import type { ContentPart, Message, InvokeParams, GeneratorInvokeParams } from "../types";
+import type { StreamRequest } from "../client/server-event";
 
 describe("ContentPart types", () => {
   test("TextContentPart is assignable to ContentPart", () => {
@@ -44,6 +45,46 @@ describe("ContentPart types", () => {
   test("user message still accepts plain string content", () => {
     const msg: Message = { role: "user", content: "hello" };
     expect(msg.content).toBe("hello");
+  });
+});
+
+describe("StreamRequest types", () => {
+  test("StreamRequest accepts Message[] with ContentPart[] user content", () => {
+    const req: StreamRequest = {
+      model: "test-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Look at this" },
+            { type: "image", mediaType: "image/png", data: "base64data" },
+          ],
+        },
+      ],
+    };
+    expect(req.messages.length).toBe(1);
+    const msg = req.messages[0]!;
+    expect(msg.role).toBe("user");
+    expect(Array.isArray(msg.content)).toBe(true);
+  });
+
+  test("StreamRequest accepts Message[] with plain string user content", () => {
+    const req: StreamRequest = {
+      model: "test-model",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    expect(req.messages[0]!.content).toBe("hello");
+  });
+
+  test("StreamRequest accepts Message[] with system messages", () => {
+    const req: StreamRequest = {
+      model: "test-model",
+      messages: [
+        { role: "system", content: "You are helpful" },
+        { role: "user", content: "Hi" },
+      ],
+    };
+    expect(req.messages.length).toBe(2);
   });
 });
 

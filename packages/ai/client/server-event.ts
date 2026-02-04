@@ -1,4 +1,4 @@
-import type { Permissions } from "../types";
+import type { Message, Permissions } from "../types";
 
 /**
  * Events the server sends to clients over any transport.
@@ -65,6 +65,6 @@ export type ServerEvent =
  */
 export interface StreamRequest {
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: Message[];
   permissions?: Permissions;
 }

@@ -37,7 +37,16 @@ function groupNodes(nodes: ViewNode[]): MessageGroup[] {
 function ContentView({ content }: { content: ViewContent }) {
   switch (content.kind) {
     case "user":
-      return <div className="mt-1 whitespace-pre-wrap">{content.text}</div>;
+      return (
+        <div className="mt-1 whitespace-pre-wrap">
+          {typeof content.content === "string"
+            ? content.content
+            : content.content
+                .filter((p) => p.type === "text")
+                .map((p) => (p as { type: "text"; text: string }).text)
+                .join("\n")}
+        </div>
+      );
     case "text":
       return (
         <div className="mt-1 streamdown">

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { createGraph, reduceEvent } from "../graph";
 import type { Graph } from "../types";
+import type { ContentPart } from "../../types";
 
 describe("Graph Reducer", () => {
   test("createGraph returns empty graph", () => {
@@ -228,6 +229,26 @@ describe("Graph Reducer", () => {
     expect(g.nodes.size).toBe(1);
     const node = g.nodes.get("u1:user")!;
     expect(node.kind).toBe("user");
+  });
+
+  test("user event with ContentPart[] creates user node with structured content", () => {
+    const parts: ContentPart[] = [
+      { type: "text", text: "Look at this image" },
+      { type: "image", mediaType: "image/png", data: "base64data" },
+    ];
+    let g = createGraph();
+    g = reduceEvent(g, {
+      type: "user",
+      runId: "u1",
+      content: parts,
+    } as any);
+    expect(g.nodes.size).toBe(1);
+    const node = g.nodes.get("u1:user")!;
+    expect(node.kind).toBe("user");
+    if (node.kind === "user") {
+      expect(Array.isArray(node.content)).toBe(true);
+      expect(node.content).toEqual(parts);
+    }
   });
 
   test("relay event creates relay node", () => {

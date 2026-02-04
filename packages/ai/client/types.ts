@@ -1,3 +1,5 @@
+import type { ContentPart } from "../types";
+
 /**
  * A node in the conversation graph.
  * Each node represents one content block — not one "message" or one "run."
@@ -7,7 +9,7 @@ export type Node = { id: string; runId: string } & (
   | { kind: "reasoning"; content: string }
   | { kind: "tool_call"; name: string; input: unknown }
   | { kind: "tool_result"; name: string; output: unknown }
-  | { kind: "user"; content: string }
+  | { kind: "user"; content: string | ContentPart[] }
   | { kind: "harness_start"; agentId: string }
   | { kind: "harness_end"; agentId: string }
   | { kind: "error"; message: string }

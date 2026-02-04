@@ -7,6 +7,7 @@
  */
 import { describe, test, expect, afterEach } from "bun:test";
 import type { Server } from "bun";
+import type { Message } from "../../types";
 import type { ServerEvent } from "../server-event";
 import type { ConversationState } from "../conversation";
 import {
@@ -20,18 +21,16 @@ import { collectAllViewNodes, startTestServer, echoTool } from "./helpers";
 
 // --- Web client helper functions (using projectThread instead of old selectors) ---
 
-function buildMessagesFromGraph(
-  graph: ConversationState["graph"],
-): Array<{ role: string; content: string }> {
-  const messages: Array<{ role: string; content: string }> = [];
+function buildMessagesFromGraph(graph: ConversationState["graph"]): Message[] {
+  const messages: Message[] = [];
   const viewNodes = projectThread(graph);
   const all = collectAllViewNodes(viewNodes);
 
   for (const n of all) {
     if (n.content.kind === "text") {
-      messages.push({ role: n.role, content: n.content.text });
-    } else if (n.content.kind === "user") {
-      messages.push({ role: n.role, content: n.content.text });
+      messages.push({ role: "assistant", content: n.content.text });
+    } else if (n.content.kind === "user" && typeof n.content.content === "string") {
+      messages.push({ role: "user", content: n.content.content });
     }
   }
   return messages;
@@ -74,8 +73,8 @@ function buildApiMessages(
 
     if (n.content.kind === "text") {
       parts.push(n.content.text);
-    } else if (n.content.kind === "user") {
-      parts.push(n.content.text);
+    } else if (n.content.kind === "user" && typeof n.content.content === "string") {
+      parts.push(n.content.content);
     } else if (n.content.kind === "tool_call") {
       const inputStr =
         typeof n.content.input === "string" ? n.content.input : JSON.stringify(n.content.input);
@@ -148,7 +147,8 @@ describe("Web Client Integration", () => {
 
     // User node should be present
     const userNode = all.find(
-      (n) => n.role === "user" && n.content.kind === "user" && n.content.text === "Hello from web",
+      (n) =>
+        n.role === "user" && n.content.kind === "user" && n.content.content === "Hello from web",
     );
     expect(userNode).toBeDefined();
 

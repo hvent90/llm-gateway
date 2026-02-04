@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { createGraph, reduceEvent, type GraphEvent } from "../../graph";
 import { projectThread } from "../../projections/thread";
 import type { ViewNode } from "../../projections/thread";
+import type { ContentPart } from "../../../types";
 
 function buildGraph(events: GraphEvent[]) {
   let g = createGraph();
@@ -303,6 +304,31 @@ describe("Thread Projection", () => {
     expect(tcNode!.branches[0]![0]!.content.kind).toBe("pending");
     expect(tcNode!.branches[0]![0]!.runId).toBe("r2");
     expect(tcNode!.branches[0]![0]!.status).toBe("streaming");
+  });
+
+  test("user event with ContentPart[] projects to ViewContent with structured content", () => {
+    const parts: ContentPart[] = [
+      { type: "text", text: "Check this out" },
+      { type: "image", mediaType: "image/png", data: "base64data" },
+    ];
+    const g = buildGraph([{ type: "user", runId: "u1", content: parts } as any]);
+    const view = projectThread(g);
+    expect(view.length).toBe(1);
+    expect(view[0]!.role).toBe("user");
+    expect(view[0]!.content.kind).toBe("user");
+    if (view[0]!.content.kind === "user") {
+      expect(view[0]!.content.content).toEqual(parts);
+    }
+  });
+
+  test("user event with plain string projects to ViewContent with string content", () => {
+    const g = buildGraph([{ type: "user", runId: "u1", content: "Hello" } as any]);
+    const view = projectThread(g);
+    expect(view.length).toBe(1);
+    expect(view[0]!.content.kind).toBe("user");
+    if (view[0]!.content.kind === "user") {
+      expect(view[0]!.content.content).toBe("Hello");
+    }
   });
 
   test("streaming: pending node replaced by real content once subagent streams text", () => {
