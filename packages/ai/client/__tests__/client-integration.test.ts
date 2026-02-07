@@ -35,7 +35,7 @@ afterEach(() => {
 
 describe("Web Client Integration", () => {
   test("handleSubmit flow: user event -> stream_start -> SSE events -> stream_end -> graph", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [{ events: [{ type: "text", content: "Web response" }] }],
     });
     srv = setup.server;
@@ -48,7 +48,10 @@ describe("Web Client Integration", () => {
     state = reduceConversation(state, { type: "user", runId: userId, content: "Hello from web" });
 
     // 2. Build messages from graph
-    const messages = [...projectMessages(state.graph), { role: "user" as const, content: "Hello from web" }];
+    const messages = [
+      ...projectMessages(state.graph),
+      { role: "user" as const, content: "Hello from web" },
+    ];
 
     // 3. Stream
     const transport = createSSETransport({ baseUrl: setup.baseUrl });
@@ -90,7 +93,7 @@ describe("Web Client Integration", () => {
   });
 
   test("handleAllow (allow once): clears relay without granting tool", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "once" } }] },
@@ -132,7 +135,7 @@ describe("Web Client Integration", () => {
   });
 
   test("handleAllowAll: clears relay AND grants tool permanently", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "all" } }] },
@@ -173,7 +176,7 @@ describe("Web Client Integration", () => {
   });
 
   test("handleDeny: clears relay with denial, tool_result has denied status", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "no" } }] },
@@ -249,7 +252,11 @@ describe("Web Client Integration", () => {
     // User message should come first since it's a root with no children that are roots
     expect(messages.length).toBe(2);
     expect(messages[0]).toEqual({ role: "user", content: "What is 2+2?" });
-    expect(messages[1]).toEqual({ role: "assistant", content: "The answer is 4", tool_calls: undefined });
+    expect(messages[1]).toEqual({
+      role: "assistant",
+      content: "The answer is 4",
+      tool_calls: undefined,
+    });
   });
 });
 
@@ -315,7 +322,7 @@ describe("CLI Client Integration", () => {
   });
 
   test("relay approval flow: y/yes resolves relay and updates state", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "cli" } }] },
@@ -360,7 +367,7 @@ describe("CLI Client Integration", () => {
   });
 
   test("error events present in graph nodes", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [
         {
           events: [
@@ -401,7 +408,7 @@ describe("CLI Client Integration", () => {
   });
 
   test("stream lifecycle: stream_start/stream_end toggle isConnected", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [{ events: [{ type: "text", content: "streaming" }] }],
     });
     srv = setup.server;

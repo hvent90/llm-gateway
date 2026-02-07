@@ -16,11 +16,13 @@ import type {
   ToolDefinition,
 } from "../packages/ai/types.ts";
 import { log } from "../packages/ai/logger.ts";
+import { discoverSkills, formatSkillsPrompt } from "../packages/ai/skills.ts";
 
 export interface AppConfig {
   harness?: GeneratorHarnessModule;
   tools?: ToolDefinition[];
   defaultModel?: string;
+  skillDirs?: string[];
 }
 
 interface ChatRequest {
@@ -48,11 +50,13 @@ function serializeEvent(event: ConsumerHarnessEvent, agentId: string): object {
   return { ...event, agentId };
 }
 
-export function createApp(config?: AppConfig): Hono {
+export async function createApp(config?: AppConfig): Promise<Hono> {
   const app = new Hono();
   const tools = config?.tools ?? [agentTool, bashTool, readTool, patchTool];
   const harness = config?.harness ?? createAgentHarness({ harness: createGeneratorHarness() });
   const defaultModel = config?.defaultModel;
+  const skills = await discoverSkills(config?.skillDirs ?? []);
+  const skillsPrompt = formatSkillsPrompt(skills);
 
   // Per-app orchestrator map for isolation
   const orchestrators = new Map<string, AgentOrchestrator>();
@@ -94,9 +98,12 @@ export function createApp(config?: AppConfig): Hono {
         });
 
         // Spawn the agent
+        const messages: Message[] = skillsPrompt
+          ? [{ role: "system", content: skillsPrompt }, ...body.messages]
+          : body.messages;
         const agentId = orchestrator.spawn({
           model,
-          messages: body.messages,
+          messages,
           tools,
           permissions: body.permissions,
         });
@@ -155,7 +162,7 @@ export function createApp(config?: AppConfig): Hono {
 }
 
 // Production app with defaults
-const app = createApp({
+const app = await createApp({
   defaultModel: process.env.DEFAULT_MODEL,
 });
 

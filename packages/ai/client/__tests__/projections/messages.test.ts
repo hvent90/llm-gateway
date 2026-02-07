@@ -23,7 +23,14 @@ describe("Messages Projection", () => {
     const g = buildGraph([
       { type: "user", runId: "u1", content: "Hello" },
       { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
-      { type: "text", id: "t1", runId: "r1", agentId: "a1", parentId: "u1:user", content: "Hi there" },
+      {
+        type: "text",
+        id: "t1",
+        runId: "r1",
+        agentId: "a1",
+        parentId: "u1:user",
+        content: "Hi there",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     expect(projectMessages(g)).toEqual([
@@ -37,15 +44,33 @@ describe("Messages Projection", () => {
       { type: "user", runId: "u1", content: "Run ls" },
       { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
       { type: "text", id: "t1", runId: "r1", agentId: "a1", parentId: "u1:user", content: "Sure" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "bash", input: { command: "ls" } },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "bash", output: "file.txt" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { command: "ls" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        output: "file.txt",
+      },
       { type: "text", id: "t2", runId: "r1", agentId: "a1", content: "Done" },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const msgs = projectMessages(g);
     expect(msgs).toEqual([
       { role: "user", content: "Run ls" },
-      { role: "assistant", content: "Sure", tool_calls: [{ id: "tc1", name: "bash", arguments: { command: "ls" } }] },
+      {
+        role: "assistant",
+        content: "Sure",
+        tool_calls: [{ id: "tc1", name: "bash", arguments: { command: "ls" } }],
+      },
       { role: "tool", tool_call_id: "tc1", content: "file.txt" },
       { role: "assistant", content: "Done", tool_calls: undefined },
     ]);
@@ -54,10 +79,38 @@ describe("Messages Projection", () => {
   test("multiple tool_calls in same turn → single assistant msg with multiple tool_calls", () => {
     const g = buildGraph([
       { type: "harness_start", runId: "r1", agentId: "a1" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "read", input: { path: "a.ts" } },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "read", output: "content-a" },
-      { type: "tool_call", id: "tc2", runId: "r1", agentId: "a1", name: "read", input: { path: "b.ts" } },
-      { type: "tool_result", id: "tc2", runId: "r1", agentId: "a1", name: "read", output: "content-b" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "read",
+        input: { path: "a.ts" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "read",
+        output: "content-a",
+      },
+      {
+        type: "tool_call",
+        id: "tc2",
+        runId: "r1",
+        agentId: "a1",
+        name: "read",
+        input: { path: "b.ts" },
+      },
+      {
+        type: "tool_result",
+        id: "tc2",
+        runId: "r1",
+        agentId: "a1",
+        name: "read",
+        output: "content-b",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const msgs = projectMessages(g);
@@ -78,7 +131,14 @@ describe("Messages Projection", () => {
   test("tool call with no output (streaming) → assistant msg with tool_calls, no tool msg", () => {
     const g = buildGraph([
       { type: "harness_start", runId: "r1", agentId: "a1" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "bash", input: { command: "ls" } },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { command: "ls" },
+      },
       // No tool_result yet — still streaming
     ]);
     const msgs = projectMessages(g);
@@ -109,9 +169,7 @@ describe("Messages Projection", () => {
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const msgs = projectMessages(g);
-    expect(msgs).toEqual([
-      { role: "assistant", content: "Answer", tool_calls: undefined },
-    ]);
+    expect(msgs).toEqual([{ role: "assistant", content: "Answer", tool_calls: undefined }]);
   });
 
   test("subagent branch → skipped (only main thread in output)", () => {
@@ -122,15 +180,28 @@ describe("Messages Projection", () => {
       { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
       { type: "text", id: "t2", runId: "r2", agentId: "a2", parentId: "tc1", content: "Found it" },
       { type: "harness_end", runId: "r2", agentId: "a2", parentId: "tc1" },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "search", output: ["auth.ts"] },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "search",
+        output: ["auth.ts"],
+      },
       { type: "text", id: "t3", runId: "r1", agentId: "a1", content: "Done" },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const msgs = projectMessages(g);
     // Subagent text "Found it" should NOT appear in messages
-    expect(msgs.some((m) => m.role === "assistant" && "content" in m && m.content === "Found it")).toBe(false);
+    expect(
+      msgs.some((m) => m.role === "assistant" && "content" in m && m.content === "Found it"),
+    ).toBe(false);
     // Main thread content should be present
-    expect(msgs[0]).toEqual({ role: "assistant", content: "Searching", tool_calls: [{ id: "tc1", name: "search", arguments: "auth" }] });
+    expect(msgs[0]).toEqual({
+      role: "assistant",
+      content: "Searching",
+      tool_calls: [{ id: "tc1", name: "search", arguments: "auth" }],
+    });
     expect(msgs[1]).toEqual({ role: "tool", tool_call_id: "tc1", content: '["auth.ts"]' });
     expect(msgs[2]).toEqual({ role: "assistant", content: "Done", tool_calls: undefined });
   });

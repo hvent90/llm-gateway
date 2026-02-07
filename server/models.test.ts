@@ -11,7 +11,7 @@ describe("GET /models", () => {
         models: ["model-a", "model-b"],
       }),
     });
-    const app = createApp({ harness });
+    const app = await createApp({ harness });
 
     const response = await app.request("/models", { method: "GET" });
 
@@ -21,7 +21,7 @@ describe("GET /models", () => {
   });
 
   it("returns default harness models when no harness is configured", async () => {
-    const app = createApp();
+    const app = await createApp();
 
     const response = await app.request("/models", { method: "GET" });
 
@@ -38,7 +38,7 @@ describe("GET /models", () => {
         models: ["model-a", "model-b"],
       }),
     });
-    const app = createApp({ harness, defaultModel: "model-b" });
+    const app = await createApp({ harness, defaultModel: "model-b" });
 
     const response = await app.request("/models", { method: "GET" });
 
@@ -54,7 +54,7 @@ describe("GET /models", () => {
         models: ["model-a", "model-b"],
       }),
     });
-    const app = createApp({ harness, defaultModel: "model-c" });
+    const app = await createApp({ harness, defaultModel: "model-c" });
 
     const response = await app.request("/models", { method: "GET" });
 
@@ -72,7 +72,7 @@ describe("POST /chat default model", () => {
         models: ["model-a"],
       }),
     });
-    const app = createApp({ harness, defaultModel: "model-a" });
+    const app = await createApp({ harness, defaultModel: "model-a" });
 
     const response = await app.request("/chat", {
       method: "POST",
@@ -88,7 +88,7 @@ describe("POST /chat default model", () => {
     const harness = createAgentHarness({
       harness: createDeterministicHarness({ responses: [], models: ["model-a"] }),
     });
-    const app = createApp({ harness });
+    const app = await createApp({ harness });
 
     const response = await app.request("/chat", {
       method: "POST",

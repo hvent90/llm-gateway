@@ -44,7 +44,7 @@ describe("Nested Subagent Integration", () => {
   test(
     "nested subagent (A → B → C): all nodes reachable via projectThread",
     async () => {
-      const setup = startTestServer(
+      const setup = await startTestServer(
         {
           responses: [
             { events: [{ type: "tool_call", name: "agent", input: { task: "do B" } }] },

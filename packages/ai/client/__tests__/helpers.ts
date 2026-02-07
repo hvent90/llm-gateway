@@ -21,13 +21,13 @@ export function collectAllViewNodes(nodes: ViewNode[]): ViewNode[] {
   return all;
 }
 
-export function startTestServer(
+export async function startTestServer(
   config: DeterministicHarnessConfig,
   tools?: ToolDefinition[],
-): { server: Server<unknown>; baseUrl: string } {
+): Promise<{ server: Server<unknown>; baseUrl: string }> {
   const provider = createDeterministicHarness(config);
   const harness = createAgentHarness({ harness: provider });
-  const app = createApp({ harness, tools });
+  const app = await createApp({ harness, tools });
   const server = Bun.serve({ fetch: app.fetch, port: 0 });
   return { server, baseUrl: `http://localhost:${server.port}` };
 }

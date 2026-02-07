@@ -53,7 +53,7 @@ afterEach(() => {
 
 describe("Conversation Reducer Integration", () => {
   test("simple text response: sessionId set, assistant node with text", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [{ events: [{ type: "text", content: "Hello world" }] }],
     });
     server = setup.server;
@@ -77,7 +77,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("streaming text chunks merge into single text block", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [
         {
           events: [
@@ -106,7 +106,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("reasoning + text: both block types present", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [
         {
           events: [
@@ -139,7 +139,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("tool call with auto-approve (tool in allowlist)", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           // First iteration: model wants to call echo tool
@@ -189,7 +189,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("tool call with relay (empty allowlist): pendingRelays populated, then resolved", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "test" } }] },
@@ -245,7 +245,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("permission denied: tool_result with denied status", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "nope" } }] },
@@ -297,7 +297,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("error from provider: error event in graph node", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [{ events: [{ type: "error", message: "Provider exploded" }] }],
     });
     server = setup.server;
@@ -321,7 +321,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("full round trip: user → stream → assistant with correct graph structure", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [{ events: [{ type: "text", content: "I am the assistant" }] }],
     });
     server = setup.server;
@@ -373,7 +373,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("assistant nodes are reachable via tree traversal (not orphaned)", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [{ events: [{ type: "text", content: "Visible response" }] }],
     });
     server = setup.server;
@@ -403,7 +403,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("streamed text is visible through projection during streaming", async () => {
-    const setup = startTestServer({
+    const setup = await startTestServer({
       responses: [
         {
           events: [
@@ -446,7 +446,7 @@ describe("Conversation Reducer Integration", () => {
   });
 
   test("tool call flow: all events reachable via tree traversal", async () => {
-    const setup = startTestServer(
+    const setup = await startTestServer(
       {
         responses: [
           { events: [{ type: "tool_call", name: "echo", input: { message: "test" } }] },
