@@ -160,7 +160,15 @@ function renderSnapshot(): string {
 
 function writeSnapshot(): void {
   ensureDir();
-  writeFileSync(LOG_FILE, renderSnapshot());
+  try {
+    writeFileSync(LOG_FILE, renderSnapshot());
+  } catch (err: any) {
+    if (err?.code === "ENOENT") {
+      dirEnsured = false;
+      ensureDir();
+      writeFileSync(LOG_FILE, renderSnapshot());
+    }
+  }
 }
 
 export function log(level: Level, run: string, phase: string, detail?: string): void {
