@@ -283,13 +283,13 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
         let args: unknown;
         try {
           args = JSON.parse(tc.arguments);
-        } catch {
-          yield tag({
-            type: "error" as const,
-            runId,
-            error: new Error(`Failed to parse tool arguments: ${tc.arguments}`),
-          });
-          return;
+        } catch (e) {
+          log("W", runId, "tool_parse_err", `tool=${tc.name} args=${tc.arguments}`);
+          args = {
+            __toolParseError: true,
+            parseError: e instanceof Error ? e.message : String(e),
+            rawArguments: tc.arguments,
+          };
         }
         yield tag({
           type: "tool_call" as const,

@@ -120,12 +120,11 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
             try {
               args = JSON.parse(event.arguments);
             } catch (e) {
-              yield tag({
-                type: "error",
-                runId,
-                error: new Error(`Failed to parse tool arguments: ${event.arguments}`),
-              });
-              return;
+              args = {
+                __toolParseError: true,
+                parseError: e instanceof Error ? e.message : String(e),
+                rawArguments: event.arguments,
+              };
             }
             toolCalls.push({ id: event.itemId, name: event.name, arguments: args });
           } else if (event.type === "error") {

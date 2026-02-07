@@ -208,6 +208,25 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
             input: args,
           });
 
+          // Check for malformed tool arguments (truncated JSON from model)
+          if (args && typeof args === "object" && "__toolParseError" in args) {
+            const { parseError, rawArguments } = args as { parseError?: string; rawArguments?: string };
+            const output = { error: `Tool call had malformed arguments. Parse error: ${parseError ?? "unknown"}. Raw arguments: ${rawArguments ?? ""}` };
+            yield tag({
+              type: "tool_result",
+              runId: myRunId,
+              id: nsId(tc.id),
+              name: tc.name,
+              output,
+            });
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              content: JSON.stringify(output),
+            });
+            continue;
+          }
+
           if (!toolDef?.execute) {
             // No executor - yield error and return
             yield tag({
