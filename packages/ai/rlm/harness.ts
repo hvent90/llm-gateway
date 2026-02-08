@@ -85,6 +85,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
       // Queue for exec relay events that need to be yielded from the generator
       type ExecQueueItem =
         | { type: "relay"; event: RelayEvent }
+        | { type: "progress"; event: HarnessEvent }
         | { type: "repl_done"; result: ReplExecutionResult };
 
       let execEvents: AsyncQueue<ExecQueueItem> | undefined;
