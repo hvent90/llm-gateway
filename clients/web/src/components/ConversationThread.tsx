@@ -167,14 +167,18 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
           {progress && (progress.stdout || progress.stderr) && (
             <div className="mt-1 border-t border-neutral-800 pt-1">
               {progress.stdout && (
-                <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-400">
-                  {progress.stdout}
-                </pre>
+                <div className="flex max-h-40 flex-col-reverse overflow-y-auto">
+                  <pre className="whitespace-pre-wrap text-xs text-neutral-400">
+                    {progress.stdout}
+                  </pre>
+                </div>
               )}
               {progress.stderr && (
-                <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-red-400">
-                  {progress.stderr}
-                </pre>
+                <div className="flex max-h-40 flex-col-reverse overflow-y-auto">
+                  <pre className="whitespace-pre-wrap text-xs text-red-400">
+                    {progress.stderr}
+                  </pre>
+                </div>
               )}
             </div>
           )}
