@@ -89,23 +89,29 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
 
     if (body.mode === "rlm") {
       return streamSSE(c, async (stream) => {
+        const rlm = createRlmHarness({
+          rootHarness: createGeneratorHarness(),
+          config: { maxIterations: 10, maxStdoutLength: 4000, metadataPrefixLength: 200 },
+        });
+        const orchestrator = new AgentOrchestrator(rlm);
+        orchestrators.set(sessionId, orchestrator);
+
         try {
           await stream.writeSSE({
             event: "connected",
             data: JSON.stringify({ type: "connected", sessionId }),
           });
 
-          const provider = createGeneratorHarness();
-          const rlm = createRlmHarness({
-            rootHarness: provider,
-            config: { maxIterations: 10, maxStdoutLength: 4000, metadataPrefixLength: 200 },
+          const agentId = orchestrator.spawn({
+            model,
+            messages: body.messages,
+            permissions: body.permissions,
           });
-          const agentId = v7();
 
-          for await (const event of rlm.invoke({ model, messages: body.messages })) {
+          for await (const { agentId: eventAgentId, event } of orchestrator.events()) {
             await stream.writeSSE({
               event: event.type,
-              data: JSON.stringify({ ...event, agentId }),
+              data: JSON.stringify(serializeEvent(event, eventAgentId)),
             });
           }
         } catch (error) {
@@ -118,6 +124,7 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
           });
         } finally {
           log("I", sessionId, "req_end", `dur=${Date.now() - reqStart}ms`);
+          orchestrators.delete(sessionId);
         }
       });
     }
