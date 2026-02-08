@@ -8,7 +8,7 @@ This guide covers creating, configuring, and invoking the RLM harness, and integ
 import { createRlmHarness } from "@/packages/ai/rlm/harness";
 import { createGeneratorHarness } from "@/packages/ai/harness/providers/zen";
 
-const provider = createGeneratorHarness({ model: "gpt-4o" });
+const provider = createGeneratorHarness({ model: "kimi-k2.5" });
 
 const rlm = createRlmHarness({
   rootHarness: provider,
@@ -48,7 +48,7 @@ for await (const event of rlm.invoke({
 ### Basic: same model for root and sub calls
 
 ```typescript
-const provider = createGeneratorHarness({ model: "gpt-4o" });
+const provider = createGeneratorHarness({ model: "kimi-k2.5" });
 
 const rlm = createRlmHarness({
   rootHarness: provider,
@@ -63,8 +63,8 @@ const rlm = createRlmHarness({
 ### Separate sub-harness for cheaper llm_query calls
 
 ```typescript
-const rootProvider = createGeneratorHarness({ model: "gpt-4o" });
-const subProvider = createGeneratorHarness({ model: "gpt-4o-mini" });
+const rootProvider = createGeneratorHarness({ model: "kimi-k2.5" });
+const subProvider = createGeneratorHarness({ model: "glm-4.7" });
 
 const rlm = createRlmHarness({
   rootHarness: rootProvider,
