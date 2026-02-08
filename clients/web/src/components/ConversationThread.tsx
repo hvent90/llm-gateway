@@ -2,6 +2,7 @@ import { useState, memo } from "react";
 import { Streamdown } from "streamdown";
 import { projectThread } from "../../../../packages/ai/client";
 import type { ViewNode, ViewContent, Graph, PendingRelay } from "../types";
+import type { ExecProgressState } from "../../../../packages/ai/rlm/exec-progress";
 
 export interface PermissionHandlers {
   onAllow: (relay: PendingRelay) => void;
@@ -130,6 +131,7 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
         ? content.output
         : JSON.stringify(content.output, null, 2)
       : null;
+  const progress = content.progress as ExecProgressState | null;
   const paramsOneLine =
     typeof content.input === "string"
       ? content.input.replace(/\n/g, " ")
@@ -148,6 +150,11 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
             {paramsOneLine}
           </span>
         )}
+        {!expanded && progress && !outputStr && (
+          <span className="shrink-0 text-neutral-600 text-xs">
+            {progress.metrics ? `${(progress.metrics.wallMs / 1000).toFixed(1)}s` : "…"}
+          </span>
+        )}
       </div>
       {expanded && (
         <div className="border-t border-neutral-800 px-2 py-1">
@@ -155,6 +162,25 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
           {outputStr && (
             <div className="mt-1 border-t border-neutral-800 pt-1">
               <CollapsiblePre label="result" text={outputStr} className="text-neutral-300" />
+            </div>
+          )}
+          {progress && (progress.stdout || progress.stderr) && (
+            <div className="mt-1 border-t border-neutral-800 pt-1">
+              {progress.stdout && (
+                <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-400">
+                  {progress.stdout}
+                </pre>
+              )}
+              {progress.stderr && (
+                <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-red-400">
+                  {progress.stderr}
+                </pre>
+              )}
+            </div>
+          )}
+          {progress?.metrics && (
+            <div className="mt-1 border-t border-neutral-800 pt-1 text-xs text-neutral-600">
+              CPU: {progress.metrics.cpuPercent.toFixed(1)}% · RSS: {(progress.metrics.rssKb / 1024).toFixed(1)}MB · {(progress.metrics.wallMs / 1000).toFixed(1)}s
             </div>
           )}
         </div>
