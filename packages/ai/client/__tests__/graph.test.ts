@@ -251,6 +251,74 @@ describe("Graph Reducer", () => {
     }
   });
 
+  test("tool_progress event creates tool_progress node", () => {
+    let g = createGraph();
+    g = reduceEvent(g, {
+      type: "tool_progress",
+      id: "tp1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc1",
+      name: "exec",
+      content: { channel: "stdout", data: "hello\n" },
+    });
+    expect(g.nodes.size).toBe(1);
+    const node = g.nodes.get("tp1")!;
+    expect(node.kind).toBe("tool_progress");
+    if (node.kind === "tool_progress") {
+      expect(node.toolCallId).toBe("tc1");
+      expect(node.name).toBe("exec");
+      expect(node.content).toEqual({ channel: "stdout", data: "hello\n" });
+    }
+  });
+
+  test("multiple tool_progress events for same toolCallId create separate nodes", () => {
+    let g = createGraph();
+    g = reduceEvent(g, {
+      type: "tool_progress",
+      id: "tp1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc1",
+      name: "exec",
+      content: { channel: "stdout", data: "line1\n" },
+    });
+    g = reduceEvent(g, {
+      type: "tool_progress",
+      id: "tp2",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc1",
+      name: "exec",
+      content: { channel: "stdout", data: "line2\n" },
+    });
+    expect(g.nodes.size).toBe(2);
+    expect(g.nodes.has("tp1")).toBe(true);
+    expect(g.nodes.has("tp2")).toBe(true);
+  });
+
+  test("tool_progress creates sequential edge within run", () => {
+    let g = createGraph();
+    g = reduceEvent(g, {
+      type: "tool_call",
+      id: "tc1",
+      runId: "r1",
+      agentId: "a1",
+      name: "exec",
+      input: { command: "ls" },
+    });
+    g = reduceEvent(g, {
+      type: "tool_progress",
+      id: "tp1",
+      runId: "r1",
+      agentId: "a1",
+      toolCallId: "tc1",
+      name: "exec",
+      content: { channel: "stdout", data: "file.txt\n" },
+    });
+    expect(g.edges.get("tc1")).toContain("tp1");
+  });
+
   test("relay event creates relay node", () => {
     let g = createGraph();
     g = reduceEvent(g, {

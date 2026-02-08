@@ -51,6 +51,9 @@ function deriveNodeId(event: GraphEvent): string | null {
     case "tool_result":
       return `${event.id}:result`;
 
+    case "tool_progress":
+      return event.id;
+
     // Lifecycle events keyed by runId
     case "harness_start":
       return `${event.runId}:harness_start`;
@@ -87,6 +90,8 @@ function eventToNode(id: string, event: GraphEvent): Node {
       return { id, runId, kind: "tool_call", name: event.name, input: event.input };
     case "tool_result":
       return { id, runId, kind: "tool_result", name: event.name, output: event.output };
+    case "tool_progress":
+      return { id, runId, kind: "tool_progress", toolCallId: event.toolCallId, name: event.name, content: event.content };
     case "harness_start":
       return { id, runId, kind: "harness_start", agentId: event.agentId };
     case "harness_end":
