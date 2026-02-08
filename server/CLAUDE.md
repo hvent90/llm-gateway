@@ -9,24 +9,11 @@ HTTP/SSE API layer exposing the agent orchestrator to clients. Manages per-sessi
 **Main module: `index.ts`**
 
 - `createApp(config?)` — factory accepting optional harness, tools, defaultModel, skillDirs
-- Routes:
-  - `GET /models` — returns available models from harness + optional defaultModel
-  - `POST /chat` — creates orchestrator, spawns agent, streams events as SSE
-  - `POST /chat/relay/:relayId` — resolves pending permission relay for session
-- Default tools: agentTool, bashTool, readTool, patchTool (index.ts:9)
-- Default harness: agent harness wrapping zen provider (index.ts:56)
-- Skills: auto-discovered from skillDirs, injected as system prompt (index.ts:58-59)
+- Routes: `GET /models`, `POST /chat` (SSE stream), `POST /chat/relay/:relayId` (permission resolution)
+- Default tools: agentTool, bashTool, readTool, patchTool
+- Per-session orchestrator lifecycle: created on POST /chat, cleaned up when stream ends
 
-**Event serialization:**
-
-- `serializeEvent()` at index.ts:40 — strips Error objects to `{ message }`, adds agentId
-- SSE stream sequence: "connected" event first (with sessionId), then all harness events
-
-**Session management:**
-
-- Map<sessionId, AgentOrchestrator> stored in createApp closure (index.ts:62)
-- Orchestrators cleaned up when stream ends (index.ts:129)
-- Relay resolution: client POSTs to /chat/relay/:relayId with sessionId + response
+See also: `packages/ai/CLAUDE.md` for the orchestrator and harness internals.
 
 ## HOW
 
@@ -43,4 +30,4 @@ Each POST /chat creates a fresh AgentOrchestrator for that session. SSE events f
 
 ## API Reference
 
-See `docs/api.md` for full endpoint documentation.
+See root `docs/api.md` for full endpoint documentation.

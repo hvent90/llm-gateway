@@ -28,25 +28,10 @@ Wire format:
 
 ## How
 
-The pipeline:
+Events arrive via SSE → `reduceConversation()` folds them into a Graph → projections transform the graph into views. `projectThread()` produces `ViewNode[]` for chat UIs, `projectMessages()` produces `Message[]` for API calls.
 
-1. Events arrive via SSE transport (transports/sse.ts)
-2. `reduceConversation()` folds each event into ConversationState (conversation.ts:45-91)
-3. Inside, `reduceEvent()` builds the Graph (graph.ts:141-190):
-   - Sequential events in same run get sequential edges
-   - First event in child run gets cross-run edge from parentId
-   - Text/reasoning with same id append content (streaming)
-4. `projectThread(graph)` transforms graph into ViewNode[] (projections/thread.ts:266-280):
-   - Walks depth-first from roots
-   - Groups sequential nodes by run
-   - Subagent runs become nested `branches` on tool_call that spawned them
-   - Filters out lifecycle nodes (harness_start/end, usage)
-5. `projectMessages(graph)` transforms graph into Message[] for API calls (projections/messages.ts:20-79)
+See also: `packages/ai/harness/CLAUDE.md` for the event-producing side of this pipeline.
 
 ## Docs
 
 → `docs/graph-pipeline.md` — Detailed walk-through of event → graph → projection pipeline
-
-## Tests
-
-Tests in `__tests__/` folder cover graph reduction, projections, and transports.

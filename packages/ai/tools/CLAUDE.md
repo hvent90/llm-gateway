@@ -15,13 +15,13 @@ Four core tools:
 
 Supporting utilities in `lib/`:
 
-- `filetime.ts` — Tracks read/write timestamps for conflict detection (filetime.ts:3-51)
+- `filetime.ts` — Tracks read/write timestamps for conflict detection
 - `patch-parser.ts` — Parses unified diff format into PatchOp structures
 - `patch-apply.ts` — Applies parsed patches with context-based hunk matching
 
 ## How
 
-Each tool implements `ToolDefinition` from types.ts:33-39:
+Each tool implements `ToolDefinition` from `types.ts`:
 
 - `name` — tool identifier
 - `description` — shown to the LLM
@@ -38,14 +38,8 @@ Tools are registered in index.ts and passed to harness via `invoke({ tools: [...
 
 ## Examples
 
-See bash.ts:30-109 for the canonical simple tool implementation.
-
-See patch.ts:92-99 for FileTime conflict detection and locking during writes.
+See `bash.ts` for the canonical simple tool implementation. See `patch.ts` for FileTime conflict detection and locking during writes.
 
 ## Docs
 
 → `docs/adding-a-tool.md` — Step-by-step guide for adding new tools
-
-## Tests
-
-Tests in `__tests__/` folder cover each tool and lib utility.

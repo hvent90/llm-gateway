@@ -22,6 +22,8 @@ An agent framework built on three simple ideas: a harness yields events, harness
 
 ## Project Structure
 
+Each module has its own CLAUDE.md with deeper context.
+
 - `server/` - Hono HTTP server & SSE endpoints
 - `packages/ai/` - Core AI orchestration package
   - `harness/` - Provider & agent harnesses (async generators that yield events)
@@ -33,7 +35,6 @@ An agent framework built on three simple ideas: a harness yields events, harness
 
 ## Docs
 
-- `README.md` - Use cases, concepts, and technical architecture
 - `docs/subagents.md` - Subagent spawning, graph structure, and client rendering
 - `docs/requirements.md` - Streaming architecture, persistence, and conversation graph
 - `docs/writing-a-good-claude-md.md` - Guidelines for writing effective CLAUDE.md files
