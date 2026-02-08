@@ -1,5 +1,6 @@
 import type { ContentPart } from "../../types";
 import type { Graph, Node } from "../types";
+import { accumulate } from "../progress";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -8,7 +9,7 @@ import type { Graph, Node } from "../types";
 export type ViewContent =
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string }
-  | { kind: "tool_call"; name: string; input: unknown; output?: unknown }
+  | { kind: "tool_call"; name: string; input: unknown; output?: unknown; progress?: unknown }
   | { kind: "user"; content: string | ContentPart[] }
   | { kind: "error"; message: string }
   | { kind: "pending" }
@@ -80,7 +81,7 @@ function nodeToViewContent(node: Node): ViewContent | null {
     case "reasoning":
       return { kind: "reasoning", text: node.content };
     case "tool_call":
-      return { kind: "tool_call", name: node.name, input: node.input };
+      return { kind: "tool_call", name: node.name, input: node.input, progress: null };
     case "user":
       return { kind: "user", content: node.content };
     case "error":
@@ -98,6 +99,7 @@ function nodeToViewContent(node: Node): ViewContent | null {
     case "harness_end":
     case "usage":
     case "tool_result":
+    case "tool_progress":
       return null;
     default:
       return null;
@@ -240,6 +242,23 @@ function walkRun(graph: Graph, startId: string, visited: Set<string>): ViewNode[
         const v = result[i]!;
         if (v.content.kind === "tool_call" && v.id === toolCallId) {
           v.content = { ...v.content, output: node.output };
+          break;
+        }
+      }
+    }
+
+    // If the node is tool_progress, accumulate it into the matching tool_call ViewNode
+    if (node.kind === "tool_progress") {
+      for (let i = result.length - 1; i >= 0; i--) {
+        const v = result[i]!;
+        if (v.content.kind === "tool_call" && v.id === node.toolCallId) {
+          const progressContents: unknown[] = [];
+          for (const n of graph.nodes.values()) {
+            if (n.kind === "tool_progress" && n.toolCallId === node.toolCallId) {
+              progressContents.push(n.content);
+            }
+          }
+          v.content = { ...v.content, progress: accumulate(node.name, progressContents) };
           break;
         }
       }

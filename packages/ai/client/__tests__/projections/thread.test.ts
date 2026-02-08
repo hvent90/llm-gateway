@@ -358,4 +358,138 @@ describe("Thread Projection", () => {
     });
     expect(allNodes.some((n) => n.content.kind === "pending")).toBe(false);
   });
+
+  test("tool_progress events accumulate into tool_call progress field", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "exec",
+        input: { command: "ls" },
+      },
+      {
+        type: "tool_progress",
+        id: "tp1",
+        runId: "r1",
+        agentId: "a1",
+        toolCallId: "tc1",
+        name: "exec",
+        content: { channel: "stdout", data: "file1.txt\n" },
+      },
+      {
+        type: "tool_progress",
+        id: "tp2",
+        runId: "r1",
+        agentId: "a1",
+        toolCallId: "tc1",
+        name: "exec",
+        content: { channel: "stdout", data: "file2.txt\n" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "exec",
+        output: { stdout: "file1.txt\nfile2.txt\n" },
+      },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const view = projectThread(g);
+    const tcNode = view.find((v) => v.content.kind === "tool_call");
+    expect(tcNode).toBeDefined();
+    if (tcNode?.content.kind === "tool_call") {
+      expect(tcNode.content.progress).toBeDefined();
+      const progress = tcNode.content.progress as {
+        stdout: string;
+        stderr: string;
+        metrics: unknown;
+      };
+      expect(progress.stdout).toBe("file1.txt\nfile2.txt\n");
+      expect(progress.stderr).toBe("");
+    }
+  });
+
+  test("tool_progress with metrics shows latest snapshot", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "exec",
+        input: { command: "sleep 3" },
+      },
+      {
+        type: "tool_progress",
+        id: "tp1",
+        runId: "r1",
+        agentId: "a1",
+        toolCallId: "tc1",
+        name: "exec",
+        content: { pid: 123, cpuPercent: 50, rssKb: 1024, wallMs: 1000 },
+      },
+      {
+        type: "tool_progress",
+        id: "tp2",
+        runId: "r1",
+        agentId: "a1",
+        toolCallId: "tc1",
+        name: "exec",
+        content: { pid: 123, cpuPercent: 25, rssKb: 2048, wallMs: 2000 },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "exec",
+        output: { stdout: "" },
+      },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const view = projectThread(g);
+    const tcNode = view.find((v) => v.content.kind === "tool_call");
+    expect(tcNode).toBeDefined();
+    if (tcNode?.content.kind === "tool_call") {
+      const progress = tcNode.content.progress as {
+        metrics: { cpuPercent: number; rssKb: number; wallMs: number };
+      };
+      expect(progress.metrics.cpuPercent).toBe(25);
+      expect(progress.metrics.wallMs).toBe(2000);
+    }
+  });
+
+  test("tool_call with no progress has null progress field", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { command: "ls" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        output: "file.txt",
+      },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const view = projectThread(g);
+    const tcNode = view.find((v) => v.content.kind === "tool_call");
+    expect(tcNode).toBeDefined();
+    if (tcNode?.content.kind === "tool_call") {
+      expect(tcNode.content.progress).toBeNull();
+    }
+  });
 });
