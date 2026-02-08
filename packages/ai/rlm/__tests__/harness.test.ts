@@ -607,8 +607,7 @@ describe("RLM harness", () => {
       // Progress events should have stdout content
       const stdoutProgress = progressEvents.filter(
         (e) =>
-          e.type === "tool_progress" &&
-          (e.content as { channel?: string }).channel === "stdout",
+          e.type === "tool_progress" && (e.content as { channel?: string }).channel === "stdout",
       );
       expect(stdoutProgress.length).toBeGreaterThan(0);
 
@@ -629,8 +628,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content:
-                  'const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());',
+                content: 'const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());',
               },
             ],
           },
@@ -651,8 +649,7 @@ describe("RLM harness", () => {
       // Should have at least 1 metrics event (1s poll, command takes ~2s)
       const metricsEvents = events.filter(
         (e) =>
-          e.type === "tool_progress" &&
-          typeof (e.content as { pid?: number }).pid === "number",
+          e.type === "tool_progress" && typeof (e.content as { pid?: number }).pid === "number",
       );
       expect(metricsEvents.length).toBeGreaterThanOrEqual(1);
 
@@ -708,8 +705,7 @@ describe("RLM harness", () => {
 
       const stderrProgress = progressEvents.filter(
         (e) =>
-          e.type === "tool_progress" &&
-          (e.content as { channel?: string }).channel === "stderr",
+          e.type === "tool_progress" && (e.content as { channel?: string }).channel === "stderr",
       );
       expect(stderrProgress.length).toBeGreaterThan(0);
 
@@ -727,8 +723,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content:
-                  'const r = await exec("echo ordering");\nFINAL(r.stdout.trim());',
+                content: 'const r = await exec("echo ordering");\nFINAL(r.stdout.trim());',
               },
             ],
           },
@@ -776,8 +771,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content:
-                  'const r = await exec("echo relayed");\nFINAL(r.stdout.trim());',
+                content: 'const r = await exec("echo relayed");\nFINAL(r.stdout.trim());',
               },
             ],
           },
