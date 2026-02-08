@@ -40,6 +40,16 @@ export type ServerEvent =
       output: unknown;
     }
   | {
+      type: "tool_progress";
+      id: string;
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      toolCallId: string;
+      name: string;
+      content: unknown;
+    }
+  | {
       type: "relay";
       kind: "permission";
       id: string;
