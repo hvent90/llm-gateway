@@ -217,4 +217,5 @@ console.log(`LLM Gateway server running on http://localhost:${port}`);
 export default {
   port,
   fetch: app.fetch,
+  idleTimeout: 255,
 };
