@@ -172,27 +172,48 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           return chunks.join("");
         };
 
-        // Poll process metrics every 1s
+        // Poll process metrics every 1s, aggregating the process tree
         let metricsRunning = true;
         const pollMetrics = async () => {
           while (metricsRunning) {
             await Bun.sleep(1000);
             if (!metricsRunning) break;
             try {
+              // Find child PIDs so we can aggregate the whole process tree
+              const findChildren = spawn({
+                cmd: ["sh", "-c", `ps -eo pid,ppid | awk '$2 == ${proc.pid} {printf "%s,", $1}'`],
+                stdout: "pipe",
+                stderr: "pipe",
+              });
+              const childPidsRaw = await new Response(findChildren.stdout).text();
+              await findChildren.exited;
+
+              const allPids = [String(proc.pid)];
+              for (const p of childPidsRaw.split(",")) {
+                if (p.trim()) allPids.push(p.trim());
+              }
+
               const ps = spawn({
-                cmd: ["ps", "-p", String(proc.pid), "-o", "%cpu,rss"],
+                cmd: ["ps", "-p", allPids.join(","), "-o", "%cpu,rss"],
                 stdout: "pipe",
                 stderr: "pipe",
               });
               const output = await new Response(ps.stdout).text();
               await ps.exited;
               const lines = output.trim().split("\n");
+              // Sum CPU and RSS across all processes in the tree
+              let totalCpu = 0;
+              let totalRss = 0;
+              for (let i = 1; i < lines.length; i++) {
+                const [cpu, rss] = lines[i].trim().split(/\s+/);
+                totalCpu += parseFloat(cpu);
+                totalRss += parseInt(rss, 10);
+              }
               if (lines.length >= 2) {
-                const [cpu, rss] = lines[1].trim().split(/\s+/);
                 pushProgress({
                   pid: proc.pid,
-                  cpuPercent: parseFloat(cpu),
-                  rssKb: parseInt(rss, 10),
+                  cpuPercent: totalCpu,
+                  rssKb: totalRss,
                   wallMs: Date.now() - startTime,
                 });
               }
