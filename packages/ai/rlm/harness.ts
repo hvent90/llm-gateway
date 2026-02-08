@@ -89,6 +89,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         | { type: "repl_done"; result: ReplExecutionResult };
 
       let execEvents: AsyncQueue<ExecQueueItem> | undefined;
+      let currentCallId: string | undefined;
 
       // exec callback: run a shell command with permission check and streaming
       const exec = async (command: string, timeout?: number) => {
@@ -132,7 +133,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
         const startTime = Date.now();
 
-        const toolCallId = uuidv7();
+        const toolCallId = currentCallId ?? uuidv7();
 
         // Helper to push a tool_progress event onto the queue
         const pushProgress = (content: unknown) => {
@@ -307,6 +308,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         });
 
         // Execute in REPL with queue drain for relay events
+        currentCallId = callId;
         execEvents = new AsyncQueue<ExecQueueItem>();
         const currentQueue = execEvents;
 

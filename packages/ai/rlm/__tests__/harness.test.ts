@@ -809,5 +809,45 @@ describe("RLM harness", () => {
         expect(textEvent.content).toBe("relayed");
       }
     });
+
+    test("tool_progress toolCallId matches the tool_call id", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'const r = await exec("echo linked");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test linkage" }],
+        }),
+      );
+
+      const toolCall = events.find((e) => e.type === "tool_call");
+      const progressEvents = events.filter((e) => e.type === "tool_progress");
+
+      expect(toolCall).toBeDefined();
+      expect(progressEvents.length).toBeGreaterThan(0);
+
+      // Every tool_progress event's toolCallId must match the tool_call's id
+      for (const p of progressEvents) {
+        if (p.type === "tool_progress") {
+          expect(p.toolCallId).toBe(toolCall!.id);
+        }
+      }
+    });
   });
 });
