@@ -23,6 +23,7 @@ export default function App() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
+  const [mode, setMode] = useState<"agent" | "rlm">("agent");
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -42,7 +43,7 @@ export default function App() {
   }, []);
 
   const sendChat = useCallback(
-    async (model: string, messages: Message[], permissions: Permissions) => {
+    async (model: string, messages: Message[], permissions: Permissions, chatMode: "agent" | "rlm") => {
       setState((s) => reduceConversation(s, { type: "stream_start" }));
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -63,7 +64,7 @@ export default function App() {
       };
 
       try {
-        const stream = sseTransport.stream({ model, messages, permissions }, controller.signal);
+        const stream = sseTransport.stream({ model, messages, permissions, mode: chatMode }, controller.signal);
         for await (const event of stream) {
           pendingEvents.push(event);
           if (rafId === undefined) {
@@ -99,9 +100,9 @@ export default function App() {
       setState((s) => reduceConversation(s, { type: "user", runId: userId, content }));
       const current = stateRef.current;
       const messages = [...projectMessages(current.graph), { role: "user" as const, content }];
-      await sendChat(selectedModel, messages, {});
+      await sendChat(selectedModel, messages, {}, mode);
     },
-    [sendChat, selectedModel],
+    [sendChat, selectedModel, mode],
   );
 
   const handleAllow = useCallback(
@@ -204,6 +205,8 @@ export default function App() {
         models={models}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
+        mode={mode}
+        onModeChange={setMode}
       />
     </div>
   );
