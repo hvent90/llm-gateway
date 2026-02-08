@@ -620,5 +620,200 @@ describe("RLM harness", () => {
         expect(textEvent.content).toContain("world");
       }
     });
+
+    test("exec produces metrics events for long-running commands", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  'const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig({ execTimeout: 5 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test metrics" }],
+        }),
+      );
+
+      // Should have at least 1 metrics event (1s poll, command takes ~2s)
+      const metricsEvents = events.filter(
+        (e) =>
+          e.type === "tool_progress" &&
+          typeof (e.content as { pid?: number }).pid === "number",
+      );
+      expect(metricsEvents.length).toBeGreaterThanOrEqual(1);
+
+      // Metrics should have expected shape
+      const m = metricsEvents[0] as { type: "tool_progress"; content: unknown };
+      const content = m.content as {
+        pid: number;
+        cpuPercent: number;
+        rssKb: number;
+        wallMs: number;
+      };
+      expect(content.pid).toBeGreaterThan(0);
+      expect(typeof content.cpuPercent).toBe("number");
+      expect(typeof content.rssKb).toBe("number");
+      expect(content.wallMs).toBeGreaterThanOrEqual(1000);
+
+      // Final result should still work
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("done");
+      }
+    });
+
+    test("exec streams stderr via tool_progress", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  'const r = await exec("echo err >&2 && echo out");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test stderr" }],
+        }),
+      );
+
+      const progressEvents = events.filter((e) => e.type === "tool_progress");
+
+      const stderrProgress = progressEvents.filter(
+        (e) =>
+          e.type === "tool_progress" &&
+          (e.content as { channel?: string }).channel === "stderr",
+      );
+      expect(stderrProgress.length).toBeGreaterThan(0);
+
+      const stderrContent = stderrProgress
+        .map((e) => (e as { content: { data: string } }).content.data)
+        .join("");
+      expect(stderrContent).toContain("err");
+    });
+
+    test("tool_progress events appear between tool_call and tool_result", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  'const r = await exec("echo ordering");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test ordering" }],
+        }),
+      );
+
+      const types = events.map((e) => e.type);
+      const toolCallIdx = types.indexOf("tool_call");
+      const toolResultIdx = types.indexOf("tool_result");
+      const progressIdx = types.indexOf("tool_progress");
+
+      expect(progressIdx).toBeGreaterThan(toolCallIdx);
+      expect(progressIdx).toBeLessThan(toolResultIdx);
+    });
+
+    test("exec streaming works alongside HITL relay", async () => {
+      /** Collect events, auto-handling relay events via onRelay callback. */
+      async function collectEventsWithRelays(
+        iterable: AsyncIterable<HarnessEvent>,
+        onRelay: (event: RelayEvent) => void,
+      ): Promise<HarnessEvent[]> {
+        const events: HarnessEvent[] = [];
+        for await (const event of iterable) {
+          events.push(event);
+          if (event.type === "relay") onRelay(event);
+        }
+        return events;
+      }
+
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  'const r = await exec("echo relayed");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const relays: RelayEvent[] = [];
+      const events = await collectEventsWithRelays(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test streaming with relay" }],
+          permissions: { allowlist: [] },
+        }),
+        (relay) => {
+          relays.push(relay);
+          relay.respond({ approved: true });
+        },
+      );
+
+      // Should have relay event
+      expect(relays.length).toBe(1);
+
+      // Should also have tool_progress events
+      const progressEvents = events.filter((e) => e.type === "tool_progress");
+      expect(progressEvents.length).toBeGreaterThan(0);
+
+      // Final result should work
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("relayed");
+      }
+    });
   });
 });
