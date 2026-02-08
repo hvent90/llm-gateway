@@ -232,3 +232,47 @@ describe("Deterministic Harness", () => {
     expect(events[3]!.type).toBe("tool_call");
   });
 });
+
+describe("default model resolution", () => {
+  test("model set at creation, not at invoke → works", async () => {
+    const harness = createDeterministicHarness({
+      responses: [{ events: [{ type: "text", content: "hello" }] }],
+      model: "default-model",
+    });
+
+    const events = await collectEvents(
+      harness.invoke({ messages: [{ role: "user", content: "hi" }] }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("text");
+  });
+
+  test("model set at both creation and invoke → invoke wins", async () => {
+    const harness = createDeterministicHarness({
+      responses: [{ events: [{ type: "text", content: "hello" }] }],
+      model: "creation-model",
+    });
+
+    // Should not throw — invoke model takes precedence
+    const events = await collectEvents(
+      harness.invoke({
+        model: "invoke-model",
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe("text");
+  });
+
+  test("model set at neither creation nor invoke → throws", async () => {
+    const harness = createDeterministicHarness({
+      responses: [{ events: [{ type: "text", content: "hello" }] }],
+    });
+
+    await expect(
+      collectEvents(harness.invoke({ messages: [{ role: "user", content: "hi" }] })),
+    ).rejects.toThrow("No model specified");
+  });
+});

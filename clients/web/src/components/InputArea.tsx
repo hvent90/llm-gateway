@@ -8,6 +8,8 @@ interface InputAreaProps {
   models: string[];
   selectedModel: string;
   onModelChange: (model: string) => void;
+  mode: "agent" | "rlm";
+  onModeChange: (mode: "agent" | "rlm") => void;
 }
 
 export function InputArea({
@@ -18,6 +20,8 @@ export function InputArea({
   models,
   selectedModel,
   onModelChange,
+  mode,
+  onModeChange,
 }: InputAreaProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -73,6 +77,24 @@ export function InputArea({
             </option>
           ))}
         </select>
+        <div className="flex text-sm">
+          <button
+            type="button"
+            onClick={() => onModeChange("agent")}
+            disabled={isStreaming}
+            className={`border border-neutral-700 px-2 py-1 disabled:opacity-50 ${mode === "agent" ? "bg-white text-black" : "bg-black text-neutral-400"}`}
+          >
+            agent
+          </button>
+          <button
+            type="button"
+            onClick={() => onModeChange("rlm")}
+            disabled={isStreaming}
+            className={`border border-neutral-700 border-l-0 px-2 py-1 disabled:opacity-50 ${mode === "rlm" ? "bg-white text-black" : "bg-black text-neutral-400"}`}
+          >
+            rlm
+          </button>
+        </div>
       </div>
       <div className="flex gap-2">
         <textarea

@@ -80,13 +80,27 @@ function convertTools(tools: ToolDefinition[]) {
  * - Handle permissions (that's the agent wrapper's job)
  * - Loop after tool calls (that's the agent wrapper's job)
  */
-function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
+interface OpenRouterHarnessOptions {
+  apiKey?: string;
+  model?: string;
+}
+
+function createGeneratorHarness(
+  apiKeyOrOptions?: string | OpenRouterHarnessOptions,
+): GeneratorHarnessModule {
+  const opts = typeof apiKeyOrOptions === "string" ? { apiKey: apiKeyOrOptions } : apiKeyOrOptions;
   const client = new OpenRouter({
-    apiKey: apiKey ?? process.env.OPENROUTER_API_KEY,
+    apiKey: opts?.apiKey ?? process.env.OPENROUTER_API_KEY,
   });
+  const defaultModel = opts?.model;
 
   return {
     async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = params.model ?? defaultModel;
+      if (!model) {
+        throw new Error("No model specified: provide model at harness creation or invoke time");
+      }
+
       const runId = v7(); // Provider always creates its own ID
       const parentId = context?.parentId;
       const tools = params.tools ? convertTools(params.tools) : undefined;
@@ -100,7 +114,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = client.callModel({
-        model: params.model,
+        model,
         input,
         ...(tools && { tools }),
       } as any);

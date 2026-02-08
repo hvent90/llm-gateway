@@ -9,6 +9,7 @@ import {
 import { agentTool, bashTool, readTool, patchTool } from "../packages/ai/tools";
 import { createAgentHarness } from "../packages/ai/harness/agent.ts";
 import { createGeneratorHarness } from "../packages/ai/harness/providers/zen.ts";
+import { createRlmHarness } from "../packages/ai/rlm/harness.ts";
 import type {
   GeneratorHarnessModule,
   Message,
@@ -29,6 +30,7 @@ interface ChatRequest {
   model: string;
   messages: Message[];
   permissions?: Permissions;
+  mode?: "agent" | "rlm";
 }
 
 interface RelayRequest {
@@ -84,6 +86,41 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
     const sessionId = v7();
     const reqStart = Date.now();
     log("I", sessionId, "req_start", `model=${model}`);
+
+    if (body.mode === "rlm") {
+      return streamSSE(c, async (stream) => {
+        try {
+          await stream.writeSSE({
+            event: "connected",
+            data: JSON.stringify({ type: "connected", sessionId }),
+          });
+
+          const provider = createGeneratorHarness();
+          const rlm = createRlmHarness({
+            rootHarness: provider,
+            config: { maxIterations: 10, maxStdoutLength: 4000, metadataPrefixLength: 200 },
+          });
+          const agentId = v7();
+
+          for await (const event of rlm.invoke({ model, messages: body.messages })) {
+            await stream.writeSSE({
+              event: event.type,
+              data: JSON.stringify({ ...event, agentId }),
+            });
+          }
+        } catch (error) {
+          await stream.writeSSE({
+            event: "error",
+            data: JSON.stringify({
+              type: "error",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          });
+        } finally {
+          log("I", sessionId, "req_end", `dur=${Date.now() - reqStart}ms`);
+        }
+      });
+    }
 
     return streamSSE(c, async (stream) => {
       // Create orchestrator for this session

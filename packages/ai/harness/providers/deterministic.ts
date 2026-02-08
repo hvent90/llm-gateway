@@ -23,6 +23,7 @@ export interface ScriptedResponse {
 export interface DeterministicHarnessConfig {
   responses: ScriptedResponse[];
   models?: string[];
+  model?: string;
 }
 
 /**
@@ -39,9 +40,17 @@ export function createDeterministicHarness(
   config: DeterministicHarnessConfig,
 ): GeneratorHarnessModule {
   let callIndex = 0;
+  const defaultModel = config.model;
 
   return {
-    async *invoke({ context }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+    async *invoke({
+      context,
+      model: invokeModel,
+    }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = invokeModel ?? defaultModel;
+      if (!model) {
+        throw new Error("No model specified: provide model at harness creation or invoke time");
+      }
       const runId = uuidv7();
       const parentId = context?.parentId;
 

@@ -67,4 +67,5 @@ export interface StreamRequest {
   model: string;
   messages: Message[];
   permissions?: Permissions;
+  mode?: "agent" | "rlm";
 }
