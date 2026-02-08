@@ -571,4 +571,54 @@ describe("RLM harness", () => {
       }
     });
   });
+
+  describe("exec streaming", () => {
+    test("exec produces tool_progress events with stdout chunks", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  'const r = await exec("echo hello && sleep 0.1 && echo world");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test streaming" }],
+        }),
+      );
+
+      // Should have tool_progress events between tool_call and tool_result
+      const progressEvents = events.filter((e) => e.type === "tool_progress");
+      expect(progressEvents.length).toBeGreaterThan(0);
+
+      // Progress events should have stdout content
+      const stdoutProgress = progressEvents.filter(
+        (e) =>
+          e.type === "tool_progress" &&
+          (e.content as { channel?: string }).channel === "stdout",
+      );
+      expect(stdoutProgress.length).toBeGreaterThan(0);
+
+      // Final result should still work
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toContain("hello");
+        expect(textEvent.content).toContain("world");
+      }
+    });
+  });
 });

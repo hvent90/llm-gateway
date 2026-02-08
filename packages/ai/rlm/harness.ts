@@ -10,7 +10,7 @@ import type {
 import type { RlmConfig, ReplExecutionResult } from "./types";
 import { createRepl } from "./repl";
 import { buildRlmSystemPrompt } from "./system-prompt";
-import { execShell } from "../tools/lib/shell";
+import { spawn } from "bun";
 import { AsyncQueue } from "../primitives/async-queue";
 import { deferred } from "../primitives";
 import { matchesPermissions } from "../permissions";
@@ -90,8 +90,9 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
       let execEvents: AsyncQueue<ExecQueueItem> | undefined;
 
-      // exec callback: run a shell command with permission check
+      // exec callback: run a shell command with permission check and streaming
       const exec = async (command: string, timeout?: number) => {
+        // Permission check (unchanged)
         if (params.permissions) {
           const isAllowed = matchesPermissions(
             { name: "exec", arguments: { command } },
@@ -120,7 +121,140 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           }
         }
 
-        return execShell({ command, timeout: timeout ?? config.execTimeout ?? 10 });
+        // Spawn process with access to live streams
+        const effectiveTimeout = timeout ?? config.execTimeout ?? 10;
+        const proc = spawn({
+          cmd: ["sh", "-c", command],
+          stdout: "pipe",
+          stderr: "pipe",
+          detached: true,
+        });
+
+        const startTime = Date.now();
+
+        const toolCallId = uuidv7();
+
+        // Helper to push a tool_progress event onto the queue
+        const pushProgress = (content: unknown) => {
+          execEvents?.push({
+            type: "progress",
+            event: tag({
+              type: "tool_progress" as const,
+              runId,
+              id: uuidv7(),
+              toolCallId,
+              name: "exec",
+              content,
+            }),
+          });
+        };
+
+        // Drain a readable stream, collecting into buffer and pushing progress events
+        const drainStream = async (
+          stream: ReadableStream<Uint8Array>,
+          channel: "stdout" | "stderr",
+        ): Promise<string> => {
+          const reader = stream.getReader();
+          const decoder = new TextDecoder();
+          const chunks: string[] = [];
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              const text = decoder.decode(value, { stream: true });
+              chunks.push(text);
+              pushProgress({ channel, data: text });
+            }
+          } catch {
+            // Stream cancelled — return what we have
+          }
+          return chunks.join("");
+        };
+
+        // Poll process metrics every 1s
+        let metricsRunning = true;
+        const pollMetrics = async () => {
+          while (metricsRunning) {
+            await Bun.sleep(1000);
+            if (!metricsRunning) break;
+            try {
+              const ps = spawn({
+                cmd: ["ps", "-p", String(proc.pid), "-o", "%cpu,rss"],
+                stdout: "pipe",
+                stderr: "pipe",
+              });
+              const output = await new Response(ps.stdout).text();
+              await ps.exited;
+              const lines = output.trim().split("\n");
+              if (lines.length >= 2) {
+                const [cpu, rss] = lines[1].trim().split(/\s+/);
+                pushProgress({
+                  pid: proc.pid,
+                  cpuPercent: parseFloat(cpu),
+                  rssKb: parseInt(rss, 10),
+                  wallMs: Date.now() - startTime,
+                });
+              }
+            } catch {
+              // Process may have exited — stop polling
+              break;
+            }
+          }
+        };
+
+        const stdoutReader = proc.stdout.getReader();
+        const stderrReader = proc.stderr.getReader();
+
+        const kill = () => {
+          try {
+            process.kill(-proc.pid, "SIGKILL");
+          } catch {}
+          try {
+            proc.kill(9);
+          } catch {}
+          stdoutReader.cancel().catch(() => {});
+          stderrReader.cancel().catch(() => {});
+        };
+
+        // Release readers — drainStream will get its own
+        stdoutReader.releaseLock();
+        stderrReader.releaseLock();
+
+        const metricsPromise = pollMetrics();
+
+        const completionPromise = (async () => {
+          const [stdout, stderr] = await Promise.all([
+            drainStream(proc.stdout, "stdout"),
+            drainStream(proc.stderr, "stderr"),
+          ]);
+          const exitCode = await proc.exited;
+          return { stdout, stderr, exitCode, timedOut: false as const };
+        })();
+
+        completionPromise.catch(() => {});
+
+        let timer: Timer;
+        const timeoutPromise = new Promise<{ timedOut: true }>((resolve) => {
+          timer = setTimeout(() => {
+            kill();
+            resolve({ timedOut: true });
+          }, effectiveTimeout * 1000);
+        });
+
+        const raceResult = await Promise.race([completionPromise, timeoutPromise]);
+        clearTimeout(timer!);
+        metricsRunning = false;
+        await metricsPromise.catch(() => {});
+
+        if (raceResult.timedOut) {
+          return { exitCode: -1, stdout: "", stderr: "" };
+        }
+
+        return {
+          stdout: raceResult.stdout,
+          stderr: raceResult.stderr,
+          exitCode: raceResult.exitCode,
+        };
       };
 
       // Create the REPL with prompt as context
