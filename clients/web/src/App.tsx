@@ -43,7 +43,12 @@ export default function App() {
   }, []);
 
   const sendChat = useCallback(
-    async (model: string, messages: Message[], permissions: Permissions, chatMode: "agent" | "rlm") => {
+    async (
+      model: string,
+      messages: Message[],
+      permissions: Permissions,
+      chatMode: "agent" | "rlm",
+    ) => {
       setState((s) => reduceConversation(s, { type: "stream_start" }));
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -64,7 +69,10 @@ export default function App() {
       };
 
       try {
-        const stream = sseTransport.stream({ model, messages, permissions, mode: chatMode }, controller.signal);
+        const stream = sseTransport.stream(
+          { model, messages, permissions, mode: chatMode },
+          controller.signal,
+        );
         for await (const event of stream) {
           pendingEvents.push(event);
           if (rafId === undefined) {

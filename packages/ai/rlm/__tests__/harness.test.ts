@@ -311,6 +311,41 @@ describe("RLM harness", () => {
     });
   });
 
+  describe("exec integration", () => {
+    test("code that calls exec gets shell output", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'const r = await exec("echo hello");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test exec" }],
+        }),
+      );
+
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("hello");
+      }
+    });
+  });
+
   describe("context access", () => {
     test("user prompt is accessible as context in REPL", async () => {
       const rootHarness = createDeterministicHarness({

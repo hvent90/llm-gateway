@@ -6,6 +6,10 @@ function makeRepl(
     context?: string;
     llmQuery?: (prompt: string) => Promise<string>;
     subRlm?: (prompt: string) => Promise<string>;
+    exec?: (
+      command: string,
+      timeout?: number,
+    ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
     maxStdoutLength?: number;
   } = {},
 ) {
@@ -13,6 +17,7 @@ function makeRepl(
     context: overrides.context ?? "test context",
     llmQuery: overrides.llmQuery ?? (async (p: string) => `echo: ${p}`),
     subRlm: overrides.subRlm,
+    exec: overrides.exec,
     maxStdoutLength: overrides.maxStdoutLength,
   });
 }
@@ -171,6 +176,53 @@ describe("REPL sandbox", () => {
       const repl = makeRepl();
       const result = await repl.execute('await sub_rlm("test");');
       expect(result.error).toContain("sub_rlm is not available");
+    });
+  });
+
+  describe("exec integration", () => {
+    test("exec calls the provided callback", async () => {
+      const calls: { command: string; timeout?: number }[] = [];
+      const repl = makeRepl({
+        exec: async (command, timeout) => {
+          calls.push({ command, timeout });
+          return { stdout: "hello\n", stderr: "", exitCode: 0 };
+        },
+      });
+      const result = await repl.execute(`
+        const r = await exec("echo hello");
+        print(r.stdout.trim());
+      `);
+      expect(calls).toEqual([{ command: "echo hello", timeout: undefined }]);
+      expect(result.stdout).toBe("hello");
+    });
+
+    test("exec returns stdout, stderr, and exitCode", async () => {
+      const repl = makeRepl({
+        exec: async () => ({ stdout: "out", stderr: "err", exitCode: 1 }),
+      });
+      const result = await repl.execute(`
+        const r = await exec("failing command");
+        print(r.stdout, r.stderr, r.exitCode);
+      `);
+      expect(result.stdout).toBe("out err 1");
+    });
+
+    test("exec passes timeout argument", async () => {
+      const calls: { command: string; timeout?: number }[] = [];
+      const repl = makeRepl({
+        exec: async (command, timeout) => {
+          calls.push({ command, timeout });
+          return { stdout: "", stderr: "", exitCode: 0 };
+        },
+      });
+      await repl.execute('await exec("slow", 30);');
+      expect(calls[0].timeout).toBe(30);
+    });
+
+    test("exec throws when not provided", async () => {
+      const repl = makeRepl();
+      const result = await repl.execute('await exec("echo hi");');
+      expect(result.error).toContain("exec is not available");
     });
   });
 

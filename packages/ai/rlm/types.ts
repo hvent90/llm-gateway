@@ -12,6 +12,8 @@ export interface RlmConfig {
   metadataPrefixLength: number;
   /** Model for sub-LLM calls (llm_query). Defaults to the model passed at invoke time. */
   subModel?: string;
+  /** Default timeout in seconds for exec() calls (default: 10) */
+  execTimeout?: number;
 }
 
 /** State of the REPL environment */
@@ -41,3 +43,13 @@ export type LlmQueryFn = (prompt: string) => Promise<string>;
 
 /** Callback type for sub_rlm inside the REPL */
 export type SubRlmFn = (prompt: string) => Promise<string>;
+
+/** Result of a shell command execution */
+export interface ShellResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/** Callback type for exec inside the REPL */
+export type ExecFn = (command: string, timeout?: number) => Promise<ShellResult>;

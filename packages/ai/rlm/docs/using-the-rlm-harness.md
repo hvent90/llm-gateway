@@ -211,6 +211,22 @@ console.log(final.done);       // true
 console.log(final.finalValue); // the summary
 ```
 
+## Shell Execution with exec
+
+The REPL includes an `exec()` builtin that runs shell commands, making RLM a general-purpose "model writes code to solve problems" harness rather than just a long-text processor.
+
+```typescript
+// Inside the REPL, the model can write:
+const result = await exec("ls -la /tmp");
+print(result.stdout);
+// result: { stdout: string, stderr: string, exitCode: number }
+
+// With a custom timeout (seconds):
+const slow = await exec("long-running-command", 30);
+```
+
+The default timeout is controlled by `RlmConfig.execTimeout` (default: 10 seconds). The model can override per-call via the second argument.
+
 ## Error Handling
 
 ### REPL errors don't crash the harness

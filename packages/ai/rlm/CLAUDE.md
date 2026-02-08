@@ -1,6 +1,6 @@
 # packages/ai/rlm
 
-Recursive Language Models (RLMs) treat LLM input as a REPL environment variable, not direct context. The model writes JavaScript to examine, chunk, and recursively process arbitrarily long inputs.
+Recursive Language Models (RLMs) treat LLM input as a REPL environment variable, not direct context. The model writes JavaScript to examine, chunk, and recursively process arbitrarily long inputs. The REPL also provides `exec()` for running shell commands, making RLM a general-purpose "model writes code to solve problems" harness.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ Composition: `createRlmHarness({ rootHarness: createGeneratorHarness(), config }
 
 ## Key Files
 
-- `types.ts` — `RlmConfig`, `ReplState`, `ReplExecutionResult`, callback types (`LlmQueryFn`, `SubRlmFn`)
+- `types.ts` — `RlmConfig`, `ReplState`, `ReplExecutionResult`, callback types (`LlmQueryFn`, `SubRlmFn`, `ExecFn`)
 - `repl.ts` — `createRepl()`: sandboxed async JS REPL with persistent scope, stdout capture, and `FINAL()`/`FINAL_VAR()` completion signals
 - `system-prompt.ts` — `buildRlmSystemPrompt()`: instructs the model on REPL usage, available functions, and coding patterns
 - `harness.ts` — `createRlmHarness()`: the main inference loop. Implements `GeneratorHarnessModule` so it composes with the agent harness and orchestrator like any provider

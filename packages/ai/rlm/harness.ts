@@ -8,6 +8,7 @@ import type {
 import type { RlmConfig } from "./types";
 import { createRepl } from "./repl";
 import { buildRlmSystemPrompt } from "./system-prompt";
+import { execShell } from "../tools/lib/shell";
 
 interface RlmHarnessOptions {
   /** Provider harness for root LLM calls */
@@ -76,11 +77,16 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         return text;
       };
 
+      // exec callback: run a shell command with configurable timeout
+      const exec = (command: string, timeout?: number) =>
+        execShell({ command, timeout: timeout ?? config.execTimeout ?? 10 });
+
       // Create the REPL with prompt as context
       const repl = createRepl({
         context: userPrompt,
         llmQuery,
         subRlm: llmQuery, // v1: sub_rlm delegates to llm_query
+        exec,
         maxStdoutLength: config.maxStdoutLength,
       });
 

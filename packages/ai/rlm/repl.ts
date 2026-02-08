@@ -1,4 +1,4 @@
-import type { LlmQueryFn, ReplExecutionResult, ReplState, SubRlmFn } from "./types";
+import type { ExecFn, LlmQueryFn, ReplExecutionResult, ReplState, SubRlmFn } from "./types";
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -6,6 +6,7 @@ export interface ReplOptions {
   context: string;
   llmQuery: LlmQueryFn;
   subRlm?: SubRlmFn;
+  exec?: ExecFn;
   maxStdoutLength?: number;
 }
 
@@ -29,6 +30,11 @@ export function createRepl(options: ReplOptions): Repl {
       options.subRlm ??
       (() => {
         throw new Error("sub_rlm is not available in this REPL");
+      }),
+    exec:
+      options.exec ??
+      (() => {
+        throw new Error("exec is not available in this REPL");
       }),
   };
 
@@ -68,6 +74,7 @@ export function createRepl(options: ReplOptions): Repl {
         "context",
         "llm_query",
         "sub_rlm",
+        "exec",
         "print",
         "console",
         "FINAL",

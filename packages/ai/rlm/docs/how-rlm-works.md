@@ -69,6 +69,7 @@ The REPL (`repl.ts`) provides a sandboxed async JavaScript execution environment
 | `context` | `string` | The user's input, available as a plain JS string |
 | `llm_query(prompt)` | `(string) => Promise<string>` | Send a prompt to a sub-LLM and get a response |
 | `sub_rlm(prompt)` | `(string) => Promise<string>` | Spawn a nested RLM session (v1: delegates to `llm_query`) |
+| `exec(command, timeout?)` | `(string, number?) => Promise<ShellResult>` | Execute a shell command. Returns `{ stdout, stderr, exitCode }`. Default timeout: 10s |
 | `FINAL(answer)` | `(unknown) => void` | Emit a value as the final answer and stop the loop |
 | `FINAL_VAR(varName)` | `(string) => void` | Emit a scope variable as the final answer and stop |
 | `print(...args)` / `console.log` | `(...unknown[]) => void` | Print to stdout (shown back to model) |
