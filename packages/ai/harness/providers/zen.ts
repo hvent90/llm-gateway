@@ -144,11 +144,25 @@ interface ChatCompletionChunk {
  * - Handle permissions (that's the agent wrapper's job)
  * - Loop after tool calls (that's the agent wrapper's job)
  */
-function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
-  const key = apiKey ?? process.env.ZEN_API_KEY;
+interface ZenHarnessOptions {
+  apiKey?: string;
+  model?: string;
+}
+
+function createGeneratorHarness(
+  apiKeyOrOptions?: string | ZenHarnessOptions,
+): GeneratorHarnessModule {
+  const opts = typeof apiKeyOrOptions === "string" ? { apiKey: apiKeyOrOptions } : apiKeyOrOptions;
+  const key = opts?.apiKey ?? process.env.ZEN_API_KEY;
+  const defaultModel = opts?.model;
 
   return {
     async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = params.model ?? defaultModel;
+      if (!model) {
+        throw new Error("No model specified: provide model at harness creation or invoke time");
+      }
+
       const runId = v7();
       const parentId = context?.parentId;
       const reasoningId = v7();
@@ -158,7 +172,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
         parentId ? { ...event, parentId } : event;
 
       const body: Record<string, unknown> = {
-        model: params.model,
+        model,
         messages: convertMessages(params.messages),
         stream: true,
         stream_options: { include_usage: true },
@@ -168,7 +182,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
       }
 
       let response: Response;
-      log("I", runId, "api_req", `model=${params.model}`);
+      log("I", runId, "api_req", `model=${model}`);
       try {
         response = await fetch(`${BASE_URL}/chat/completions`, {
           method: "POST",

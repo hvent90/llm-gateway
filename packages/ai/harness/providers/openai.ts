@@ -133,13 +133,27 @@ function convertTools(tools: ToolDefinition[]): OpenAI.Responses.Tool[] {
  * - Handle permissions (that's the agent wrapper's job)
  * - Loop after tool calls (that's the agent wrapper's job)
  */
-function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
+interface OpenAIHarnessOptions {
+  apiKey?: string;
+  model?: string;
+}
+
+function createGeneratorHarness(
+  apiKeyOrOptions?: string | OpenAIHarnessOptions,
+): GeneratorHarnessModule {
+  const opts = typeof apiKeyOrOptions === "string" ? { apiKey: apiKeyOrOptions } : apiKeyOrOptions;
   const client = new OpenAI({
-    apiKey: apiKey ?? process.env.OPENAI_API_KEY,
+    apiKey: opts?.apiKey ?? process.env.OPENAI_API_KEY,
   });
+  const defaultModel = opts?.model;
 
   return {
     async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = params.model ?? defaultModel;
+      if (!model) {
+        throw new Error("No model specified: provide model at harness creation or invoke time");
+      }
+
       const runId = v7();
       const parentId = context?.parentId;
       const reasoningId = v7();
@@ -153,7 +167,7 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
 
       try {
         const stream = await client.responses.create({
-          model: params.model,
+          model,
           instructions,
           input,
           ...(tools && tools.length > 0 && { tools }),

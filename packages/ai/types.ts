@@ -101,7 +101,7 @@ export type HarnessEvent =
 
 // Parameters for invoking a harness
 export interface InvokeParams {
-  model: string;
+  model?: string;
   messages: Message[];
   tools?: ToolDefinition[];
   emit: (event: HarnessEvent) => void;
@@ -113,7 +113,7 @@ export interface InvokeParams {
 
 // Parameters for generator-based harness invocation (no emit callback)
 export interface GeneratorInvokeParams {
-  model: string;
+  model?: string;
   messages: Message[];
   tools?: ToolDefinition[];
   context?: {

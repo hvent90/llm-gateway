@@ -148,13 +148,27 @@ function convertTools(tools: ToolDefinition[]) {
  * - Handle permissions (that's the agent wrapper's job)
  * - Loop after tool calls (that's the agent wrapper's job)
  */
-function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
+interface AnthropicHarnessOptions {
+  apiKey?: string;
+  model?: string;
+}
+
+function createGeneratorHarness(
+  apiKeyOrOptions?: string | AnthropicHarnessOptions,
+): GeneratorHarnessModule {
+  const opts = typeof apiKeyOrOptions === "string" ? { apiKey: apiKeyOrOptions } : apiKeyOrOptions;
   const client = new Anthropic({
-    apiKey: apiKey ?? process.env.ANTHROPIC_API_KEY,
+    apiKey: opts?.apiKey ?? process.env.ANTHROPIC_API_KEY,
   });
+  const defaultModel = opts?.model;
 
   return {
     async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = params.model ?? defaultModel;
+      if (!model) {
+        throw new Error("No model specified: provide model at harness creation or invoke time");
+      }
+
       const runId = v7();
       const parentId = context?.parentId;
       const reasoningId = v7();
@@ -167,11 +181,11 @@ function createGeneratorHarness(apiKey?: string): GeneratorHarnessModule {
       const system = getSystemMessage(params.messages);
       const tools = params.tools ? convertTools(params.tools) : undefined;
 
-      const enableThinking = supportsThinking(params.model);
+      const enableThinking = supportsThinking(model);
 
       try {
         const stream = await client.messages.create({
-          model: params.model,
+          model,
           max_tokens: enableThinking ? 16000 : 4096,
           messages,
           ...(system && { system }),

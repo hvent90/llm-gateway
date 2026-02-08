@@ -16,6 +16,7 @@ import { log } from "../logger";
 interface AgentHarnessOptions {
   harness: GeneratorHarnessModule;
   maxIterations?: number;
+  model?: string;
 }
 
 /**
@@ -28,10 +29,14 @@ interface AgentHarnessOptions {
  * - Message history: builds up messages array with assistant responses and tool results
  */
 function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModule {
-  const { harness, maxIterations = 10 } = options;
+  const { harness, maxIterations = 10, model: defaultModel } = options;
 
   return {
     async *invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = params.model ?? defaultModel;
+      if (!model) {
+        throw new Error("No model specified: provide model at harness creation or invoke time");
+      }
       const myRunId = uuidv7();
       const nsId = (rawId: string) => `${myRunId}/${rawId}`;
       const parentId = params.context?.parentId;
@@ -72,9 +77,10 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
         // Single iteration - collect events from provider harness
         const llmStart = Date.now();
-        log("I", myRunId, "llm_call_start", `model=${params.model}`);
+        log("I", myRunId, "llm_call_start", `model=${model}`);
         for await (const event of harness.invoke({
           ...params,
+          model,
           messages,
           tools: isSummarizing ? [] : params.tools,
           context: { parentId: myRunId },
@@ -210,8 +216,13 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
 
           // Check for malformed tool arguments (truncated JSON from model)
           if (args && typeof args === "object" && "__toolParseError" in args) {
-            const { parseError, rawArguments } = args as { parseError?: string; rawArguments?: string };
-            const output = { error: `Tool call had malformed arguments. Parse error: ${parseError ?? "unknown"}. Raw arguments: ${rawArguments ?? ""}` };
+            const { parseError, rawArguments } = args as {
+              parseError?: string;
+              rawArguments?: string;
+            };
+            const output = {
+              error: `Tool call had malformed arguments. Parse error: ${parseError ?? "unknown"}. Raw arguments: ${rawArguments ?? ""}`,
+            };
             yield tag({
               type: "tool_result",
               runId: myRunId,

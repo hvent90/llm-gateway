@@ -931,3 +931,72 @@ test("dispatches multiple tool calls concurrently", async () => {
   expect(callOrder[0]).toBe("start-a");
   expect(callOrder[1]).toBe("start-b");
 });
+
+describe("agent harness default model resolution", () => {
+  test("model set at agent creation, not at invoke → works", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness, model: "test-model" });
+    const events = await collectEvents(
+      agentHarness.invoke({
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    const textEvents = events.filter((e) => e.type === "text");
+    expect(textEvents.length).toBeGreaterThan(0);
+  });
+
+  test("model set at both agent creation and invoke → invoke wins", async () => {
+    const capturedModels: string[] = [];
+
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke(params) {
+        if (params.model) capturedModels.push(params.model);
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness, model: "creation-model" });
+    await collectEvents(
+      agentHarness.invoke({
+        model: "invoke-model",
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    );
+
+    // The inner harness should receive "invoke-model", not "creation-model"
+    expect(capturedModels[0]).toBe("invoke-model");
+  });
+
+  test("model set at neither agent creation nor invoke → throws", async () => {
+    const mockHarness: GeneratorHarnessModule = {
+      async *invoke() {
+        yield { type: "text", runId: "r1", id: "t1", content: "Hello" };
+      },
+      async supportedModels() {
+        return ["test-model"];
+      },
+    };
+
+    const agentHarness = createAgentHarness({ harness: mockHarness });
+
+    await expect(
+      collectEvents(
+        agentHarness.invoke({
+          messages: [{ role: "user", content: "Hi" }],
+        }),
+      ),
+    ).rejects.toThrow("No model specified");
+  });
+});
