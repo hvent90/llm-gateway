@@ -15,6 +15,10 @@ export type { Graph, Node } from "./types";
 export type { PendingRelay, ConversationState, ConversationEvent } from "./conversation";
 export type { ServerEvent, StreamRequest } from "./server-event";
 
+// Progress accumulation
+export { accumulate } from "./progress";
+export type { ToolProgressAccumulator } from "./progress";
+
 // Transports
 export { createSSETransport } from "./transports/sse";
 export { createHTTPTransport } from "./transports/http";
