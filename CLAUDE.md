@@ -1,6 +1,6 @@
 # LLM Gateway
 
-Hono server proxying LLM requests through a harness interface.
+An agent framework built on three simple ideas: a harness yields events, harnesses compose, and events form a graph.
 
 ## Tech Stack
 
@@ -24,12 +24,19 @@ Hono server proxying LLM requests through a harness interface.
 
 - `server/` - Hono HTTP server & SSE endpoints
 - `packages/ai/` - Core AI orchestration package
-  - `harness/` - Provider & agent harnesses
+  - `harness/` - Provider & agent harnesses (async generators that yield events)
   - `tools/` - Tool implementations
   - `client/` - Client-side libraries
   - `primitives/` - Utility structures
 - `clients/` - Web and CLI clients
-- Tests live in `__tests__/` folders co-located within each module directory (e.g., `tools/__tests__/read.test.ts` for `tools/read.ts`)
+- Tests co-located with source files or in adjacent `__tests__/` folders
+
+## Docs
+
+- `README.md` - Use cases, concepts, and technical architecture
+- `docs/subagents.md` - Subagent spawning, graph structure, and client rendering
+- `docs/requirements.md` - Streaming architecture, persistence, and conversation graph
+- `docs/writing-a-good-claude-md.md` - Guidelines for writing effective CLAUDE.md files
 
 ## Commands
 
@@ -38,5 +45,4 @@ bun install
 bun run dev
 bun test
 bun run format
-bun run check
 ```
