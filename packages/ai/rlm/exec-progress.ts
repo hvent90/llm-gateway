@@ -11,7 +11,9 @@ export type ExecProgressState = {
   } | null;
 };
 
-function isStreamChunk(content: unknown): content is { channel: "stdout" | "stderr"; data: string } {
+function isStreamChunk(
+  content: unknown,
+): content is { channel: "stdout" | "stderr"; data: string } {
   return (
     typeof content === "object" &&
     content !== null &&

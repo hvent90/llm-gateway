@@ -91,7 +91,14 @@ function eventToNode(id: string, event: GraphEvent): Node {
     case "tool_result":
       return { id, runId, kind: "tool_result", name: event.name, output: event.output };
     case "tool_progress":
-      return { id, runId, kind: "tool_progress", toolCallId: event.toolCallId, name: event.name, content: event.content };
+      return {
+        id,
+        runId,
+        kind: "tool_progress",
+        toolCallId: event.toolCallId,
+        name: event.name,
+        content: event.content,
+      };
     case "harness_start":
       return { id, runId, kind: "harness_start", agentId: event.agentId };
     case "harness_end":

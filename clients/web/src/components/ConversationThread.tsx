@@ -180,7 +180,9 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
           )}
           {progress?.metrics && (
             <div className="mt-1 border-t border-neutral-800 pt-1 text-xs text-neutral-600">
-              CPU: {progress.metrics.cpuPercent.toFixed(1)}% · RSS: {(progress.metrics.rssKb / 1024).toFixed(1)}MB · {(progress.metrics.wallMs / 1000).toFixed(1)}s
+              CPU: {progress.metrics.cpuPercent.toFixed(1)}% · RSS:{" "}
+              {(progress.metrics.rssKb / 1024).toFixed(1)}MB ·{" "}
+              {(progress.metrics.wallMs / 1000).toFixed(1)}s
             </div>
           )}
         </div>
