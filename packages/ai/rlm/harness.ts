@@ -4,11 +4,16 @@ import type {
   GeneratorInvokeParams,
   HarnessEvent,
   Message,
+  PermissionResponse,
+  RelayEvent,
 } from "../types";
-import type { RlmConfig } from "./types";
+import type { RlmConfig, ReplExecutionResult } from "./types";
 import { createRepl } from "./repl";
 import { buildRlmSystemPrompt } from "./system-prompt";
 import { execShell } from "../tools/lib/shell";
+import { AsyncQueue } from "../primitives/async-queue";
+import { deferred } from "../primitives";
+import { matchesPermissions } from "../permissions";
 
 interface RlmHarnessOptions {
   /** Provider harness for root LLM calls */
@@ -77,9 +82,45 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         return text;
       };
 
-      // exec callback: run a shell command with configurable timeout
-      const exec = (command: string, timeout?: number) =>
-        execShell({ command, timeout: timeout ?? config.execTimeout ?? 10 });
+      // Queue for exec relay events that need to be yielded from the generator
+      type ExecQueueItem =
+        | { type: "relay"; event: RelayEvent }
+        | { type: "repl_done"; result: ReplExecutionResult };
+
+      let execEvents: AsyncQueue<ExecQueueItem> | undefined;
+
+      // exec callback: run a shell command with permission check
+      const exec = async (command: string, timeout?: number) => {
+        if (params.permissions) {
+          const isAllowed = matchesPermissions(
+            { name: "exec", arguments: { command } },
+            params.permissions,
+          );
+
+          if (!isAllowed) {
+            const d = deferred<PermissionResponse>();
+            const relayEvent: RelayEvent = tag({
+              type: "relay" as const,
+              kind: "permission" as const,
+              runId,
+              id: uuidv7(),
+              toolCallId: uuidv7(),
+              tool: "exec",
+              params: { command },
+              respond: (response: PermissionResponse) => d.resolve(response),
+            });
+
+            execEvents?.push({ type: "relay", event: relayEvent });
+
+            const decision = await d.promise;
+            if (!decision.approved) {
+              throw new Error(`exec denied: ${decision.reason ?? "permission denied"}`);
+            }
+          }
+        }
+
+        return execShell({ command, timeout: timeout ?? config.execTimeout ?? 10 });
+      };
 
       // Create the REPL with prompt as context
       const repl = createRepl({
@@ -130,8 +171,23 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           input: { code },
         });
 
-        // Execute in REPL
-        const result = await repl.execute(code);
+        // Execute in REPL with queue drain for relay events
+        execEvents = new AsyncQueue<ExecQueueItem>();
+        const currentQueue = execEvents;
+
+        repl.execute(code).then((r) => currentQueue.push({ type: "repl_done", result: r }));
+
+        let result: ReplExecutionResult;
+        while (true) {
+          const item = await currentQueue.pop();
+          if (item.type === "repl_done") {
+            result = item.result;
+            break;
+          }
+          yield item.event;
+        }
+
+        execEvents = undefined;
 
         // Build output for tool_result
         const output = result.error

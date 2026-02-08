@@ -28,8 +28,13 @@ Composition: `createRlmHarness({ rootHarness: createGeneratorHarness(), config }
 - `harness_start` / `harness_end` — lifecycle boundaries
 - `tool_call` (name: `repl_execute`) — the code being executed
 - `tool_result` — stdout/error from REPL execution
+- `relay` (kind: `permission`) — HITL approval for exec() when permissions are provided
 - `text` — final answer when `FINAL()` is called
 - `usage` — passed through from provider calls
+
+## HITL Relay for exec()
+
+When `permissions` is passed to `invoke()`, exec calls are gated via relay events using an AsyncQueue bridge. The exec callback pushes relay events onto a queue; the harness drain loop yields them from the generator. The orchestrator resolves relays, which unblocks the exec callback inside `repl.execute()`. Without permissions, exec runs freely (backward compat).
 
 ## Testing
 

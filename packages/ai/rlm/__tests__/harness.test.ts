@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createDeterministicHarness } from "../../harness/providers/deterministic";
 import { createRlmHarness } from "../harness";
-import type { HarnessEvent } from "../../types";
+import type { HarnessEvent, RelayEvent } from "../../types";
 import type { RlmConfig } from "../types";
 
 function defaultConfig(overrides: Partial<RlmConfig> = {}): RlmConfig {
@@ -368,6 +368,206 @@ describe("RLM harness", () => {
       expect(textEvent).toBeDefined();
       if (textEvent?.type === "text") {
         expect(textEvent.content).toBe("the secret message");
+      }
+    });
+  });
+
+  describe("exec HITL relay", () => {
+    /** Collect events, auto-handling relay events via onRelay callback. */
+    async function collectEventsWithRelays(
+      iterable: AsyncIterable<HarnessEvent>,
+      onRelay: (event: RelayEvent) => void,
+    ): Promise<HarnessEvent[]> {
+      const events: HarnessEvent[] = [];
+      for await (const event of iterable) {
+        events.push(event);
+        if (event.type === "relay") onRelay(event);
+      }
+      return events;
+    }
+
+    test("exec yields relay when permissions provided with empty allowlist", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'const r = await exec("echo hitl");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const relays: RelayEvent[] = [];
+      const events = await collectEventsWithRelays(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test exec hitl" }],
+          permissions: { allowlist: [] },
+        }),
+        (relay) => {
+          relays.push(relay);
+          relay.respond({ approved: true });
+        },
+      );
+
+      // Should have exactly one relay event for exec
+      expect(relays.length).toBe(1);
+      expect(relays[0].tool).toBe("exec");
+      expect(relays[0].params).toEqual({ command: "echo hitl" });
+
+      // Should still get final result after approval
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("hitl");
+      }
+    });
+
+    test("denied exec surfaces as REPL error", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'const r = await exec("rm -rf /");\nFINAL(r.stdout);',
+              },
+            ],
+          },
+          {
+            events: [
+              {
+                type: "text",
+                content: 'FINAL("recovered after denial")',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEventsWithRelays(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test denied exec" }],
+          permissions: { allowlist: [] },
+        }),
+        (relay) => {
+          relay.respond({ approved: false, reason: "dangerous command" });
+        },
+      );
+
+      // First tool_result should contain the denial error
+      const toolResults = events.filter((e) => e.type === "tool_result");
+      expect(toolResults.length).toBe(2);
+      if (toolResults[0].type === "tool_result") {
+        const output = toolResults[0].output as { error: string };
+        expect(output.error).toContain("exec denied");
+      }
+
+      // Model recovers in second turn
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("recovered after denial");
+      }
+    });
+
+    test("exec auto-approved via allowlist — no relay event", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'const r = await exec("echo allowed");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const relays: RelayEvent[] = [];
+      const events = await collectEventsWithRelays(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test auto-approved exec" }],
+          permissions: { allowlist: [{ tool: "exec" }] },
+        }),
+        (relay) => {
+          relays.push(relay);
+          relay.respond({ approved: true });
+        },
+      );
+
+      // No relay events — exec is pre-approved
+      expect(relays.length).toBe(0);
+
+      // Should get final result
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("allowed");
+      }
+    });
+
+    test("no relay when permissions absent — backward compat", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'const r = await exec("echo free");\nFINAL(r.stdout.trim());',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const relays: RelayEvent[] = [];
+      const events = await collectEventsWithRelays(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test no permissions" }],
+          // No permissions field — exec runs freely
+        }),
+        (relay) => {
+          relays.push(relay);
+          relay.respond({ approved: true });
+        },
+      );
+
+      // No relay events
+      expect(relays.length).toBe(0);
+
+      // Should get final result
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("free");
       }
     });
   });

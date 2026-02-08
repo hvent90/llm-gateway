@@ -227,6 +227,28 @@ const slow = await exec("long-running-command", 30);
 
 The default timeout is controlled by `RlmConfig.execTimeout` (default: 10 seconds). The model can override per-call via the second argument.
 
+## Permissions for exec() Gating
+
+When `permissions` is passed to `invoke()`, exec calls are checked against the allowlist. Unmatched calls yield a `relay` event (kind: `"permission"`) that pauses execution until the consumer approves or denies.
+
+```typescript
+for await (const event of rlm.invoke({
+  messages: [{ role: "user", content: userInput }],
+  permissions: { allowlist: [] },  // require approval for all exec calls
+})) {
+  if (event.type === "relay" && event.kind === "permission") {
+    // event.tool === "exec", event.params === { command: "..." }
+    event.respond({ approved: true });  // or { approved: false, reason: "..." }
+  }
+}
+```
+
+Permission semantics:
+
+- **`permissions` provided** — exec is checked against the allowlist; relay on miss
+- **`permissions` absent** — exec runs freely (backward compatible, current default)
+- **"Always allow"** — the orchestrator's `resolveRelay({ always: true })` adds `{ tool: "exec" }` to the shared allowlist; subsequent exec calls auto-approve
+
 ## Error Handling
 
 ### REPL errors don't crash the harness
