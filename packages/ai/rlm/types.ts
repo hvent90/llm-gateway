@@ -12,8 +12,10 @@ export interface RlmConfig {
   metadataPrefixLength: number;
   /** Model for sub-LLM calls (llm_query). Defaults to the model passed at invoke time. */
   subModel?: string;
-  /** Max character length for llm_query/sub_rlm prompts. Enforced at runtime — exceeding throws an error the model can see and correct. */
+  /** Max character length for llm_query prompts. Enforced at runtime — exceeding throws an error the model can see and correct. */
   subCharBudget?: number;
+  /** Max recursion depth for llm_query. At depth > 0, llm_query spawns a full child RLM session. At depth 0, it falls back to a flat one-shot call. Default: 2. */
+  maxDepth?: number;
   /** Default timeout in seconds for exec() calls (default: 10) */
   execTimeout?: number;
 }
@@ -42,9 +44,6 @@ export interface ReplExecutionResult {
 
 /** Callback type for llm_query inside the REPL */
 export type LlmQueryFn = (prompt: string) => Promise<string>;
-
-/** Callback type for sub_rlm inside the REPL */
-export type SubRlmFn = (prompt: string) => Promise<string>;
 
 /** Result of a shell command execution */
 export interface ShellResult {

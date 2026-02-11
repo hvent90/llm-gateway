@@ -5,7 +5,6 @@ function makeRepl(
   overrides: {
     context?: string;
     llmQuery?: (prompt: string) => Promise<string>;
-    subRlm?: (prompt: string) => Promise<string>;
     exec?: (
       command: string,
       timeout?: number,
@@ -16,7 +15,6 @@ function makeRepl(
   return createRepl({
     context: overrides.context ?? "test context",
     llmQuery: overrides.llmQuery ?? (async (p: string) => `echo: ${p}`),
-    subRlm: overrides.subRlm,
     exec: overrides.exec,
     maxStdoutLength: overrides.maxStdoutLength,
   });
@@ -157,25 +155,6 @@ describe("REPL sandbox", () => {
       });
       await repl.execute('scope.answer = await llm_query("meaning of life");');
       expect(repl.getState().variables.get("answer")).toBe("42");
-    });
-  });
-
-  describe("sub_rlm integration", () => {
-    test("sub_rlm calls the provided callback", async () => {
-      const repl = makeRepl({
-        subRlm: async (prompt: string) => `sub: ${prompt}`,
-      });
-      const result = await repl.execute(`
-        const r = await sub_rlm("summarize this");
-        print(r);
-      `);
-      expect(result.stdout).toBe("sub: summarize this");
-    });
-
-    test("sub_rlm throws when not provided", async () => {
-      const repl = makeRepl();
-      const result = await repl.execute('await sub_rlm("test");');
-      expect(result.error).toContain("sub_rlm is not available");
     });
   });
 

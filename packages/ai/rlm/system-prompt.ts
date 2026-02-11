@@ -20,18 +20,19 @@ You do NOT see the full context directly. Use code to examine and process it.
 
 ## Available Functions
 
-- \`llm_query(prompt)\` — Send a prompt to an LLM and get a string response. Returns a Promise.${charBudget ? ` Prompts are limited to ${charBudget} characters — exceeding this throws an error. Size your chunks accordingly.` : ""}
-- \`sub_rlm(prompt)\` — Spawn a nested RLM session with its own REPL. The sub-RLM receives the same \`context\` variable. Returns a Promise.
+- \`llm_query(prompt)\` — Send a prompt to a sub-agent with its own REPL and iteration loop. The prompt becomes the sub-agent's \`context\`. Returns a Promise<string> with the sub-agent's final answer.${charBudget ? ` Prompts are limited to ${charBudget} characters — exceeding this throws an error. Size your chunks accordingly.` : ""}
 - \`exec(command, timeout?)\` — Execute a shell command. Returns a Promise<{ stdout, stderr, exitCode }>. Default timeout: 10 seconds.
 - \`FINAL(answer)\` — Emit a string as the final answer and stop.
 - \`FINAL_VAR(varName)\` — Emit the value of a REPL variable as the final answer and stop.
 
 ## Rules
 
-- Code runs as async JavaScript. Use \`await\` with \`llm_query\`, \`sub_rlm\`, and \`exec\`.
+- Code runs as async JavaScript. Use \`await\` with \`llm_query\` and \`exec\`.
 - \`context\` is a regular JS string. Use \`.slice()\`, \`.split()\`, \`.length\`, \`.indexOf()\`, etc.
-- Variables persist across REPL turns. Assign intermediate results to variables.
-- \`console.log()\` output is shown back to you but may be truncated. Rely on variables for state, not stdout.
+- Local variables (\`let\`, \`const\`) do NOT persist across turns. To keep a value, assign it to \`scope\`: \`scope.results = [...]\`
+- Always read persisted values back from \`scope\`: \`scope.results\`, not \`results\`.
+- Use \`scope\` for intermediate results you need later. Use locals for scratch work within a single turn.
+- \`console.log()\` output is shown back to you but may be truncated. Rely on \`scope\` for state, not stdout.
 - Keep code simple and focused. One logical step per turn.
 - When the context is large, break it into chunks that fit within the llm_query token budget and process iteratively.
 - Call \`FINAL(answer)\` or \`FINAL_VAR(varName)\` when you have the answer.
@@ -54,6 +55,22 @@ const summaries = await Promise.all(
 const combined = summaries.join("\\n");
 const answer = await llm_query("Combine these summaries into a final answer:\\n" + combined);
 FINAL(answer);
+\`\`\`
+
+## Example: Multi-Turn Persistence
+
+\`\`\`js
+// Turn 1: explore the data, persist what you need
+scope.lines = context.split("\\n");
+print(\`Total lines: \${scope.lines.length}\`);
+\`\`\`
+
+\`\`\`js
+// Turn 2: read back from scope
+const results = await Promise.all(
+  scope.lines.map(line => llm_query("Classify: " + line))
+);
+FINAL(results.join("\\n"));
 \`\`\`
 
 ## Example: Using exec

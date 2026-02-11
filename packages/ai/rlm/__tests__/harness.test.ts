@@ -237,7 +237,7 @@ describe("RLM harness", () => {
       const rlm = createRlmHarness({
         rootHarness,
         subHarness,
-        config: defaultConfig(),
+        config: defaultConfig({ maxDepth: 0 }),
       });
 
       const events = await collectEvents(
@@ -851,6 +851,108 @@ describe("RLM harness", () => {
           expect(p.toolCallId).toBe(toolCall!.id);
         }
       }
+    });
+  });
+
+  describe("recursive llm_query", () => {
+    test("llm_query at depth > 0 spawns child RLM that iterates and returns", async () => {
+      // Parent RLM: model calls llm_query("child task") then FINALs the result
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'scope.answer = await llm_query("child task");\nFINAL(scope.answer);',
+              },
+            ],
+          },
+        ],
+      });
+
+      // Child RLM (sub-harness): gets "child task" as context, processes it
+      const subHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          // Child turn 1: examine context
+          { events: [{ type: "text", content: "print(context)" }] },
+          // Child turn 2: return final answer
+          { events: [{ type: "text", content: 'FINAL("child result: " + context)' }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        subHarness,
+        config: defaultConfig({ maxDepth: 1 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "parent task" }],
+        }),
+      );
+
+      // Parent should yield the child's final answer
+      const textEvent = events.find((e) => e.type === "text" && !("parentId" in e));
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("child result: child task");
+      }
+
+      // Child events should bubble up as progress (harness_start, tool_call, tool_result, text, harness_end)
+      const childEvents = events.filter((e) => "parentId" in e && e.parentId !== undefined);
+      expect(childEvents.length).toBeGreaterThan(0);
+
+      // Child events should include tool_call events from the child REPL
+      const childToolCalls = childEvents.filter((e) => e.type === "tool_call");
+      expect(childToolCalls.length).toBe(2); // two child REPL turns
+    });
+
+    test("llm_query at depth 0 falls back to flat one-shot call", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'scope.answer = await llm_query("flat query");\nFINAL(scope.answer);',
+              },
+            ],
+          },
+        ],
+      });
+
+      const subHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [{ events: [{ type: "text", content: "flat response" }] }],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        subHarness,
+        config: defaultConfig({ maxDepth: 0 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test" }],
+        }),
+      );
+
+      const textEvent = events.find((e) => e.type === "text");
+      expect(textEvent).toBeDefined();
+      if (textEvent?.type === "text") {
+        expect(textEvent.content).toBe("flat response");
+      }
+
+      // No child RLM events should appear (no harness_start from child)
+      const childHarnessStarts = events.filter(
+        (e) => e.type === "harness_start" && "parentId" in e && e.parentId !== undefined,
+      );
+      expect(childHarnessStarts.length).toBe(0);
     });
   });
 });

@@ -10,7 +10,7 @@ Composition: `createRlmHarness({ rootHarness: createGeneratorHarness(), config }
 
 ## Key Files
 
-- `types.ts` — `RlmConfig`, `ReplState`, `ReplExecutionResult`, callback types (`LlmQueryFn`, `SubRlmFn`, `ExecFn`)
+- `types.ts` — `RlmConfig`, `ReplState`, `ReplExecutionResult`, callback types (`LlmQueryFn`, `ExecFn`)
 - `repl.ts` — `createRepl()`: sandboxed async JS REPL with persistent scope, stdout capture, and `FINAL()`/`FINAL_VAR()` completion signals
 - `system-prompt.ts` — `buildRlmSystemPrompt()`: instructs the model on REPL usage, available functions, and coding patterns
 - `harness.ts` — `createRlmHarness()`: the main inference loop. Implements `GeneratorHarnessModule` so it composes with the agent harness and orchestrator like any provider

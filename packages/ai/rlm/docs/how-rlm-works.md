@@ -67,8 +67,7 @@ The REPL (`repl.ts`) provides a sandboxed async JavaScript execution environment
 | Name | Type | Description |
 |------|------|-------------|
 | `context` | `string` | The user's input, available as a plain JS string |
-| `llm_query(prompt)` | `(string) => Promise<string>` | Send a prompt to a sub-LLM and get a response |
-| `sub_rlm(prompt)` | `(string) => Promise<string>` | Spawn a nested RLM session (v1: delegates to `llm_query`) |
+| `llm_query(prompt)` | `(string) => Promise<string>` | Send a prompt to a sub-agent with its own REPL and iteration loop. The prompt becomes the sub-agent's `context`. At depth 0, falls back to a flat one-shot call. |
 | `exec(command, timeout?)` | `(string, number?) => Promise<ShellResult>` | Execute a shell command. Returns `{ stdout, stderr, exitCode }`. Default timeout: 10s |
 | `FINAL(answer)` | `(unknown) => void` | Emit a value as the final answer and stop the loop |
 | `FINAL_VAR(varName)` | `(string) => void` | Emit a scope variable as the final answer and stop |
@@ -76,7 +75,7 @@ The REPL (`repl.ts`) provides a sandboxed async JavaScript execution environment
 
 ### Persistence
 
-Variables persist across REPL turns through a shared `scope` object. The model assigns values as `scope.varName = value`, and they survive between `execute()` calls. Built-ins (`context`, `llm_query`, etc.) are also in scope but exposed as convenience locals via destructuring.
+Variables persist across REPL turns through a shared `scope` object. The model assigns values as `scope.varName = value`, and they survive between `execute()` calls. Built-ins (`context`, `llm_query`, `exec`, etc.) are also in scope but exposed as convenience locals via destructuring.
 
 ### Sandboxing
 
@@ -93,7 +92,7 @@ The term "symbolic handle" describes the key design choice: the model never rece
 - **Length**: how many characters the input has
 - **Prefix**: a short prefix snippet for orientation
 
-The model must use code to access the actual data via the `context` variable. This is what makes RLM recursive — the model can delegate parts of `context` to sub-LLM calls or nested RLM sessions, each processing a slice without any single call needing to fit the whole input.
+The model must use code to access the actual data via the `context` variable. This is what makes RLM recursive — the model can delegate parts of `context` to `llm_query` calls, each of which spawns a child RLM session with its own REPL and iteration loop. Each child processes a slice without any single call needing to fit the whole input.
 
 ## How It Fits Into the Harness Architecture
 
@@ -146,4 +145,4 @@ All events share the same `runId`. The `tool_call`/`tool_result` pairs make each
 
 **Why separate root and sub models?** The code-generating model needs to be capable (it's writing programs), but `llm_query` calls inside the REPL are typically simpler tasks (summarize a chunk, extract a field). Using a cheaper model for sub-calls reduces cost.
 
-**Why v1 sub_rlm delegates to llm_query?** True recursive RLM (spawning a full nested REPL session) is an optimization. The v1 implementation validates the architecture and interface while keeping complexity low. The `SubRlmFn` type is already defined for when recursive nesting is added.
+**Why depth-limited recursion?** `llm_query` spawns a full child RLM session at depth > 0 and falls back to a flat one-shot call at depth 0. The `maxDepth` config (default: 2) controls this. Each child inherits the parent's config with `maxDepth` decremented. This gives the model recursive capability while preventing unbounded nesting.

@@ -66,7 +66,9 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
       // The context string is the data for the REPL to work with
       const ctx = params.context ?? "";
 
-      // llm_query callback: send a prompt to the sub-harness
+      // llm_query callback: depth-aware. At depth > 0, spawns a child RLM session.
+      // At depth 0, falls back to a flat one-shot call.
+      const depth = config.maxDepth ?? 2;
       const llmQuery = async (prompt: string): Promise<string> => {
         const charBudget = config.subCharBudget ?? 120_000;
         if (prompt.length > charBudget) {
@@ -82,9 +84,31 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
             id: uuidv7(),
             toolCallId: currentCallId ?? uuidv7(),
             name: "llm_query",
-            content: { promptLength: prompt.length },
+            content: { promptLength: prompt.length, depth },
           }),
         });
+
+        if (depth > 0) {
+          // Recursive: spawn a child RLM session with its own REPL
+          const childRlm = createRlmHarness({
+            rootHarness: subHarness,
+            config: { ...config, maxDepth: depth - 1 },
+          });
+          let text = "";
+          for await (const childEvent of childRlm.invoke({
+            model: config.subModel ?? params.model,
+            context: prompt,
+            messages: [{ role: "user", content: "Process the context and return a result." }],
+            env: { parentId: runId },
+          })) {
+            // Forward child events as progress
+            execEvents?.push({ type: "progress", event: childEvent });
+            if (childEvent.type === "text") text += childEvent.content;
+          }
+          return text;
+        }
+
+        // Flat: one-shot LLM call (base case)
         const { text } = await collectText(
           subHarness.invoke({
             model: config.subModel ?? params.model,
@@ -295,7 +319,6 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
       const repl = createRepl({
         context: ctx,
         llmQuery,
-        subRlm: llmQuery, // v1: sub_rlm delegates to llm_query
         exec,
         maxStdoutLength: config.maxStdoutLength,
       });

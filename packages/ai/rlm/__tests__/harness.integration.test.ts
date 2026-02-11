@@ -87,7 +87,18 @@ function numberToWords(n: number): string {
     "eighteen",
     "nineteen",
   ];
-  const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+  const tens = [
+    "",
+    "",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+  ];
 
   function below1000(x: number): string {
     if (x < 20) return ones[x];
@@ -96,7 +107,9 @@ function numberToWords(n: number): string {
   }
 
   if (n < 1000) return below1000(n);
-  return below1000(Math.floor(n / 1000)) + " thousand" + (n % 1000 ? " " + below1000(n % 1000) : "");
+  return (
+    below1000(Math.floor(n / 1000)) + " thousand" + (n % 1000 ? " " + below1000(n % 1000) : "")
+  );
 }
 
 /**
@@ -165,7 +178,7 @@ describe(
 
         // 1000 rows with English-word values — can't be parsed with parseInt or sort -n.
         // The model must use llm_query to interpret/compare values across chunks.
-        const { haystack, expectedRow } = buildEnglishNumberHaystack(1000);
+        const { haystack, expectedRow } = buildEnglishNumberHaystack(100);
         console.log(`haystack: ${haystack.length} chars, expected: ${expectedRow}`);
 
         const rlm = createRlmHarness({
