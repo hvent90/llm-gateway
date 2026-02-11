@@ -124,8 +124,9 @@ export interface InvokeParams {
 export interface GeneratorInvokeParams {
   model?: string;
   messages: Message[];
+  context?: string;
   tools?: ToolDefinition[];
-  context?: {
+  env?: {
     parentId?: string;
     spawn?: (task: string, parentId: string) => Promise<string>;
     fileTime?: FileTime;

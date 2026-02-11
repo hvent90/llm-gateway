@@ -171,7 +171,7 @@ describe("OpenRouter Generator Harness", () => {
       for await (const event of openRouterHarness.invoke({
         model: TEST_MODEL,
         messages: [{ role: "user", content: "Say hi" }],
-        context: { parentId: "agent-run-123" },
+        env: { parentId: "agent-run-123" },
       })) {
         events.push(event);
       }

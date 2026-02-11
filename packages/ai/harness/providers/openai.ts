@@ -148,14 +148,14 @@ function createGeneratorHarness(
   const defaultModel = opts?.model;
 
   return {
-    async *invoke({ context, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+    async *invoke({ env, ...params }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
       const model = params.model ?? defaultModel;
       if (!model) {
         throw new Error("No model specified: provide model at harness creation or invoke time");
       }
 
       const runId = v7();
-      const parentId = context?.parentId;
+      const parentId = env?.parentId;
       const reasoningId = v7();
       const textId = v7();
 

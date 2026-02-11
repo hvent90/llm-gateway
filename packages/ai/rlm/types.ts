@@ -12,6 +12,8 @@ export interface RlmConfig {
   metadataPrefixLength: number;
   /** Model for sub-LLM calls (llm_query). Defaults to the model passed at invoke time. */
   subModel?: string;
+  /** Max character length for llm_query/sub_rlm prompts. Enforced at runtime — exceeding throws an error the model can see and correct. */
+  subCharBudget?: number;
   /** Default timeout in seconds for exec() calls (default: 10) */
   execTimeout?: number;
 }

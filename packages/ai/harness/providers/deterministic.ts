@@ -43,16 +43,13 @@ export function createDeterministicHarness(
   const defaultModel = config.model;
 
   return {
-    async *invoke({
-      context,
-      model: invokeModel,
-    }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+    async *invoke({ env, model: invokeModel }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
       const model = invokeModel ?? defaultModel;
       if (!model) {
         throw new Error("No model specified: provide model at harness creation or invoke time");
       }
       const runId = uuidv7();
-      const parentId = context?.parentId;
+      const parentId = env?.parentId;
 
       const tag = <T extends object>(event: T): T & { parentId?: string } =>
         parentId ? { ...event, parentId } : event;

@@ -111,8 +111,8 @@ export class AgentOrchestrator {
     const stream = this.harness.invoke({
       ...params,
       permissions,
-      context: {
-        ...params.context,
+      env: {
+        ...params.env,
         fileTime: this.fileTime,
         spawn: (task: string, parentId: string) =>
           this.spawnSubagent(task, parentId, { ...params, permissions }),
@@ -153,7 +153,7 @@ export class AgentOrchestrator {
       messages: [{ role: "user", content: task }],
       tools: parentParams.tools,
       permissions: parentParams.permissions,
-      context: {
+      env: {
         parentId,
         fileTime: this.fileTime,
         spawn: (t: string, pid: string) => this.spawnSubagent(t, pid, parentParams),

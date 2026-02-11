@@ -2,6 +2,10 @@
 
 An agent framework built on three simple ideas: a harness yields events, harnesses compose, and the events form a graph.
 
+_Point your friendly coding agent to this repo and ask if LLM Gateway is right for you_
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hvent90/llm-gateway)
+
 ## Use Cases
 
 The components are composable — pick what you need:

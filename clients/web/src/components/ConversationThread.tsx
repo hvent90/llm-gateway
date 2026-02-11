@@ -175,9 +175,7 @@ function ToolCallView({ content }: { content: Extract<ViewContent, { kind: "tool
               )}
               {progress.stderr && (
                 <div className="flex max-h-40 flex-col-reverse overflow-y-auto">
-                  <pre className="whitespace-pre-wrap text-xs text-red-400">
-                    {progress.stderr}
-                  </pre>
+                  <pre className="whitespace-pre-wrap text-xs text-red-400">{progress.stderr}</pre>
                 </div>
               )}
             </div>

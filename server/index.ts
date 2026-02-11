@@ -29,6 +29,7 @@ export interface AppConfig {
 interface ChatRequest {
   model: string;
   messages: Message[];
+  context?: string;
   permissions?: Permissions;
   mode?: "agent" | "rlm";
 }
@@ -105,6 +106,7 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
           const agentId = orchestrator.spawn({
             model,
             messages: body.messages,
+            context: body.context,
             permissions: body.permissions,
           });
 

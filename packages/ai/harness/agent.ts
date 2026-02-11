@@ -39,7 +39,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
       }
       const myRunId = uuidv7();
       const nsId = (rawId: string) => `${myRunId}/${rawId}`;
-      const parentId = params.context?.parentId;
+      const parentId = params.env?.parentId;
 
       const tag = <T extends { runId: string }>(event: T): T & { parentId?: string } => {
         const tagged = { ...event, runId: myRunId };
@@ -83,7 +83,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           model,
           messages,
           tools: isSummarizing ? [] : params.tools,
-          context: { parentId: myRunId },
+          env: { parentId: myRunId },
         })) {
           // Pass through text, reasoning, and error events
           if (event.type === "text") {
@@ -264,10 +264,10 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           approved.map(async ({ tc, toolDef }) => {
             const toolCtx: ToolContext = {
               parentId: nsId(tc.id),
-              spawn: params.context?.spawn
-                ? (task: string) => params.context!.spawn!(task, nsId(tc.id))
+              spawn: params.env?.spawn
+                ? (task: string) => params.env!.spawn!(task, nsId(tc.id))
                 : undefined,
-              fileTime: params.context?.fileTime,
+              fileTime: params.env?.fileTime,
             };
             try {
               const { context: toolContext, result: toolResult } = await toolDef.execute!(

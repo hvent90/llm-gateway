@@ -52,7 +52,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
   return {
     async *invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
       const runId = uuidv7();
-      const parentId = params.context?.parentId;
+      const parentId = params.env?.parentId;
 
       const tag = <T extends { runId: string }>(event: T): T & { parentId?: string } => {
         const tagged = { ...event, runId };
@@ -63,19 +63,31 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
       yield tag({ type: "harness_start", runId });
 
-      // Find the user prompt — last user message
-      const userMessage = [...params.messages].reverse().find((m) => m.role === "user");
-      const userPrompt =
-        typeof userMessage?.content === "string"
-          ? userMessage.content
-          : ((userMessage?.content?.find((p) => p.type === "text") as { text: string } | undefined)
-              ?.text ?? "");
+      // The context string is the data for the REPL to work with
+      const ctx = params.context ?? "";
 
       // llm_query callback: send a prompt to the sub-harness
       const llmQuery = async (prompt: string): Promise<string> => {
+        const charBudget = config.subCharBudget ?? 120_000;
+        if (prompt.length > charBudget) {
+          throw new Error(
+            `llm_query prompt exceeds ${charBudget} char limit (got ${prompt.length}). Use smaller chunks.`,
+          );
+        }
+        execEvents?.push({
+          type: "progress",
+          event: tag({
+            type: "tool_progress" as const,
+            runId,
+            id: uuidv7(),
+            toolCallId: currentCallId ?? uuidv7(),
+            name: "llm_query",
+            content: { promptLength: prompt.length },
+          }),
+        });
         const { text } = await collectText(
           subHarness.invoke({
-            model: config.subModel,
+            model: config.subModel ?? params.model,
             messages: [{ role: "user", content: prompt }],
           }),
         );
@@ -279,9 +291,9 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         };
       };
 
-      // Create the REPL with prompt as context
+      // Create the REPL with context data
       const repl = createRepl({
-        context: userPrompt,
+        context: ctx,
         llmQuery,
         subRlm: llmQuery, // v1: sub_rlm delegates to llm_query
         exec,
@@ -290,15 +302,13 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
       // Build system prompt with metadata only
       const systemPrompt = buildRlmSystemPrompt({
-        contextLength: userPrompt.length,
-        contextPrefix: userPrompt.slice(0, config.metadataPrefixLength),
+        contextLength: ctx.length,
+        contextPrefix: ctx.slice(0, config.metadataPrefixLength),
+        subCharBudget: config.subCharBudget,
       });
 
       // Internal message history for the RLM loop
-      const messages: Message[] = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ];
+      const messages: Message[] = [{ role: "system", content: systemPrompt }, ...params.messages];
 
       // RLM loop
       for (let i = 0; i < config.maxIterations; i++) {

@@ -399,7 +399,7 @@ describe("Agent Harness", () => {
     // Create a mock harness that captures the context it receives
     const mockHarness: GeneratorHarnessModule = {
       async *invoke(params) {
-        capturedContexts.push({ parentId: params.context?.parentId });
+        capturedContexts.push({ parentId: params.env?.parentId });
         yield { type: "text", runId: "provider-run", id: "t1", content: "Hello" };
       },
       async supportedModels() {
@@ -494,7 +494,7 @@ describe("harness_start / harness_end lifecycle events", () => {
       agentHarness.invoke({
         model: "test-model",
         messages: [{ role: "user", content: "Hi" }],
-        context: { parentId: "parent-xyz" },
+        env: { parentId: "parent-xyz" },
       }),
     );
 
@@ -805,7 +805,7 @@ test("passes spawn from context through to tool execute, wrapping with tool call
     messages: [{ role: "user", content: "Use capture tool" }],
     tools: [captureTool],
     permissions: { allowlist: [{ tool: "capture" }] },
-    context: { spawn: spawnFn },
+    env: { spawn: spawnFn },
   })) {
     events.push(event);
   }
@@ -837,7 +837,7 @@ test("passes through usage events from provider with tag", async () => {
     agentHarness.invoke({
       model: "test-model",
       messages: [{ role: "user", content: "Hi" }],
-      context: { parentId: "parent-abc" },
+      env: { parentId: "parent-abc" },
     }),
   );
 

@@ -192,7 +192,7 @@ describe("Zen Generator Harness", () => {
           zenHarness.invoke({
             model: "big-pickle",
             messages: [{ role: "user", content: 'Say only the word "test"' }],
-            context: { parentId: "agent-run-456" },
+            env: { parentId: "agent-run-456" },
           }),
         );
 
@@ -211,7 +211,7 @@ describe("Zen Generator Harness", () => {
         for await (const event of zenHarness.invoke({
           model: "big-pickle",
           messages: [{ role: "user", content: "Say hi" }],
-          context: { parentId: "agent-run-123" },
+          env: { parentId: "agent-run-123" },
         })) {
           events.push(event);
         }

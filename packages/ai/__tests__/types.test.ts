@@ -102,11 +102,11 @@ describe("InvokeParams types", () => {
     const genParams: GeneratorInvokeParams = {
       model: "test",
       messages: [],
-      context: { parentId: "parent-123" },
+      env: { parentId: "parent-123" },
     };
 
     // Runtime check that context shape is correct
     expect(params.context).toEqual({ parentId: "parent-123" });
-    expect(genParams.context).toEqual({ parentId: "parent-123" });
+    expect(genParams.env).toEqual({ parentId: "parent-123" });
   });
 });

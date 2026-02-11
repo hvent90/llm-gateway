@@ -97,6 +97,7 @@ describe("RLM harness", () => {
 
   describe("multi-turn flow", () => {
     test("model examines context then returns FINAL", async () => {
+      const contextData = "how long is this?";
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -112,7 +113,8 @@ describe("RLM harness", () => {
 
       const events = await collectEvents(
         rlm.invoke({
-          messages: [{ role: "user", content: "how long is this?" }],
+          context: contextData,
+          messages: [{ role: "user", content: "What is the length of the context?" }],
         }),
       );
 
@@ -347,7 +349,7 @@ describe("RLM harness", () => {
   });
 
   describe("context access", () => {
-    test("user prompt is accessible as context in REPL", async () => {
+    test("context field is accessible as context in REPL", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [{ events: [{ type: "text", content: "FINAL(context)" }] }],
@@ -360,7 +362,8 @@ describe("RLM harness", () => {
 
       const events = await collectEvents(
         rlm.invoke({
-          messages: [{ role: "user", content: "the secret message" }],
+          context: "the secret message",
+          messages: [{ role: "user", content: "Return the context" }],
         }),
       );
 

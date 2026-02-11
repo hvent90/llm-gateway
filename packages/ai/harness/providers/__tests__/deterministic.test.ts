@@ -137,7 +137,7 @@ describe("Deterministic Harness", () => {
       harness.invoke({
         model: "deterministic",
         messages: [{ role: "user", content: "hi" }],
-        context: { parentId: "parent-123" },
+        env: { parentId: "parent-123" },
       }),
     );
 
