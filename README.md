@@ -223,6 +223,38 @@ const agent = createMyCoolAgent(createGeneratorHarness());
 
 </details>
 
+<details>
+<summary><strong>Process long inputs with RLM</strong></summary>
+
+A Recursive Language Model gives the model a REPL instead of stuffing the full input into context. The model sees metadata (length, prefix) and writes JavaScript to explore, chunk, and recursively process arbitrarily long inputs:
+
+```typescript
+import { createRlmHarness } from "./packages/ai/rlm/harness";
+import { createGeneratorHarness } from "./packages/ai/harness/providers/zen";
+
+const rlm = createRlmHarness({
+  rootHarness: createGeneratorHarness(),            // writes REPL code
+  subHarness: createGeneratorHarness(),             // handles llm_query calls (can be cheaper)
+  config: { maxIterations: 10, maxStdoutLength: 4000, metadataPrefixLength: 200 },
+});
+
+const longDocument = await Bun.file("giant-report.txt").text();
+
+for await (const event of rlm.invoke({
+  messages: [{ role: "user", content: "Summarize this document" }],
+  context: longDocument,
+  model: "kimi-k2.5",
+})) {
+  if (event.type === "tool_call") console.log(`[repl]`, event.input.code);
+  if (event.type === "tool_result") console.log(`[out]`, event.output.stdout);
+  if (event.type === "text") console.log(`\nAnswer:`, event.content);
+}
+```
+
+The model decides how to traverse the data — it might chunk and summarize, search for keywords, or delegate slices to `llm_query` which spawns child RLM sessions with their own REPLs. It can also call `exec()` to run shell commands. See [`packages/ai/rlm`](packages/ai/rlm/) for details.
+
+</details>
+
 ## Concepts
 
 <details>
