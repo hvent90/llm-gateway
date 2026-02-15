@@ -588,7 +588,7 @@ The active set serves triple duty:
 
 ## Placement
 
-The hypergraph is the single source of truth for conversation state. Every streamed event becomes a chunk node in the graph — there is no separate streaming buffer. The graph is both the streaming state and the persistent conversation history.
+The event stream is the single source of truth for conversation state. The hypergraph is derived from the event stream by the reducer. Every streamed event becomes a chunk node (content events) or a structural edge (graph-structural events) in the graph — there is no separate streaming buffer. The graph is the streaming state; the event stream is the persistent history.
 
 The hypergraph replaces:
 - The agent harness's mutable `Message[]`
@@ -635,14 +635,51 @@ When a message boundary is detected:
 
 ### Summarization Flow
 
-Summarization is an LLM call like any other. The agent selects source messages, sends them to a provider harness with a summarization prompt, and the response streams back as chunk events. These chunks flow through the normal reduction pipeline — creating chunk nodes, block edges, and eventually a message node. The only additional step is creating the summary edge:
+Summarization is an LLM call like any other. The agent selects source messages, sends them to a provider harness with a summarization prompt, and the response streams back as chunk events. These chunks flow through the normal reduction pipeline — creating chunk nodes, block edges, and eventually a message node. When the summarization completes, the harness emits a structural event:
+
+```typescript
+{ type: "summary_created", sourceIds: ["msg_3", "msg_4", "msg_5"], resultId: "summary_msg" }
+```
+
+The reducer processes this like any other event — creating the summary edge and positioning sequence edges:
 
 1. Normal reduction: chunks → blocks → message node (the summary)
-2. `addEdge("summary", { source: [sourceMessageIds...], result: [summaryMessageId] })`
-3. `addEdge("sequence", ...)` to position the summary as a parallel path (see [Parallel Paths](#parallel-paths))
-4. Update active set: remove source message ids, add summary message id
+2. `summary_created` event arrives
+3. `addEdge("summary", { source: [sourceMessageIds...], result: [summaryMessageId] })`
+4. `addEdge("sequence", ...)` to position the summary as a parallel path (see [Parallel Paths](#parallel-paths))
+5. Update active set: remove source message ids, add summary message id
 
-The summary message's content is derived from its chunks like any other message — no special content storage.
+The summary message's content is derived from its chunks like any other message — no special content storage. The `summary_created` event is persisted in the event stream alongside content events, so replay reconstructs the summary edge.
+
+### Graph-Structural Events
+
+Most events are content events (HarnessEvents — text, reasoning, tool_call, etc.) that produce chunk nodes. A small number of events are graph-structural — they don't produce chunks but create edges or modify graph topology:
+
+- **`summary_created`** — creates a summary edge linking source messages to a summary message. Emitted by the harness after a summarization LLM call completes.
+
+Branching does **not** need a structural event. When a user edits a message or the agent retries, new chunks stream in, the reducer creates new nodes, and the sequence edge from the predecessor to the new message creates the fork implicitly. The branch exists because the graph has two paths.
+
+The active set is **ephemeral view state** — like scroll position, each client builds it from `defaultActive` on load and customizes locally. The graph structure (which summaries exist, which branches exist) is persistent; which one a client is looking at is not.
+
+## Persistence
+
+The event stream — the ordered sequence of all events (content and structural) — is the single persistence artifact. The graph is always derived by replaying events through the reducer. There is no separate graph serialization.
+
+```
+Persist:  [event_1, event_2, ..., event_N]  (append-only)
+Load:     replay(events) → graph            (deterministic)
+Resume:   events[N+1..]                     (client reconnection)
+```
+
+This works because:
+- **Content events** (HarnessEvents) produce chunk nodes, block/message nodes, and composition edges via the reducer
+- **Structural events** (`summary_created`) produce summary edges and positioning sequence edges via the reducer
+- The reducer is deterministic — same events, same graph
+- The event stream is append-only — new events are appended, old events are never modified
+
+**Snapshots** are an optional load-time optimization. A snapshot is a serialized graph at a point in time. On load: deserialize the latest snapshot, then replay only events after the snapshot. Not architecturally necessary, but avoids replaying the full event stream for long conversations.
+
+**Client reconnection** uses event sequence numbers. The client tracks the last event it processed. On reconnect, it requests events after that sequence number and feeds them through the reducer to catch up.
 
 ### Open Questions
 
@@ -652,7 +689,7 @@ The summary message's content is derived from its chunks like any other message 
 2. **Harness interface** — Decided: the graph replaces `messages` in `GeneratorInvokeParams`. All harnesses receive `graph: ConversationGraph` and `active: Set<NodeId>`. Provider harnesses project to `Message[]` as their first step and ignore the graph structure. Agent harnesses can traverse the graph for loop decisions (e.g., context pressure, summarization). How the agent exposes graph traversal to the LLM (tools, system prompt, etc.) is an implementation choice left to each agent harness — not prescribed by the interface.
    - *Status: Decided*
 
-3. **End-to-end data flow** — Decided: server owns the canonical graph and event log. On request: load event log → replay into graph → add user message node → pass graph to harness → harness yields events → server reduces each event into graph and appends to event log → streams event to client over SSE. Client runs the same reducer to build its own graph copy from the event stream. The client graph is a replica — same reducer, same result.
+3. **End-to-end data flow** — Decided: server owns the canonical event stream. On request: replay events into graph → add user message node → pass graph to harness → harness yields events → server appends each event to the stream, reduces into graph, and streams to client over SSE. Client runs the same reducer to build its own graph copy. The client graph is a replica — same reducer, same events, same result.
    - *Status: Decided*
 
 4. **Chunk-level sequence edges** — Decided: chunks have sequence edges in arrival order (matching current HarnessEvent stream order). Block edges group same-type consecutive chunks into content blocks. The four-level hierarchy (chunk → block → message → summary) with sequence edges at every level fully addresses ordering.
@@ -661,7 +698,7 @@ The summary message's content is derived from its chunks like any other message 
 5. **Subagent/spawn edges** — Decided: dedicated `spawn` edge type with roles `{ trigger, invocation }`. Represents causation — a tool_call triggered a harness invocation. Not subagent-specific; any tool-triggered harness invocation gets a spawn edge. Root harness invocations (triggered by user messages) use sequence edges at the message level, not spawn edges. Replaces the current `runId`/`parentId` cross-run edge convention.
    - *Status: Decided*
 
-6. **Serialization** — Decided: event-sourced persistence with array-based snapshots. The event log (sequence of `GraphEvent`s) is the source of truth — append-only, cheap incremental writes, full replay capability. Graph is reconstructed by replaying events through the reducer. Snapshots use arrays (`ConversationNode[]`, `HyperEdge[]`) rather than Records to avoid id duplication. Maps are reconstructed on load via `new Map(nodes.map(n => [n.id, n]))`.
+6. **Persistence** — Decided: the event stream (ordered sequence of content events + structural events) is the single persistence artifact. The graph is derived by replaying events through the reducer — no separate graph serialization. Snapshots (serialized graph at a point in time) are an optional load-time optimization. Active set is ephemeral client-side view state, not persisted — each client builds from `defaultActive` on load. Client reconnection uses event sequence numbers to resume from the last processed event.
    - *Status: Decided*
 
 7. **Summarization triggers** — Decided: three trigger mechanisms, all calling the same `summarize()` graph operation. (a) User-initiated — user selects messages in the web client. (b) Agent-initiated — the LLM uses a graph tool to deliberately summarize a range. (c) Loop-level heuristic — agent harness detects context pressure before a provider call and summarizes automatically. Trigger is different, operation is the same.
