@@ -192,15 +192,19 @@ export default function App() {
     <div className="flex h-dvh flex-col bg-black text-white">
       <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:py-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h1 className="text-lg font-bold tracking-tight">LLM Gateway</h1>
-        <div className="flex gap-1 rounded bg-neutral-800 p-0.5 text-sm">
+        <div className="flex gap-1 rounded bg-neutral-800 p-0.5 text-sm" role="tablist">
           <button
-            className={`rounded px-2 py-0.5 ${view === "chat" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            role="tab"
+            aria-selected={view === "chat"}
+            className={`rounded px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${view === "chat" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
             onClick={() => setView("chat")}
           >
             Chat
           </button>
           <button
-            className={`rounded px-2 py-0.5 ${view === "graph" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            role="tab"
+            aria-selected={view === "graph"}
+            className={`rounded px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${view === "graph" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
             onClick={() => setView("graph")}
           >
             Graph
