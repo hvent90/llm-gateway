@@ -40,3 +40,5 @@ export { projectThread } from "./projections/thread";
 export type { ViewNode } from "./projections/thread";
 
 export { projectMessages } from "./projections/messages";
+
+export { expand, collapse, append, summarize, branch, toggle } from "./operations";
