@@ -1,27 +1,34 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import ForceGraph2D from "react-force-graph-2d";
-import type { ConversationGraph, NodeId } from "../../../../packages/ai/client/hypergraph";
-import {
-  defaultActive,
-  expand,
-  collapse,
-  findEdges,
-  blocksOf,
-  chunksOf,
-} from "../../../../packages/ai/client/hypergraph";
+import type { ConversationGraph } from "../../../../packages/ai/client/hypergraph";
 import {
   projectForceGraph,
   type ForceNode,
   type ForceHull,
 } from "../../../../packages/ai/client/hypergraph/projections/force-graph";
-import { convexHull, paddedHullPath } from "../lib/convex-hull";
+import { paddedHullPath } from "../lib/convex-hull";
 
 interface GraphViewProps {
   graph: ConversationGraph;
 }
 
+// Higher-opacity border colors for hull outlines
+function hullBorderColor(hull: ForceHull): string {
+  if (hull.edgeType === "summary") return "#a78bfa";
+  if (hull.level === "block") {
+    // Derive a more opaque version from the fill color
+    if (hull.color.includes("59,130,246")) return "rgba(59,130,246,0.4)";
+    if (hull.color.includes("249,115,22")) return "rgba(249,115,22,0.4)";
+    if (hull.color.includes("34,197,94")) return "rgba(34,197,94,0.4)";
+    if (hull.color.includes("239,68,68")) return "rgba(239,68,68,0.4)";
+    return "rgba(107,114,128,0.4)";
+  }
+  // Message hull border
+  if (hull.color.includes("34,197,94")) return "rgba(34,197,94,0.2)";
+  return "rgba(59,130,246,0.2)";
+}
+
 export function GraphView({ graph }: GraphViewProps) {
-  const [active, setActive] = useState<Set<NodeId>>(() => defaultActive(graph));
   const [hoveredNode, setHoveredNode] = useState<ForceNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -41,66 +48,27 @@ export function GraphView({ graph }: GraphViewProps) {
     return () => ro.disconnect();
   }, []);
 
-  // Incrementally add new message nodes to active set without resetting expand/collapse state
-  const knownMessagesRef = useRef(new Set<string>());
+  const data = useMemo(() => projectForceGraph(graph), [graph]);
 
+  // Force simulation tuning
   useEffect(() => {
-    const currentMessages = new Set<string>();
-    for (const [id, node] of graph.nodes) {
-      if (node.kind === "message") currentMessages.add(id);
-    }
-
-    const newMessages: string[] = [];
-    for (const id of currentMessages) {
-      if (!knownMessagesRef.current.has(id)) newMessages.push(id);
-    }
-
-    if (knownMessagesRef.current.size === 0) {
-      setActive(defaultActive(graph));
-    } else if (newMessages.length > 0) {
-      setActive((prev) => {
-        const next = new Set(prev);
-        for (const id of newMessages) next.add(id as NodeId);
-        return next;
-      });
-    }
-
-    knownMessagesRef.current = currentMessages;
-  }, [graph]);
-
-  const data = useMemo(() => projectForceGraph(graph, active), [graph, active]);
-
-  const handleNodeClick = useCallback(
-    (node: ForceNode) => {
-      if (node.kind === "message" || node.kind === "block") {
-        setActive((prev) => expand(graph, prev, node.id as NodeId));
-      } else {
-        // Chunk click — try to collapse back to block
-        const blockEdges = findEdges(graph, {
-          type: "block",
-          node: node.id as NodeId,
-          role: "part",
-        });
-        if (blockEdges.length > 0) {
-          const parts = blockEdges[0]!.roles.part;
-          setActive((prev) => collapse(graph, prev, parts));
-        }
-      }
-    },
-    [graph],
-  );
+    const fg = graphRef.current;
+    if (!fg) return;
+    const charge = fg.d3Force("charge");
+    if (charge) charge.strength(-30);
+  }, [data]);
 
   const handleNodeHover = useCallback((node: ForceNode | null) => {
     hoveredNodeRef.current = node;
     setHoveredNode(node);
     setTooltipPos(node ? { ...mousePosRef.current } : null);
     const canvas = containerRef.current?.querySelector("canvas");
-    if (canvas) canvas.style.cursor = node ? "pointer" : "default";
+    if (canvas) canvas.style.cursor = node ? "default" : "default";
   }, []);
 
   const drawNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const forceNode = node as ForceNode & { x: number; y: number };
-    const size = forceNode.size / globalScale;
+    const size = 4 / globalScale;
 
     ctx.beginPath();
     ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
@@ -114,13 +82,8 @@ export function GraphView({ graph }: GraphViewProps) {
       ctx.stroke();
     }
 
-    // Label — show at different zoom thresholds per node kind
-    const shouldShowLabel =
-      forceNode.kind === "message" ||
-      (forceNode.kind === "block" && globalScale > 1.2) ||
-      (forceNode.kind === "chunk" && globalScale > 1.8);
-
-    if (shouldShowLabel) {
+    // Label — show chunks at high zoom
+    if (globalScale > 2.0) {
       ctx.fillStyle = "#e5e7eb";
       ctx.font = `${10 / globalScale}px sans-serif`;
       ctx.textAlign = "center";
@@ -142,20 +105,38 @@ export function GraphView({ graph }: GraphViewProps) {
           .map((id) => nodePositions.get(id))
           .filter((p): p is { x: number; y: number } => p !== undefined);
 
-        if (points.length < 2) continue;
+        if (points.length === 0) continue;
 
-        const padding = 20 / globalScale;
+        const padding = hull.padding / globalScale;
         const path = paddedHullPath(points, padding);
 
+        // Fill
         ctx.fillStyle = hull.color;
         ctx.fill(path);
 
+        // Border
         if (hull.edgeType === "summary") {
           ctx.setLineDash([4 / globalScale, 4 / globalScale]);
-          ctx.strokeStyle = "#a78bfa";
-          ctx.lineWidth = 1 / globalScale;
-          ctx.stroke(path);
+        }
+        ctx.strokeStyle = hullBorderColor(hull);
+        ctx.lineWidth = 1 / globalScale;
+        ctx.stroke(path);
+        if (hull.edgeType === "summary") {
           ctx.setLineDash([]);
+        }
+
+        // Hull label
+        const showLabel =
+          (hull.level === "message" && globalScale > 0.8) ||
+          (hull.level === "block" && globalScale > 1.5);
+
+        if (showLabel && points.length > 0) {
+          const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
+          const cy = Math.min(...points.map((p) => p.y)) - padding - 4 / globalScale;
+          ctx.fillStyle = hull.level === "message" ? "#9ca3af" : "#d1d5db";
+          ctx.font = `${(hull.level === "message" ? 11 : 9) / globalScale}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText(hull.label, cx, cy);
         }
       }
     },
@@ -170,10 +151,14 @@ export function GraphView({ graph }: GraphViewProps) {
     return link.dashed ? [4, 4] : undefined;
   }, []);
 
+  const linkDistance = useCallback((link: any) => {
+    return link.type === "spawn" ? 80 : 30;
+  }, []);
+
   const paintPointerArea = useCallback(
     (node: any, color: string, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const forceNode = node as ForceNode & { x: number; y: number };
-      const size = forceNode.size / globalScale;
+      const size = 4 / globalScale;
       ctx.beginPath();
       ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
       ctx.fillStyle = color;
@@ -214,7 +199,6 @@ export function GraphView({ graph }: GraphViewProps) {
         nodeCanvasObject={drawNode}
         nodePointerAreaPaint={paintPointerArea}
         onRenderFramePost={drawHulls}
-        onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
         onEngineStop={handleEngineStop}
         linkColor={linkColor}
@@ -222,9 +206,12 @@ export function GraphView({ graph }: GraphViewProps) {
         linkWidth={1.5}
         linkDirectionalArrowLength={6}
         linkDirectionalArrowRelPos={1}
+        linkDistance={linkDistance}
         autoPauseRedraw={false}
         backgroundColor="transparent"
-        cooldownTicks={50}
+        d3AlphaDecay={0.02}
+        d3VelocityDecay={0.3}
+        cooldownTicks={100}
         nodeId="id"
         nodeRelSize={1}
       />
@@ -235,15 +222,7 @@ export function GraphView({ graph }: GraphViewProps) {
         fit
       </button>
       <div className="absolute bottom-3 left-3 rounded border border-neutral-800 bg-neutral-900/90 px-3 py-2 text-xs text-neutral-400">
-        <div className="mb-1 text-neutral-500">nodes</div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#e5e7eb" }} />
-          message
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3b82f680" }} />
-          block
-        </div>
+        <div className="mb-1 text-neutral-500">chunks</div>
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3b82f6" }} />
           text
@@ -253,12 +232,35 @@ export function GraphView({ graph }: GraphViewProps) {
           tool call
         </div>
         <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} />
+          tool result
+        </div>
+        <div className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#22c55e" }} />
           user
         </div>
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#8b5cf6" }} />
           reasoning
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#6b7280" }} />
+          structural
+        </div>
+        <div className="mt-1.5 border-t border-neutral-800 pt-1.5 text-neutral-500">regions</div>
+        <div className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-2 w-3 rounded-sm"
+            style={{ background: "rgba(59,130,246,0.18)" }}
+          />
+          block
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-2 w-3 rounded-sm"
+            style={{ background: "rgba(59,130,246,0.08)" }}
+          />
+          message
         </div>
         <div className="mt-1.5 border-t border-neutral-800 pt-1.5 text-neutral-500">links</div>
         <div className="flex items-center gap-1.5">
@@ -281,11 +283,8 @@ export function GraphView({ graph }: GraphViewProps) {
             top: Math.min(tooltipPos.y + 12, dimensions.height - 80),
           }}
         >
-          <div className="font-bold">{hoveredNode.kind}</div>
-          <div className="mt-1">{hoveredNode.label}</div>
-          <div className="mt-1 text-neutral-500">
-            {hoveredNode.kind === "chunk" ? "click to collapse" : "click to expand"}
-          </div>
+          <div className="font-bold">{hoveredNode.label}</div>
+          <div className="mt-1 text-neutral-500">{hoveredNode.kind}</div>
         </div>
       )}
     </div>
