@@ -11,6 +11,11 @@ interface ReducerState {
   currentBlockIdByRunId: Map<string, string>;
   currentBlockEdgeByRunId: Map<string, EdgeId>;
   chunkCounter: number;
+  // Message boundary state
+  pendingBlocksByRunId: Map<string, NodeId[]>;
+  lastMessageId: NodeId | null;
+  hadToolResultSinceLastText: Map<string, boolean>;
+  messageCounter: number;
 }
 
 interface ReducerResult extends ConversationGraph {
@@ -25,6 +30,10 @@ function getState(graph: ConversationGraph): ReducerState {
     currentBlockIdByRunId: new Map(),
     currentBlockEdgeByRunId: new Map(),
     chunkCounter: 0,
+    pendingBlocksByRunId: new Map(),
+    lastMessageId: null,
+    hadToolResultSinceLastText: new Map(),
+    messageCounter: 0,
   };
 }
 
@@ -80,6 +89,10 @@ export function reduceEvent(graph: ConversationGraph, event: GraphEvent): Conver
     currentBlockIdByRunId: new Map(state.currentBlockIdByRunId),
     currentBlockEdgeByRunId: new Map(state.currentBlockEdgeByRunId),
     chunkCounter: state.chunkCounter + 1,
+    pendingBlocksByRunId: new Map([...state.pendingBlocksByRunId].map(([k, v]) => [k, [...v]])),
+    lastMessageId: state.lastMessageId,
+    hadToolResultSinceLastText: new Map(state.hadToolResultSinceLastText),
+    messageCounter: state.messageCounter,
   };
 
   const runId = getRunId(event);
@@ -140,10 +153,6 @@ export function reduceEvent(graph: ConversationGraph, event: GraphEvent): Conver
 
   // 4. Spawn edge for parentId
   if (parentId && !state.lastChunkByRunId.has(runId)) {
-    // First event in this run with a parentId — create spawn edge
-    // Find the chunk that corresponds to the parent (tool_call)
-    // The parentId points to the block key of the triggering tool_call
-    // We need to find a chunk in that block
     const parentBlockNodeId = `block:${parentId}`;
     if (g.nodes.has(parentBlockNodeId)) {
       g = addEdge(g, {
@@ -155,5 +164,93 @@ export function reduceEvent(graph: ConversationGraph, event: GraphEvent): Conver
     }
   }
 
+  // 5. Message boundary detection
+  // Track the current block node id for pending blocks
+  const currentBlockKey2 = newState.currentBlockIdByRunId.get(runId);
+  const currentBlockNodeId = currentBlockKey2 ? `block:${currentBlockKey2}` : null;
+
+  // Check for text-after-tool-result boundary: flush pending blocks as a message
+  // before adding the new text block
+  if (
+    (event.type === "text" || event.type === "reasoning") &&
+    state.hadToolResultSinceLastText.get(runId)
+  ) {
+    const pending = newState.pendingBlocksByRunId.get(runId);
+    if (pending && pending.length > 0) {
+      const result = flushMessage(g, newState, runId, pending);
+      g = result.graph;
+      newState.lastMessageId = result.messageId;
+      newState.messageCounter = result.messageCounter;
+      newState.pendingBlocksByRunId.set(runId, []);
+    }
+    newState.hadToolResultSinceLastText.set(runId, false);
+  }
+
+  // Track tool_result for text-after-tool-result detection
+  if (event.type === "tool_result") {
+    newState.hadToolResultSinceLastText.set(runId, true);
+  }
+
+  // Add current block to pending (only if it's a new block, not extending)
+  if (currentBlockKey !== blockKey && currentBlockNodeId) {
+    const pending = newState.pendingBlocksByRunId.get(runId) ?? [];
+    pending.push(currentBlockNodeId);
+    newState.pendingBlocksByRunId.set(runId, pending);
+  }
+
+  // User events create their own message immediately
+  if (event.type === "user" && currentBlockNodeId) {
+    const pending = [currentBlockNodeId];
+    const result = flushMessage(g, newState, runId, pending);
+    g = result.graph;
+    newState.lastMessageId = result.messageId;
+    newState.messageCounter = result.messageCounter;
+    newState.pendingBlocksByRunId.set(runId, []);
+  }
+
+  // harness_end closes the current message
+  if (event.type === "harness_end") {
+    const pending = newState.pendingBlocksByRunId.get(runId) ?? [];
+    if (pending.length > 0) {
+      const result = flushMessage(g, newState, runId, pending);
+      g = result.graph;
+      newState.lastMessageId = result.messageId;
+      newState.messageCounter = result.messageCounter;
+      newState.pendingBlocksByRunId.set(runId, []);
+    }
+    newState.hadToolResultSinceLastText.delete(runId);
+  }
+
   return withState(g, newState);
+}
+
+function flushMessage(
+  graph: ConversationGraph,
+  state: ReducerState,
+  runId: string,
+  blockIds: NodeId[],
+): { graph: ConversationGraph; messageId: NodeId; messageCounter: number } {
+  const messageCounter = state.messageCounter + 1;
+  const messageId = `msg:${messageCounter}`;
+  let g = graph;
+
+  g = addNode(g, { id: messageId, kind: "message" });
+  g = addEdge(g, {
+    id: `me:${messageId}`,
+    type: "message",
+    roles: { part: [...blockIds], whole: [messageId] },
+    properties: {},
+  });
+
+  // Message-level sequence edge
+  if (state.lastMessageId) {
+    g = addEdge(g, {
+      id: `seq:msg:${state.lastMessageId}:${messageId}`,
+      type: "sequence",
+      roles: { predecessor: [state.lastMessageId], successor: [messageId] },
+      properties: {},
+    });
+  }
+
+  return { graph: g, messageId, messageCounter };
 }
