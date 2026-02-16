@@ -23,7 +23,9 @@ interface GraphViewProps {
 export function GraphView({ graph }: GraphViewProps) {
   const [active, setActive] = useState<Set<NodeId>>(() => defaultActive(graph));
   const [hoveredNode, setHoveredNode] = useState<ForceNode | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   useEffect(() => {
@@ -70,6 +72,9 @@ export function GraphView({ graph }: GraphViewProps) {
 
   const handleNodeHover = useCallback((node: ForceNode | null) => {
     setHoveredNode(node);
+    setTooltipPos(node ? { ...mousePosRef.current } : null);
+    const canvas = containerRef.current?.querySelector("canvas");
+    if (canvas) canvas.style.cursor = node ? "pointer" : "default";
   }, []);
 
   const drawNode = useCallback(
@@ -142,6 +147,25 @@ export function GraphView({ graph }: GraphViewProps) {
     return link.dashed ? [4, 4] : undefined;
   }, []);
 
+  const paintPointerArea = useCallback(
+    (node: any, color: string, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const forceNode = node as ForceNode & { x: number; y: number };
+      const size = forceNode.size / globalScale;
+      ctx.beginPath();
+      ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    },
+    [],
+  );
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) {
+      mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+  }, []);
+
   if (data.nodes.length === 0) {
     return (
       <div
@@ -154,12 +178,13 @@ export function GraphView({ graph }: GraphViewProps) {
   }
 
   return (
-    <div ref={containerRef} className="relative h-full w-full">
+    <div ref={containerRef} className="relative h-full w-full" onMouseMove={handleMouseMove}>
       <ForceGraph2D
         width={dimensions.width}
         height={dimensions.height}
         graphData={{ nodes: data.nodes as any[], links: data.links as any[] }}
         nodeCanvasObject={drawNode}
+        nodePointerAreaPaint={paintPointerArea}
         onRenderFramePost={drawHulls}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
@@ -172,11 +197,19 @@ export function GraphView({ graph }: GraphViewProps) {
         nodeId="id"
         nodeRelSize={1}
       />
-      {hoveredNode && (
-        <div className="pointer-events-none absolute left-4 top-4 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300">
-          <div className="font-mono text-neutral-500">{hoveredNode.id}</div>
-          <div className="mt-1 font-bold">{hoveredNode.kind}</div>
+      {hoveredNode && tooltipPos && (
+        <div
+          className="pointer-events-none absolute z-10 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300"
+          style={{
+            left: Math.min(tooltipPos.x + 12, dimensions.width - 200),
+            top: Math.min(tooltipPos.y + 12, dimensions.height - 80),
+          }}
+        >
+          <div className="font-bold">{hoveredNode.kind}</div>
           <div className="mt-1">{hoveredNode.label}</div>
+          <div className="mt-1 text-neutral-500">
+            {hoveredNode.kind === "chunk" ? "click to collapse" : "click to expand"}
+          </div>
         </div>
       )}
     </div>
