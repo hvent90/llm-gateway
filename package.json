@@ -25,6 +25,7 @@
     "picomatch": "^4.0.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
+    "react-force-graph-2d": "^1.29.1",
     "solid-js": "^1.9.11",
     "streamdown": "^2.1.0",
     "tailwindcss": "^4.1.18",
@@ -48,8 +49,14 @@
     "typescript": "^5"
   },
   "peerDependenciesMeta": {
-    "@opentui/core": { "optional": true },
-    "@opentui/react": { "optional": true },
-    "@opentui/solid": { "optional": true }
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/react": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    }
   }
 }
