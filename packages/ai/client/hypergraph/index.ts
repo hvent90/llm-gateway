@@ -32,3 +32,6 @@ export {
   findAggregate,
   validate,
 } from "./walk";
+
+export { deriveBlockContent, deriveMessageContent } from "./derived";
+export type { ViewContent } from "./derived";
