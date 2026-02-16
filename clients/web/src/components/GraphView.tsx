@@ -27,6 +27,7 @@ export function GraphView({ graph }: GraphViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<any>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
+  const hoveredNodeRef = useRef<ForceNode | null>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   useEffect(() => {
@@ -90,39 +91,42 @@ export function GraphView({ graph }: GraphViewProps) {
   );
 
   const handleNodeHover = useCallback((node: ForceNode | null) => {
+    hoveredNodeRef.current = node;
     setHoveredNode(node);
     setTooltipPos(node ? { ...mousePosRef.current } : null);
     const canvas = containerRef.current?.querySelector("canvas");
     if (canvas) canvas.style.cursor = node ? "pointer" : "default";
   }, []);
 
-  const drawNode = useCallback(
-    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const forceNode = node as ForceNode & { x: number; y: number };
-      const size = forceNode.size / globalScale;
+  const drawNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    const forceNode = node as ForceNode & { x: number; y: number };
+    const size = forceNode.size / globalScale;
 
-      ctx.beginPath();
-      ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
-      ctx.fillStyle = forceNode.color;
-      ctx.fill();
+    ctx.beginPath();
+    ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
+    ctx.fillStyle = forceNode.color;
+    ctx.fill();
 
-      // Border for hovered node
-      if (hoveredNode?.id === forceNode.id) {
-        ctx.strokeStyle = "#ffffff";
-        ctx.lineWidth = 2 / globalScale;
-        ctx.stroke();
-      }
+    // Border for hovered node
+    if (hoveredNodeRef.current?.id === forceNode.id) {
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2 / globalScale;
+      ctx.stroke();
+    }
 
-      // Label at sufficient zoom
-      if (globalScale > 2) {
-        ctx.fillStyle = "#e5e7eb";
-        ctx.font = `${10 / globalScale}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.fillText(forceNode.label, forceNode.x, forceNode.y + size + 12 / globalScale);
-      }
-    },
-    [hoveredNode],
-  );
+    // Label — show at different zoom thresholds per node kind
+    const shouldShowLabel =
+      forceNode.kind === "message" ||
+      (forceNode.kind === "block" && globalScale > 1.2) ||
+      (forceNode.kind === "chunk" && globalScale > 1.8);
+
+    if (shouldShowLabel) {
+      ctx.fillStyle = "#e5e7eb";
+      ctx.font = `${10 / globalScale}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(forceNode.label, forceNode.x, forceNode.y + size + 12 / globalScale);
+    }
+  }, []);
 
   const drawHulls = useCallback(
     (ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -159,7 +163,7 @@ export function GraphView({ graph }: GraphViewProps) {
   );
 
   const linkColor = useCallback((link: any) => {
-    return link.type === "spawn" ? "#ec489966" : "#6b728066";
+    return link.type === "spawn" ? "#ec4899aa" : "#6b7280aa";
   }, []);
 
   const linkDashArray = useCallback((link: any) => {
@@ -215,8 +219,10 @@ export function GraphView({ graph }: GraphViewProps) {
         onEngineStop={handleEngineStop}
         linkColor={linkColor}
         linkLineDash={linkDashArray}
-        linkDirectionalArrowLength={4}
+        linkWidth={1.5}
+        linkDirectionalArrowLength={6}
         linkDirectionalArrowRelPos={1}
+        autoPauseRedraw={false}
         backgroundColor="transparent"
         cooldownTicks={50}
         nodeId="id"
