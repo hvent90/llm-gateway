@@ -20,3 +20,15 @@ export { chunksOf, blocksOf, sourcesOf, blockOf, messageOf, summariesOf } from "
 
 export { reduceEvent } from "./reducer";
 export type { GraphEvent } from "./reducer";
+
+export {
+  defaultActive,
+  fullHistoryActive,
+  walk,
+  findHead,
+  findNextActive,
+  findPrevActive,
+  descendToFirstActive,
+  findAggregate,
+  validate,
+} from "./walk";
