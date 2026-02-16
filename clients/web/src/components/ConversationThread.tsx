@@ -1,7 +1,7 @@
 import { useState, memo } from "react";
 import { Streamdown } from "streamdown";
-import { projectThread } from "../../../../packages/ai/client";
-import type { ViewNode, ViewContent, Graph, PendingRelay } from "../types";
+import { projectThread } from "../../../../packages/ai/client/hypergraph";
+import type { ViewNode, ViewContent, ConversationGraph, PendingRelay } from "../types";
 import type { ExecProgressState } from "../../../../packages/ai/rlm/exec-progress";
 
 export interface PermissionHandlers {
@@ -11,7 +11,7 @@ export interface PermissionHandlers {
 }
 
 interface ConversationThreadProps {
-  graph: Graph;
+  graph: ConversationGraph;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
 }

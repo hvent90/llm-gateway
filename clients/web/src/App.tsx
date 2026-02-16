@@ -2,12 +2,12 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import type { PermissionHandlers } from "./components/ConversationThread";
+import { createSSETransport, createHTTPTransport } from "../../../packages/ai/client";
 import {
-  createSSETransport,
-  createHTTPTransport,
+  reduceConversation,
+  createInitialConversation,
   projectMessages,
-} from "../../../packages/ai/client";
-import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
+} from "../../../packages/ai/client/hypergraph";
 import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
 
 const sseTransport = createSSETransport({ baseUrl: "" });
