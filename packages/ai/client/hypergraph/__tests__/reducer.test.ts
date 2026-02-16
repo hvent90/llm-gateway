@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { createGraph, findEdges, getNode } from "../primitives";
-import { reduceEvent } from "../reducer";
+import { reduceEvent, createReducerState } from "../reducer";
 import { chunksOf, blockOf } from "../queries";
 import type { ConversationGraph } from "../types";
 
@@ -8,7 +8,8 @@ type GraphEvent = any;
 
 function buildGraph(events: GraphEvent[]): ConversationGraph {
   let g = createGraph();
-  for (const e of events) g = reduceEvent(g, e);
+  let s = createReducerState();
+  for (const e of events) [g, s] = reduceEvent(g, s, e);
   return g;
 }
 
@@ -161,7 +162,8 @@ describe("Hypergraph Reducer", () => {
 
   test("graph is immutable", () => {
     const g1 = createGraph();
-    const g2 = reduceEvent(g1, {
+    const s1 = createReducerState();
+    const [g2] = reduceEvent(g1, s1, {
       type: "text",
       id: "t1",
       runId: "r1",

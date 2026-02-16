@@ -3,6 +3,11 @@ import type {
   EdgeId,
   ConversationNode,
   HyperEdge,
+  SequenceEdge,
+  BlockEdge,
+  MessageEdge,
+  SummaryEdge,
+  SpawnEdge,
   ConversationGraph,
   EdgeType,
   EdgeRole,
@@ -95,6 +100,27 @@ export interface FindEdgesQuery {
   role?: EdgeRole;
 }
 
+export function findEdges(
+  graph: ConversationGraph,
+  query: FindEdgesQuery & { type: "sequence" },
+): SequenceEdge[];
+export function findEdges(
+  graph: ConversationGraph,
+  query: FindEdgesQuery & { type: "block" },
+): BlockEdge[];
+export function findEdges(
+  graph: ConversationGraph,
+  query: FindEdgesQuery & { type: "message" },
+): MessageEdge[];
+export function findEdges(
+  graph: ConversationGraph,
+  query: FindEdgesQuery & { type: "summary" },
+): SummaryEdge[];
+export function findEdges(
+  graph: ConversationGraph,
+  query: FindEdgesQuery & { type: "spawn" },
+): SpawnEdge[];
+export function findEdges(graph: ConversationGraph, query: FindEdgesQuery): HyperEdge[];
 export function findEdges(graph: ConversationGraph, query: FindEdgesQuery): HyperEdge[] {
   const g = ensureIndexed(graph);
 

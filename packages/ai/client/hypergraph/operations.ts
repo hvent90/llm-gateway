@@ -3,22 +3,13 @@ import { addNode, addEdge, findEdges } from "./primitives";
 import { walk, findHead, findPrevActive, findNextActive } from "./walk";
 
 export function expand(graph: ConversationGraph, active: Set<NodeId>, nodeId: NodeId): Set<NodeId> {
-  // Try block/message edges: nodeId in "whole" role → swap with "part" nodes
-  for (const edgeType of ["block", "message"] as const) {
-    const edges = findEdges(graph, { type: edgeType, node: nodeId, role: "whole" });
-    if (edges.length > 0) {
-      const parts = (edges[0]!.roles as Record<string, NodeId[]>).part ?? [];
-      return substituteInSet(active, nodeId, parts);
-    }
-  }
-
-  // Try summary edges: nodeId in "result" role → swap with "source" nodes
+  const blockEdges = findEdges(graph, { type: "block", node: nodeId, role: "whole" });
+  if (blockEdges.length > 0) return substituteInSet(active, nodeId, blockEdges[0]!.roles.part);
+  const messageEdges = findEdges(graph, { type: "message", node: nodeId, role: "whole" });
+  if (messageEdges.length > 0) return substituteInSet(active, nodeId, messageEdges[0]!.roles.part);
   const summaryEdges = findEdges(graph, { type: "summary", node: nodeId, role: "result" });
-  if (summaryEdges.length > 0) {
-    const sources = summaryEdges[0]!.roles.source;
-    return substituteInSet(active, nodeId, sources);
-  }
-
+  if (summaryEdges.length > 0)
+    return substituteInSet(active, nodeId, summaryEdges[0]!.roles.source);
   return active;
 }
 
@@ -29,25 +20,36 @@ export function collapse(
 ): Set<NodeId> {
   const nodeIdSet = new Set(nodeIds);
 
-  // Try block/message edges: all nodeIds in "part" role → swap for "whole"
-  for (const edgeType of ["block", "message"] as const) {
-    const edges = findEdges(graph, { type: edgeType, node: nodeIds[0]!, role: "part" });
-    for (const edge of edges) {
-      const parts = (edge.roles as Record<string, NodeId[]>).part ?? [];
-      if (parts.length === nodeIdSet.size && parts.every((p) => nodeIdSet.has(p))) {
-        const whole = (edge.roles as Record<string, NodeId[]>).whole[0]!;
-        return substituteInSet(active, nodeIds, [whole]);
-      }
+  // Try block edges: all nodeIds in "part" role → swap for "whole"
+  const blockEdges = findEdges(graph, { type: "block", node: nodeIds[0]!, role: "part" });
+  for (const edge of blockEdges) {
+    if (
+      edge.roles.part.length === nodeIdSet.size &&
+      edge.roles.part.every((p) => nodeIdSet.has(p))
+    ) {
+      return substituteInSet(active, nodeIds, [edge.roles.whole[0]!]);
+    }
+  }
+
+  // Try message edges
+  const messageEdges = findEdges(graph, { type: "message", node: nodeIds[0]!, role: "part" });
+  for (const edge of messageEdges) {
+    if (
+      edge.roles.part.length === nodeIdSet.size &&
+      edge.roles.part.every((p) => nodeIdSet.has(p))
+    ) {
+      return substituteInSet(active, nodeIds, [edge.roles.whole[0]!]);
     }
   }
 
   // Try summary edges: all nodeIds in "source" role → swap for "result"
   const summaryEdges = findEdges(graph, { type: "summary", node: nodeIds[0]!, role: "source" });
   for (const edge of summaryEdges) {
-    const sources = edge.roles.source;
-    if (sources.length === nodeIdSet.size && sources.every((s) => nodeIdSet.has(s))) {
-      const resultNode = edge.roles.result[0]!;
-      return substituteInSet(active, nodeIds, [resultNode]);
+    if (
+      edge.roles.source.length === nodeIdSet.size &&
+      edge.roles.source.every((s) => nodeIdSet.has(s))
+    ) {
+      return substituteInSet(active, nodeIds, [edge.roles.result[0]!]);
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { createGraph } from "../primitives";
-import { reduceEvent } from "../reducer";
+import { reduceEvent, createReducerState } from "../reducer";
 import { deriveBlockContent, deriveMessageContent } from "../derived";
 import { blocksOf } from "../queries";
 import type { ConversationGraph } from "../types";
@@ -9,7 +9,8 @@ type GraphEvent = any;
 
 function buildGraph(events: GraphEvent[]): ConversationGraph {
   let g = createGraph();
-  for (const e of events) g = reduceEvent(g, e);
+  let s = createReducerState();
+  for (const e of events) [g, s] = reduceEvent(g, s, e);
   return g;
 }
 

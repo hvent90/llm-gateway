@@ -1,5 +1,5 @@
 import type { ContentPart } from "../../../types";
-import type { ConversationGraph, NodeId } from "../types";
+import type { ConversationGraph, NodeId, ChunkEvent } from "../types";
 import { getNode, findEdges } from "../primitives";
 import { blockOf } from "../queries";
 import { accumulate } from "../../progress";
@@ -39,7 +39,7 @@ export interface ViewNode {
 /**
  * Derive the original event id (matching the old graph's node id scheme).
  */
-function eventId(event: any): string {
+function eventId(event: ChunkEvent): string {
   switch (event.type) {
     case "text":
     case "reasoning":
@@ -66,7 +66,7 @@ function eventId(event: any): string {
  * Convert a chunk event to ViewContent.
  * Returns null for structural events that don't produce their own ViewNode.
  */
-function eventToViewContent(event: any): ViewContent | null {
+function eventToViewContent(event: ChunkEvent): ViewContent | null {
   switch (event.type) {
     case "text":
       return { kind: "text", text: event.content };
@@ -100,7 +100,7 @@ function eventToViewContent(event: any): ViewContent | null {
 /**
  * Determine the role for an event.
  */
-function eventRole(event: any): "user" | "assistant" {
+function eventRole(event: ChunkEvent): "user" | "assistant" {
   return event.type === "user" ? "user" : "assistant";
 }
 
@@ -184,7 +184,7 @@ function walkRun(graph: ConversationGraph, startChunkId: NodeId, visited: Set<No
     const chunkNode = getNode(graph, current);
     if (!chunkNode || chunkNode.kind !== "chunk") break;
 
-    const event = chunkNode.content as any;
+    const event = chunkNode.content;
     const content = eventToViewContent(event);
     const runId: string = event.runId ?? "";
 
@@ -192,7 +192,9 @@ function walkRun(graph: ConversationGraph, startChunkId: NodeId, visited: Set<No
     let continuation: NodeId | null = findNextChunk(graph, current);
 
     // Find cross-run targets via spawn edges from this chunk's block
-    const crossRunTargets = findSpawnTargets(graph, current).filter((t) => !visited.has(t));
+    const crossRunTargets: NodeId[] = findSpawnTargets(graph, current).filter(
+      (t) => !visited.has(t),
+    );
 
     // Promotion logic: same as old graph projection
     const canPromote = event.type !== "tool_call";
@@ -293,10 +295,10 @@ function walkRun(graph: ConversationGraph, startChunkId: NodeId, visited: Set<No
           for (const n of graph.nodes.values()) {
             if (
               n.kind === "chunk" &&
-              (n.content as any).type === "tool_progress" &&
-              (n.content as any).toolCallId === event.toolCallId
+              n.content.type === "tool_progress" &&
+              n.content.toolCallId === event.toolCallId
             ) {
-              progressContents.push((n.content as any).content);
+              progressContents.push(n.content.content);
             }
           }
           v.content = { ...v.content, progress: accumulate(event.name, progressContents) };

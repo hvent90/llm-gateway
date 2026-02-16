@@ -1,13 +1,14 @@
 import { describe, test, expect } from "bun:test";
 import { createGraph } from "../../primitives";
-import { reduceEvent, type GraphEvent } from "../../reducer";
+import { reduceEvent, createReducerState, type GraphEvent } from "../../reducer";
 import { projectThread } from "../../projections/thread";
 import type { ViewNode } from "../../projections/thread";
 import type { ContentPart } from "../../../../types";
 
 function buildGraph(events: GraphEvent[]) {
   let g = createGraph();
-  for (const e of events) g = reduceEvent(g, e);
+  let s = createReducerState();
+  for (const e of events) [g, s] = reduceEvent(g, s, e);
   return g;
 }
 

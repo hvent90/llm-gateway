@@ -122,19 +122,11 @@ export function descendToFirstActive(
 }
 
 export function findAggregate(graph: ConversationGraph, nodeId: NodeId): NodeId | null {
-  for (const edgeType of ["block", "message"] as const) {
-    const edges = findEdges(graph, {
-      type: edgeType,
-      node: nodeId,
-      role: "part",
-    });
-    if (edges.length > 0) return edges[0]!.roles.whole[0]!;
-  }
-  const summaryEdges = findEdges(graph, {
-    type: "summary",
-    node: nodeId,
-    role: "source",
-  });
+  const blockEdges = findEdges(graph, { type: "block", node: nodeId, role: "part" });
+  if (blockEdges.length > 0) return blockEdges[0]!.roles.whole[0]!;
+  const messageEdges = findEdges(graph, { type: "message", node: nodeId, role: "part" });
+  if (messageEdges.length > 0) return messageEdges[0]!.roles.whole[0]!;
+  const summaryEdges = findEdges(graph, { type: "summary", node: nodeId, role: "source" });
   if (summaryEdges.length > 0) return summaryEdges[0]!.roles.result[0]!;
   return null;
 }

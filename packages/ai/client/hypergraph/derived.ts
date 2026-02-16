@@ -3,7 +3,7 @@ import type { ConversationGraph, NodeId } from "./types";
 import { getNode } from "./primitives";
 import { chunksOf, blocksOf } from "./queries";
 
-export type ViewContent =
+export type BlockContent =
   | { kind: "text"; text: string }
   | { kind: "reasoning"; text: string }
   | { kind: "tool_call"; name: string; input: unknown; output?: unknown; progress?: unknown }
@@ -21,7 +21,7 @@ export type ViewContent =
  * Derive ViewContent from a block node by walking its chunks.
  * Returns null for structural blocks (harness_start, harness_end, usage, tool_result, tool_progress).
  */
-export function deriveBlockContent(graph: ConversationGraph, blockId: NodeId): ViewContent | null {
+export function deriveBlockContent(graph: ConversationGraph, blockId: NodeId): BlockContent | null {
   const chunkIds = chunksOf(graph, blockId);
   if (chunkIds.length === 0) return null;
 

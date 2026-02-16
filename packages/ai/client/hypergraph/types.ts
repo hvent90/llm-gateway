@@ -1,10 +1,20 @@
-import type { HarnessEvent } from "../../types";
+import type { ContentPart } from "../../types";
+import type { ServerEvent } from "../server-event";
 
 export type NodeId = string;
 export type EdgeId = string;
 
+export type UserEvent = {
+  type: "user";
+  runId: string;
+  parentId?: string;
+  content: string | ContentPart[];
+};
+
+export type ChunkEvent = Exclude<ServerEvent, { type: "connected" }> | UserEvent;
+
 export type ConversationNode =
-  | { id: NodeId; kind: "chunk"; content: HarnessEvent }
+  | { id: NodeId; kind: "chunk"; content: ChunkEvent }
   | { id: NodeId; kind: "block" }
   | { id: NodeId; kind: "message" };
 

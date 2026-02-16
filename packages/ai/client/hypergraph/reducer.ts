@@ -1,11 +1,10 @@
-import type { ConversationGraph, NodeId, EdgeId } from "./types";
+import type { ConversationGraph, NodeId, EdgeId, UserEvent, ChunkEvent } from "./types";
 import { addNode, addEdge, extendEdge } from "./primitives";
 import type { ServerEvent } from "../server-event";
-import type { UserEvent } from "../graph";
 
 export type GraphEvent = ServerEvent | UserEvent;
 
-interface ReducerState {
+export interface ReducerState {
   lastChunkByRunId: Map<string, NodeId>;
   lastBlockByRunId: Map<string, NodeId>;
   currentBlockIdByRunId: Map<string, string>;
@@ -18,12 +17,7 @@ interface ReducerState {
   messageCounter: number;
 }
 
-interface ReducerResult extends ConversationGraph {
-  _reducerState: ReducerState;
-}
-
-function getState(graph: ConversationGraph): ReducerState {
-  if ("_reducerState" in graph) return (graph as ReducerResult)._reducerState;
+export function createReducerState(): ReducerState {
   return {
     lastChunkByRunId: new Map(),
     lastBlockByRunId: new Map(),
@@ -35,10 +29,6 @@ function getState(graph: ConversationGraph): ReducerState {
     hadToolResultSinceLastText: new Map(),
     messageCounter: 0,
   };
-}
-
-function withState(graph: ConversationGraph, state: ReducerState): ConversationGraph {
-  return Object.assign(Object.create(null), graph, { _reducerState: state }) as ConversationGraph;
 }
 
 function deriveBlockKey(event: GraphEvent): string | null {
@@ -60,7 +50,7 @@ function deriveBlockKey(event: GraphEvent): string | null {
     case "error":
       return `${event.runId}:error`;
     case "usage":
-      return null; // skip usage events for now — they don't produce visual blocks
+      return `${event.runId}:usage`;
     case "user":
       return `${event.runId}:user`;
     default:
@@ -78,11 +68,13 @@ function getParentId(event: GraphEvent): string | undefined {
   return undefined;
 }
 
-export function reduceEvent(graph: ConversationGraph, event: GraphEvent): ConversationGraph {
+export function reduceEvent(
+  graph: ConversationGraph,
+  state: ReducerState,
+  event: GraphEvent,
+): [ConversationGraph, ReducerState] {
   const blockKey = deriveBlockKey(event);
-  if (blockKey === null) return graph;
-
-  const state = getState(graph);
+  if (blockKey === null) return [graph, state];
   const newState: ReducerState = {
     lastChunkByRunId: new Map(state.lastChunkByRunId),
     lastBlockByRunId: new Map(state.lastBlockByRunId),
@@ -100,8 +92,8 @@ export function reduceEvent(graph: ConversationGraph, event: GraphEvent): Conver
   const chunkId = `chunk:${newState.chunkCounter}`;
   let g = graph;
 
-  // 1. Create chunk node
-  g = addNode(g, { id: chunkId, kind: "chunk", content: event as any });
+  // 1. Create chunk node (connected events are already filtered by deriveBlockKey)
+  g = addNode(g, { id: chunkId, kind: "chunk", content: event as ChunkEvent });
 
   // 2. Chunk-level sequence edge
   const prevChunk = state.lastChunkByRunId.get(runId);
@@ -221,7 +213,7 @@ export function reduceEvent(graph: ConversationGraph, event: GraphEvent): Conver
     newState.hadToolResultSinceLastText.delete(runId);
   }
 
-  return withState(g, newState);
+  return [g, newState];
 }
 
 function flushMessage(

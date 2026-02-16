@@ -2,7 +2,7 @@ import type { ContentPart } from "../../types";
 import type { ServerEvent } from "../server-event";
 import type { ConversationGraph, NodeId } from "./types";
 import { createGraph } from "./primitives";
-import { reduceEvent, type GraphEvent } from "./reducer";
+import { reduceEvent, createReducerState, type GraphEvent, type ReducerState } from "./reducer";
 import { defaultActive } from "./walk";
 
 export interface PendingRelay {
@@ -15,6 +15,7 @@ export interface PendingRelay {
 
 export interface ConversationState {
   graph: ConversationGraph;
+  reducerState: ReducerState;
   active: Set<NodeId>;
   sessionId: string | null;
   pendingRelays: PendingRelay[];
@@ -39,6 +40,7 @@ export type ConversationEvent =
 export function createInitialConversation(): ConversationState {
   return {
     graph: createGraph(),
+    reducerState: createReducerState(),
     active: new Set(),
     sessionId: null,
     pendingRelays: [],
@@ -55,8 +57,12 @@ export function reduceConversation(
       return { ...state, sessionId: event.sessionId };
 
     case "user": {
-      const graph = reduceEvent(state.graph, event as GraphEvent);
-      return { ...state, graph, active: defaultActive(graph) };
+      const [graph, reducerState] = reduceEvent(
+        state.graph,
+        state.reducerState,
+        event as GraphEvent,
+      );
+      return { ...state, graph, reducerState, active: defaultActive(graph) };
     }
 
     case "relay": {
@@ -67,11 +73,12 @@ export function reduceConversation(
         tool: event.tool,
         params: event.params,
       };
-      const graph = reduceEvent(state.graph, event);
+      const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
       return {
         ...state,
         pendingRelays: [...state.pendingRelays, relay],
         graph,
+        reducerState,
         active: defaultActive(graph),
       };
     }
@@ -88,18 +95,22 @@ export function reduceConversation(
       return { ...state, isConnected: false };
 
     case "harness_start": {
-      const graph = reduceEvent(state.graph, event);
-      return { ...state, graph, active: defaultActive(graph) };
+      const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
+      return { ...state, graph, reducerState, active: defaultActive(graph) };
     }
 
     case "harness_end": {
-      const graph = reduceEvent(state.graph, event);
-      return { ...state, graph, active: defaultActive(graph) };
+      const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
+      return { ...state, graph, reducerState, active: defaultActive(graph) };
     }
 
     default: {
-      const graph = reduceEvent(state.graph, event as ServerEvent);
-      return { ...state, graph, active: defaultActive(graph) };
+      const [graph, reducerState] = reduceEvent(
+        state.graph,
+        state.reducerState,
+        event as ServerEvent,
+      );
+      return { ...state, graph, reducerState, active: defaultActive(graph) };
     }
   }
 }

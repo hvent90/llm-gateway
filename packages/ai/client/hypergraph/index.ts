@@ -18,8 +18,8 @@ export type { FindEdgesQuery } from "./primitives";
 
 export { chunksOf, blocksOf, sourcesOf, blockOf, messageOf, summariesOf } from "./queries";
 
-export { reduceEvent } from "./reducer";
-export type { GraphEvent } from "./reducer";
+export { reduceEvent, createReducerState } from "./reducer";
+export type { GraphEvent, ReducerState } from "./reducer";
 
 export {
   defaultActive,
@@ -34,10 +34,10 @@ export {
 } from "./walk";
 
 export { deriveBlockContent, deriveMessageContent } from "./derived";
-export type { ViewContent } from "./derived";
+export type { BlockContent } from "./derived";
 
 export { projectThread } from "./projections/thread";
-export type { ViewNode } from "./projections/thread";
+export type { ViewNode, ViewContent } from "./projections/thread";
 
 export { projectMessages } from "./projections/messages";
 
