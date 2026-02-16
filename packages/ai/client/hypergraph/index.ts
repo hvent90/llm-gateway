@@ -12,3 +12,6 @@ export type {
   EdgeType,
   EdgeRole,
 } from "./types";
+
+export { createGraph, addNode, addEdge, extendEdge, getNode, findEdges } from "./primitives";
+export type { FindEdgesQuery } from "./primitives";
