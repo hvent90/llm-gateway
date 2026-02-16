@@ -1,16 +1,19 @@
-import type { ConversationGraph, NodeId, ChunkEvent } from "../types";
+import type { ConversationGraph, NodeId } from "../types";
 import { getNode } from "../primitives";
-import { chunksOf, blocksOf } from "../queries";
+import { chunksOf, blocksOf, blockOf } from "../queries";
 import { deriveBlockContent } from "../derived";
 
 // --- Public types ---
 
 export interface ForceNode {
   id: string;
-  kind: "chunk";
+  kind: "block";
+  blockType: "text" | "reasoning" | "tool_call" | "tool_result" | "user" | "error" | "structural";
   label: string;
   color: string;
-  size: number;
+  borderColor: string;
+  width: number;
+  height: number;
 }
 
 export interface ForceLink {
@@ -22,8 +25,8 @@ export interface ForceLink {
 
 export interface ForceHull {
   edgeId: string;
-  edgeType: "block" | "message" | "summary";
-  level: "block" | "message";
+  edgeType: "message" | "summary";
+  level: "message";
   nodeIds: string[];
   color: string;
   label: string;
@@ -38,26 +41,24 @@ export interface ForceGraphData {
 
 // --- Colors ---
 
-const CHUNK_COLORS: Record<string, string> = {
+const BLOCK_FILL_COLORS: Record<string, string> = {
+  text: "#1e3a5f",
+  reasoning: "#2d1f5e",
+  tool_call: "#4a2a0a",
+  tool_result: "#3d2a05",
+  user: "#0a3d1f",
+  error: "#3d0a0a",
+  structural: "#1f2937",
+};
+
+const BLOCK_BORDER_COLORS: Record<string, string> = {
   text: "#3b82f6",
   reasoning: "#8b5cf6",
   tool_call: "#f97316",
   tool_result: "#f59e0b",
   user: "#22c55e",
   error: "#ef4444",
-  harness_start: "#6b7280",
-  harness_end: "#6b7280",
-  relay: "#ec4899",
-  usage: "#6b7280",
-  tool_progress: "#f59e0b",
-};
-
-const BLOCK_HULL_COLORS: Record<string, string> = {
-  text: "rgba(59,130,246,0.18)",
-  tool_call: "rgba(249,115,22,0.18)",
-  user: "rgba(34,197,94,0.18)",
-  error: "rgba(239,68,68,0.18)",
-  default: "rgba(107,114,128,0.18)",
+  structural: "#4b5563",
 };
 
 const MESSAGE_HULL_COLORS: Record<string, string> = {
@@ -68,10 +69,6 @@ const MESSAGE_HULL_COLORS: Record<string, string> = {
 const SUMMARY_HULL_COLOR = "rgba(167,139,250,0.12)";
 
 // --- Helpers ---
-
-function chunkColor(event: ChunkEvent): string {
-  return CHUNK_COLORS[event.type] ?? "#6b7280";
-}
 
 function friendlyChunkType(type: string): string {
   switch (type) {
@@ -90,25 +87,48 @@ function friendlyChunkType(type: string): string {
   }
 }
 
-function chunkLabel(event: ChunkEvent): string {
-  switch (event.type) {
-    case "text":
-      return event.content.slice(0, 30);
-    case "user":
-      return typeof event.content === "string" ? event.content.slice(0, 30) : "[media]";
-    case "tool_call":
-      return event.name;
+/**
+ * Derive the block type from the block's content or first chunk event type.
+ */
+function deriveBlockType(
+  graph: ConversationGraph,
+  blockId: NodeId,
+): ForceNode["blockType"] {
+  const content = deriveBlockContent(graph, blockId);
+  if (content) {
+    switch (content.kind) {
+      case "text":
+        return "text";
+      case "reasoning":
+        return "reasoning";
+      case "tool_call":
+        return "tool_call";
+      case "user":
+        return "user";
+      case "error":
+        return "error";
+      case "relay":
+        return "structural";
+      default:
+        return "structural";
+    }
+  }
+  // Structural blocks: check first chunk event type
+  const chunkIds = chunksOf(graph, blockId);
+  if (chunkIds.length === 0) return "structural";
+  const first = getNode(graph, chunkIds[0]!);
+  if (!first || first.kind !== "chunk") return "structural";
+  switch (first.content.type) {
     case "tool_result":
-      return `${event.name} result`;
-    case "error":
-      return event.message;
-    case "reasoning":
-      return "thinking...";
+      return "tool_result";
     default:
-      return friendlyChunkType(event.type);
+      return "structural";
   }
 }
 
+/**
+ * Derive a label for a block node.
+ */
 function blockLabel(graph: ConversationGraph, blockId: NodeId): string {
   const content = deriveBlockContent(graph, blockId);
   if (!content) {
@@ -116,28 +136,25 @@ function blockLabel(graph: ConversationGraph, blockId: NodeId): string {
     if (chunkIds.length === 0) return "empty";
     const first = getNode(graph, chunkIds[0]!);
     if (!first || first.kind !== "chunk") return "empty";
+    if (first.content.type === "tool_result") {
+      return `${first.content.name} result`;
+    }
     return friendlyChunkType(first.content.type);
   }
   switch (content.kind) {
     case "text":
-      return content.text.slice(0, 30);
+      return content.text.slice(0, 40);
+    case "reasoning":
+      return content.text.slice(0, 40) || "thinking...";
     case "tool_call":
       return content.name;
     case "user":
-      return typeof content.content === "string" ? content.content.slice(0, 30) : "[media]";
+      return typeof content.content === "string" ? content.content.slice(0, 40) : "[media]";
     case "error":
-      return content.message;
+      return content.message.slice(0, 40);
     default:
       return content.kind;
   }
-}
-
-function blockHullColor(graph: ConversationGraph, blockId: NodeId): string {
-  const chunks = chunksOf(graph, blockId);
-  if (chunks.length === 0) return BLOCK_HULL_COLORS.default!;
-  const first = getNode(graph, chunks[0]!);
-  if (!first || first.kind !== "chunk") return BLOCK_HULL_COLORS.default!;
-  return BLOCK_HULL_COLORS[first.content.type] ?? BLOCK_HULL_COLORS.default!;
 }
 
 function messageLabel(graph: ConversationGraph, messageId: NodeId): string {
@@ -160,49 +177,44 @@ function messageHullColor(graph: ConversationGraph, messageId: NodeId): string {
   return MESSAGE_HULL_COLORS.assistant!;
 }
 
-/** Flatten a block ID into its chunk IDs. */
-function flattenBlockToChunks(graph: ConversationGraph, blockId: NodeId): NodeId[] {
-  return chunksOf(graph, blockId);
-}
-
-/** Flatten a message ID into its chunk IDs (message -> blocks -> chunks). */
-function flattenMessageToChunks(graph: ConversationGraph, messageId: NodeId): NodeId[] {
-  const blockIds = blocksOf(graph, messageId);
-  const result: NodeId[] = [];
-  for (const blockId of blockIds) {
-    result.push(...flattenBlockToChunks(graph, blockId));
-  }
-  return result;
-}
-
 // --- Main projection ---
 
 export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
   const nodes: ForceNode[] = [];
   const links: ForceLink[] = [];
   const hulls: ForceHull[] = [];
-  const chunkIds = new Set<string>();
+  const blockIds = new Set<string>();
 
-  // 1. Collect all chunk nodes
+  // 1. Collect all block nodes
   for (const [nodeId, node] of graph.nodes) {
-    if (node.kind !== "chunk") continue;
-    chunkIds.add(nodeId);
+    if (node.kind !== "block") continue;
+    blockIds.add(nodeId);
+
+    const blockType = deriveBlockType(graph, nodeId);
+    const label = blockLabel(graph, nodeId);
+    const width = Math.min(Math.max(label.length * 7, 80), 200);
+    const chunkCount = chunksOf(graph, nodeId).length;
+    const height = chunkCount > 1 ? 45 : 30;
+
     nodes.push({
       id: nodeId,
-      kind: "chunk",
-      label: chunkLabel(node.content),
-      color: chunkColor(node.content),
-      size: 4,
+      kind: "block",
+      blockType,
+      label,
+      color: BLOCK_FILL_COLORS[blockType] ?? BLOCK_FILL_COLORS.structural!,
+      borderColor: BLOCK_BORDER_COLORS[blockType] ?? BLOCK_BORDER_COLORS.structural!,
+      width,
+      height,
     });
   }
 
-  // 2. Collect links between chunk nodes
+  // 2. Collect links between block nodes
   for (const edge of graph.edges.values()) {
     if (edge.type === "sequence") {
-      // Only emit chunk-to-chunk sequence links
+      // Only emit block-to-block sequence links
       for (const pred of edge.roles.predecessor) {
         for (const succ of edge.roles.successor) {
-          if (chunkIds.has(pred) && chunkIds.has(succ)) {
+          if (blockIds.has(pred) && blockIds.has(succ)) {
             links.push({
               source: pred,
               target: succ,
@@ -214,17 +226,17 @@ export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
       }
     } else if (edge.type === "spawn") {
       // Spawn: trigger is a block ID, invocation is a chunk ID
-      // Resolve trigger block to its last chunk
+      // For the trigger side, use the trigger block directly
+      // For the invocation side, find which block contains that chunk
       for (const triggerId of edge.roles.trigger) {
-        const triggerChunks = chunksOf(graph, triggerId);
-        const lastChunk = triggerChunks.length > 0 ? triggerChunks[triggerChunks.length - 1]! : null;
-        if (!lastChunk || !chunkIds.has(lastChunk)) continue;
+        if (!blockIds.has(triggerId)) continue;
 
         for (const inv of edge.roles.invocation) {
-          if (chunkIds.has(inv)) {
+          const invBlockId = blockOf(graph, inv);
+          if (invBlockId && blockIds.has(invBlockId)) {
             links.push({
-              source: lastChunk,
-              target: inv,
+              source: triggerId,
+              target: invBlockId,
               type: "spawn",
               dashed: true,
             });
@@ -235,59 +247,43 @@ export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
   }
 
   // 3. Collect hulls
-  // Block hulls
-  for (const edge of graph.edges.values()) {
-    if (edge.type === "block") {
-      const blockNodeId = edge.roles.whole[0];
-      if (!blockNodeId) continue;
-      const partChunks = edge.roles.part.filter((id) => chunkIds.has(id));
-      if (partChunks.length === 0) continue;
-      hulls.push({
-        edgeId: edge.id,
-        edgeType: "block",
-        level: "block",
-        nodeIds: partChunks,
-        color: blockHullColor(graph, blockNodeId),
-        label: blockLabel(graph, blockNodeId),
-        padding: 12,
-      });
-    }
-  }
-
-  // Message hulls
+  // Message hulls: block IDs are directly available from message edge roles.part
   for (const edge of graph.edges.values()) {
     if (edge.type === "message") {
       const messageNodeId = edge.roles.whole[0];
       if (!messageNodeId) continue;
-      // Flatten message -> blocks -> chunks
-      const msgChunks = flattenMessageToChunks(graph, messageNodeId).filter((id) => chunkIds.has(id));
-      if (msgChunks.length === 0) continue;
+      const msgBlocks = edge.roles.part.filter((id) => blockIds.has(id));
+      if (msgBlocks.length === 0) continue;
       hulls.push({
         edgeId: edge.id,
         edgeType: "message",
         level: "message",
-        nodeIds: msgChunks,
+        nodeIds: msgBlocks,
         color: messageHullColor(graph, messageNodeId),
         label: messageLabel(graph, messageNodeId),
-        padding: 30,
+        padding: 20,
       });
     }
   }
 
-  // Summary hulls
+  // Summary hulls: expand source messages to their block IDs
   for (const edge of graph.edges.values()) {
     if (edge.type === "summary") {
-      // Flatten source messages -> blocks -> chunks
-      const sourceChunks: NodeId[] = [];
+      const sourceBlocks: NodeId[] = [];
       for (const sourceId of edge.roles.source) {
-        sourceChunks.push(...flattenMessageToChunks(graph, sourceId).filter((id) => chunkIds.has(id)));
+        const blocks = blocksOf(graph, sourceId);
+        for (const blockId of blocks) {
+          if (blockIds.has(blockId)) {
+            sourceBlocks.push(blockId);
+          }
+        }
       }
-      if (sourceChunks.length === 0) continue;
+      if (sourceBlocks.length === 0) continue;
       hulls.push({
         edgeId: edge.id,
         edgeType: "summary",
         level: "message",
-        nodeIds: sourceChunks,
+        nodeIds: sourceBlocks,
         color: SUMMARY_HULL_COLOR,
         label: "summarized",
         padding: 35,
@@ -295,10 +291,10 @@ export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
     }
   }
 
-  // Sort hulls: message/summary first (rendered behind), then block (rendered on top)
+  // Sort hulls: message first (rendered behind), summary next
   hulls.sort((a, b) => {
-    const order = { message: 0, block: 1 };
-    return (order[a.level] ?? 0) - (order[b.level] ?? 0);
+    const order: Record<string, number> = { message: 0, summary: 1 };
+    return (order[a.edgeType] ?? 0) - (order[b.edgeType] ?? 0);
   });
 
   return { nodes, links, hulls };
