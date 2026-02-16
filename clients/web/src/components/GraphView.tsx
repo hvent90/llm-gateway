@@ -24,6 +24,18 @@ export function GraphView({ graph }: GraphViewProps) {
   const [active, setActive] = useState<Set<NodeId>>(() => defaultActive(graph));
   const [hoveredNode, setHoveredNode] = useState<ForceNode | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry!.contentRect;
+      setDimensions({ width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Reset active set when graph changes substantially (new messages)
   const messageCount = useMemo(
@@ -133,6 +145,8 @@ export function GraphView({ graph }: GraphViewProps) {
   return (
     <div ref={containerRef} className="relative h-full w-full">
       <ForceGraph2D
+        width={dimensions.width}
+        height={dimensions.height}
         graphData={{ nodes: data.nodes as any[], links: data.links as any[] }}
         nodeCanvasObject={drawNode}
         onRenderFramePost={drawHulls}

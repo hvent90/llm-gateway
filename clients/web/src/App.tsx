@@ -207,7 +207,13 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="flex flex-1 flex-col-reverse overflow-y-auto p-3 sm:p-4">
+      <main
+        className={
+          view === "chat"
+            ? "flex flex-1 flex-col-reverse overflow-y-auto p-3 sm:p-4"
+            : "flex flex-1 overflow-hidden"
+        }
+      >
         {view === "chat" ? (
           <div>
             <ConversationThread
