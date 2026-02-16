@@ -35,3 +35,8 @@ export {
 
 export { deriveBlockContent, deriveMessageContent } from "./derived";
 export type { ViewContent } from "./derived";
+
+export { projectThread } from "./projections/thread";
+export type { ViewNode } from "./projections/thread";
+
+export { projectMessages } from "./projections/messages";
