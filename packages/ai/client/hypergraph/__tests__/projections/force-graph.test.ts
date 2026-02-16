@@ -79,8 +79,22 @@ describe("projectForceGraph", () => {
       { type: "user", runId: "u1", content: "Hello" },
       { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hi there" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "bash", input: { cmd: "ls" } },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "bash", output: "file.txt" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { cmd: "ls" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        output: "file.txt",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const result = projectForceGraph(g);
@@ -100,7 +114,8 @@ describe("projectForceGraph", () => {
         id: "t1",
         runId: "r1",
         agentId: "a1",
-        content: "A very long response text that should be truncated and capped at the max width value",
+        content:
+          "A very long response text that should be truncated and capped at the max width value",
       },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
@@ -153,7 +168,14 @@ describe("projectForceGraph", () => {
   test("spawn edges produce spawn links between block nodes", () => {
     const g = buildGraph([
       { type: "harness_start", runId: "r1", agentId: "a1" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "agent", input: { task: "go" } },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        input: { task: "go" },
+      },
       { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
       { type: "text", id: "t1", runId: "r2", agentId: "a2", content: "Done" },
       { type: "harness_end", runId: "r2", agentId: "a2" },
@@ -180,8 +202,22 @@ describe("projectForceGraph", () => {
     const g = buildGraph([
       { type: "harness_start", runId: "r1", agentId: "a1" },
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hello" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "bash", input: { cmd: "ls" } },
-      { type: "tool_result", id: "tc1", runId: "r1", agentId: "a1", name: "bash", output: "file.txt" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { cmd: "ls" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        output: "file.txt",
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const result = projectForceGraph(g);
@@ -216,7 +252,14 @@ describe("projectForceGraph", () => {
     const g = buildGraph([
       { type: "harness_start", runId: "r1", agentId: "a1" },
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hello" },
-      { type: "tool_call", id: "tc1", runId: "r1", agentId: "a1", name: "bash", input: { cmd: "ls" } },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { cmd: "ls" },
+      },
       { type: "harness_end", runId: "r1", agentId: "a1" },
     ]);
     const result = projectForceGraph(g);

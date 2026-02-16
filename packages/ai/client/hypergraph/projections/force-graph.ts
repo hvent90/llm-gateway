@@ -90,10 +90,7 @@ function friendlyChunkType(type: string): string {
 /**
  * Derive the block type from the block's content or first chunk event type.
  */
-function deriveBlockType(
-  graph: ConversationGraph,
-  blockId: NodeId,
-): ForceNode["blockType"] {
+function deriveBlockType(graph: ConversationGraph, blockId: NodeId): ForceNode["blockType"] {
   const content = deriveBlockContent(graph, blockId);
   if (content) {
     switch (content.kind) {
