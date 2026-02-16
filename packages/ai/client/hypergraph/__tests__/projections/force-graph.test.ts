@@ -36,7 +36,7 @@ describe("projectForceGraph", () => {
     expect(result.links.length).toBeGreaterThanOrEqual(1);
 
     // NO block hulls — blocks are the atomic nodes now
-    const blockHulls = result.hulls.filter((h) => h.edgeType === "block");
+    const blockHulls = result.hulls.filter((h) => (h.edgeType as string) === "block");
     expect(blockHulls.length).toBe(0);
 
     // Message hulls exist and contain block IDs
