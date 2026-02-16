@@ -15,3 +15,5 @@ export type {
 
 export { createGraph, addNode, addEdge, extendEdge, getNode, findEdges } from "./primitives";
 export type { FindEdgesQuery } from "./primitives";
+
+export { chunksOf, blocksOf, sourcesOf, blockOf, messageOf, summariesOf } from "./queries";
