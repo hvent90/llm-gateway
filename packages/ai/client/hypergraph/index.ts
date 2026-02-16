@@ -17,3 +17,6 @@ export { createGraph, addNode, addEdge, extendEdge, getNode, findEdges } from ".
 export type { FindEdgesQuery } from "./primitives";
 
 export { chunksOf, blocksOf, sourcesOf, blockOf, messageOf, summariesOf } from "./queries";
+
+export { reduceEvent } from "./reducer";
+export type { GraphEvent } from "./reducer";
