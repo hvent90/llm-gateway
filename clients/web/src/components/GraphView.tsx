@@ -25,6 +25,7 @@ export function GraphView({ graph }: GraphViewProps) {
   const [hoveredNode, setHoveredNode] = useState<ForceNode | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const graphRef = useRef<any>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
@@ -166,6 +167,10 @@ export function GraphView({ graph }: GraphViewProps) {
     }
   }, []);
 
+  const handleEngineStop = useCallback(() => {
+    graphRef.current?.zoomToFit(400, 40);
+  }, []);
+
   if (data.nodes.length === 0) {
     return (
       <div
@@ -180,6 +185,7 @@ export function GraphView({ graph }: GraphViewProps) {
   return (
     <div ref={containerRef} className="relative h-full w-full" onMouseMove={handleMouseMove}>
       <ForceGraph2D
+        ref={graphRef}
         width={dimensions.width}
         height={dimensions.height}
         graphData={{ nodes: data.nodes as any[], links: data.links as any[] }}
@@ -188,6 +194,7 @@ export function GraphView({ graph }: GraphViewProps) {
         onRenderFramePost={drawHulls}
         onNodeClick={handleNodeClick}
         onNodeHover={handleNodeHover}
+        onEngineStop={handleEngineStop}
         linkColor={linkColor}
         linkLineDash={linkDashArray}
         linkDirectionalArrowLength={4}
@@ -197,6 +204,12 @@ export function GraphView({ graph }: GraphViewProps) {
         nodeId="id"
         nodeRelSize={1}
       />
+      <button
+        className="absolute bottom-3 right-3 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-700 hover:text-white"
+        onClick={() => graphRef.current?.zoomToFit(400, 40)}
+      >
+        fit
+      </button>
       {hoveredNode && tooltipPos && (
         <div
           className="pointer-events-none absolute z-10 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300"
