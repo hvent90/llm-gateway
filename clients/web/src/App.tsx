@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import type { PermissionHandlers } from "./components/ConversationThread";
+import { GraphView } from "./components/GraphView";
 import { createSSETransport, createHTTPTransport } from "../../../packages/ai/client";
 import {
   reduceConversation,
@@ -24,6 +25,7 @@ export default function App() {
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [mode, setMode] = useState<"agent" | "rlm">("agent");
+  const [view, setView] = useState<"chat" | "graph">("chat");
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -188,22 +190,40 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col bg-black text-white">
-      <header className="border-b border-neutral-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:py-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:py-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h1 className="text-lg font-bold tracking-tight">LLM Gateway</h1>
+        <div className="flex gap-1 rounded bg-neutral-800 p-0.5 text-sm">
+          <button
+            className={`rounded px-2 py-0.5 ${view === "chat" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            onClick={() => setView("chat")}
+          >
+            Chat
+          </button>
+          <button
+            className={`rounded px-2 py-0.5 ${view === "graph" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            onClick={() => setView("graph")}
+          >
+            Graph
+          </button>
+        </div>
       </header>
       <main className="flex flex-1 flex-col-reverse overflow-y-auto p-3 sm:p-4">
-        <div>
-          <ConversationThread
-            graph={state.graph}
-            pendingRelays={state.pendingRelays}
-            permissionHandlers={permissionHandlers}
-          />
-          {streamError && (
-            <div className="mt-4 border border-neutral-700 p-3 text-sm text-red-400">
-              error: {streamError}
-            </div>
-          )}
-        </div>
+        {view === "chat" ? (
+          <div>
+            <ConversationThread
+              graph={state.graph}
+              pendingRelays={state.pendingRelays}
+              permissionHandlers={permissionHandlers}
+            />
+            {streamError && (
+              <div className="mt-4 border border-neutral-700 p-3 text-sm text-red-400">
+                error: {streamError}
+              </div>
+            )}
+          </div>
+        ) : (
+          <GraphView graph={state.graph} />
+        )}
       </main>
       <InputArea
         onSubmit={handleSubmit}
