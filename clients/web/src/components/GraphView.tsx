@@ -234,6 +234,45 @@ export function GraphView({ graph }: GraphViewProps) {
       >
         fit
       </button>
+      <div className="absolute bottom-3 left-3 rounded border border-neutral-800 bg-neutral-900/90 px-3 py-2 text-xs text-neutral-400">
+        <div className="mb-1 text-neutral-500">nodes</div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#e5e7eb" }} />
+          message
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3b82f680" }} />
+          block
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3b82f6" }} />
+          text
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#f97316" }} />
+          tool call
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#22c55e" }} />
+          user
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#8b5cf6" }} />
+          reasoning
+        </div>
+        <div className="mt-1.5 border-t border-neutral-800 pt-1.5 text-neutral-500">links</div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-0.5 w-3" style={{ background: "#6b7280" }} />
+          sequence
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-0.5 w-3 border-b border-dashed"
+            style={{ borderColor: "#ec4899" }}
+          />
+          spawn
+        </div>
+      </div>
       {hoveredNode && tooltipPos && (
         <div
           className="pointer-events-none absolute z-10 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs text-neutral-300"
