@@ -42,3 +42,6 @@ export type { ViewNode } from "./projections/thread";
 export { projectMessages } from "./projections/messages";
 
 export { expand, collapse, append, summarize, branch, toggle } from "./operations";
+
+export { createInitialConversation, reduceConversation } from "./conversation";
+export type { ConversationState, PendingRelay, ConversationEvent } from "./conversation";
