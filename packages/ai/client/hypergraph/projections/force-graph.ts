@@ -66,6 +66,23 @@ function chunkColor(event: ChunkEvent): string {
   return CHUNK_COLORS[event.type] ?? "#6b7280";
 }
 
+function friendlyChunkType(type: string): string {
+  switch (type) {
+    case "harness_start":
+      return "run start";
+    case "harness_end":
+      return "run end";
+    case "usage":
+      return "token usage";
+    case "tool_result":
+      return "tool result";
+    case "tool_progress":
+      return "progress";
+    default:
+      return type;
+  }
+}
+
 function chunkLabel(event: ChunkEvent): string {
   switch (event.type) {
     case "text":
@@ -81,13 +98,19 @@ function chunkLabel(event: ChunkEvent): string {
     case "reasoning":
       return "thinking...";
     default:
-      return event.type;
+      return friendlyChunkType(event.type);
   }
 }
 
 function blockLabel(graph: ConversationGraph, blockId: NodeId): string {
   const content = deriveBlockContent(graph, blockId);
-  if (!content) return "structural";
+  if (!content) {
+    const chunkIds = chunksOf(graph, blockId);
+    if (chunkIds.length === 0) return "empty";
+    const first = getNode(graph, chunkIds[0]!);
+    if (!first || first.kind !== "chunk") return "empty";
+    return friendlyChunkType(first.content.type);
+  }
   switch (content.kind) {
     case "text":
       return content.text.slice(0, 30);
@@ -123,10 +146,7 @@ function messageLabel(graph: ConversationGraph, messageId: NodeId): string {
 
 // --- Main projection ---
 
-export function projectForceGraph(
-  graph: ConversationGraph,
-  active: Set<NodeId>,
-): ForceGraphData {
+export function projectForceGraph(graph: ConversationGraph, active: Set<NodeId>): ForceGraphData {
   const nodes: ForceNode[] = [];
   const links: ForceLink[] = [];
   const hulls: ForceHull[] = [];
