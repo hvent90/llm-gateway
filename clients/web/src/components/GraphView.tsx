@@ -40,14 +40,32 @@ export function GraphView({ graph }: GraphViewProps) {
     return () => ro.disconnect();
   }, []);
 
-  // Reset active set when graph changes substantially (new messages)
-  const messageCount = useMemo(
-    () => [...graph.nodes.values()].filter((n) => n.kind === "message").length,
-    [graph],
-  );
+  // Incrementally add new message nodes to active set without resetting expand/collapse state
+  const knownMessagesRef = useRef(new Set<string>());
+
   useEffect(() => {
-    setActive(defaultActive(graph));
-  }, [messageCount]);
+    const currentMessages = new Set<string>();
+    for (const [id, node] of graph.nodes) {
+      if (node.kind === "message") currentMessages.add(id);
+    }
+
+    const newMessages: string[] = [];
+    for (const id of currentMessages) {
+      if (!knownMessagesRef.current.has(id)) newMessages.push(id);
+    }
+
+    if (knownMessagesRef.current.size === 0) {
+      setActive(defaultActive(graph));
+    } else if (newMessages.length > 0) {
+      setActive((prev) => {
+        const next = new Set(prev);
+        for (const id of newMessages) next.add(id as NodeId);
+        return next;
+      });
+    }
+
+    knownMessagesRef.current = currentMessages;
+  }, [graph]);
 
   const data = useMemo(() => projectForceGraph(graph, active), [graph, active]);
 
