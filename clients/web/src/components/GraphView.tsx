@@ -142,6 +142,17 @@ export function GraphView({ graph }: GraphViewProps) {
     return link.dashed ? [4, 4] : undefined;
   }, []);
 
+  if (data.nodes.length === 0) {
+    return (
+      <div
+        ref={containerRef}
+        className="flex h-full w-full items-center justify-center text-neutral-600"
+      >
+        send a message to see the graph
+      </div>
+    );
+  }
+
   return (
     <div ref={containerRef} className="relative h-full w-full">
       <ForceGraph2D
