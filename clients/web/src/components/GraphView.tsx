@@ -15,14 +15,6 @@ interface GraphViewProps {
 // Higher-opacity border colors for hull outlines
 function hullBorderColor(hull: ForceHull): string {
   if (hull.edgeType === "summary") return "#a78bfa";
-  if (hull.level === "block") {
-    // Derive a more opaque version from the fill color
-    if (hull.color.includes("59,130,246")) return "rgba(59,130,246,0.4)";
-    if (hull.color.includes("249,115,22")) return "rgba(249,115,22,0.4)";
-    if (hull.color.includes("34,197,94")) return "rgba(34,197,94,0.4)";
-    if (hull.color.includes("239,68,68")) return "rgba(239,68,68,0.4)";
-    return "rgba(107,114,128,0.4)";
-  }
   // Message hull border
   if (hull.color.includes("34,197,94")) return "rgba(34,197,94,0.2)";
   return "rgba(59,130,246,0.2)";
@@ -50,12 +42,12 @@ export function GraphView({ graph }: GraphViewProps) {
 
   const data = useMemo(() => projectForceGraph(graph), [graph]);
 
-  // Force simulation tuning
+  // Force simulation tuning — more repulsion for larger rectangular nodes
   useEffect(() => {
     const fg = graphRef.current;
     if (!fg) return;
     const charge = fg.d3Force("charge");
-    if (charge) charge.strength(-30);
+    if (charge) charge.strength(-80);
   }, [data]);
 
   const handleNodeHover = useCallback((node: ForceNode | null) => {
@@ -66,30 +58,63 @@ export function GraphView({ graph }: GraphViewProps) {
     if (canvas) canvas.style.cursor = node ? "default" : "default";
   }, []);
 
-  const drawNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const forceNode = node as ForceNode & { x: number; y: number };
-    const size = 4 / globalScale;
+  // Draw block nodes as rounded rectangles with text content
+  const drawNode = useCallback(
+    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const forceNode = node as ForceNode & { x: number; y: number };
+      const w = forceNode.width / globalScale;
+      const h = forceNode.height / globalScale;
+      const x = forceNode.x - w / 2;
+      const y = forceNode.y - h / 2;
+      const r = 4 / globalScale; // corner radius
 
-    ctx.beginPath();
-    ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
-    ctx.fillStyle = forceNode.color;
-    ctx.fill();
+      // Draw rounded rectangle
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
 
-    // Border for hovered node
-    if (hoveredNodeRef.current?.id === forceNode.id) {
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2 / globalScale;
+      // Fill
+      ctx.fillStyle = forceNode.color;
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle =
+        hoveredNodeRef.current?.id === forceNode.id ? "#ffffff" : forceNode.borderColor;
+      ctx.lineWidth = (hoveredNodeRef.current?.id === forceNode.id ? 2 : 1) / globalScale;
       ctx.stroke();
-    }
 
-    // Label — show chunks at high zoom
-    if (globalScale > 2.0) {
+      // Text label inside the box
+      const fontSize = Math.max(10 / globalScale, 1);
       ctx.fillStyle = "#e5e7eb";
-      ctx.font = `${10 / globalScale}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.fillText(forceNode.label, forceNode.x, forceNode.y + size + 12 / globalScale);
-    }
-  }, []);
+      ctx.font = `${fontSize}px monospace`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+
+      // Truncate text to fit within box
+      const maxTextWidth = w - 12 / globalScale;
+      let displayText = forceNode.label;
+      while (ctx.measureText(displayText).width > maxTextWidth && displayText.length > 3) {
+        displayText = displayText.slice(0, -4) + "...";
+      }
+      ctx.fillText(displayText, x + 6 / globalScale, forceNode.y);
+
+      // Small type indicator in top-left corner at higher zoom
+      if (globalScale > 1) {
+        ctx.fillStyle = forceNode.borderColor;
+        ctx.font = `${Math.max(7 / globalScale, 0.5)}px sans-serif`;
+        ctx.fillText(forceNode.blockType, x + 4 / globalScale, y + 8 / globalScale);
+      }
+    },
+    [], // no deps — uses hoveredNodeRef
+  );
 
   const drawHulls = useCallback(
     (ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -126,15 +151,11 @@ export function GraphView({ graph }: GraphViewProps) {
         }
 
         // Hull label
-        const showLabel =
-          (hull.level === "message" && globalScale > 0.8) ||
-          (hull.level === "block" && globalScale > 1.5);
-
-        if (showLabel && points.length > 0) {
+        if (globalScale > 0.8 && points.length > 0) {
           const cx = points.reduce((s, p) => s + p.x, 0) / points.length;
           const cy = Math.min(...points.map((p) => p.y)) - padding - 4 / globalScale;
-          ctx.fillStyle = hull.level === "message" ? "#9ca3af" : "#d1d5db";
-          ctx.font = `${(hull.level === "message" ? 11 : 9) / globalScale}px sans-serif`;
+          ctx.fillStyle = "#9ca3af";
+          ctx.font = `${11 / globalScale}px sans-serif`;
           ctx.textAlign = "center";
           ctx.fillText(hull.label, cx, cy);
         }
@@ -152,17 +173,17 @@ export function GraphView({ graph }: GraphViewProps) {
   }, []);
 
   const linkDistance = useCallback((link: any) => {
-    return link.type === "spawn" ? 80 : 30;
+    return link.type === "spawn" ? 120 : 50;
   }, []);
 
+  // Rectangular hit area matching the node box
   const paintPointerArea = useCallback(
     (node: any, color: string, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const forceNode = node as ForceNode & { x: number; y: number };
-      const size = 4 / globalScale;
-      ctx.beginPath();
-      ctx.arc(forceNode.x, forceNode.y, size, 0, Math.PI * 2);
+      const w = forceNode.width / globalScale;
+      const h = forceNode.height / globalScale;
       ctx.fillStyle = color;
-      ctx.fill();
+      ctx.fillRect(forceNode.x - w / 2, forceNode.y - h / 2, w, h);
     },
     [],
   );
@@ -222,39 +243,50 @@ export function GraphView({ graph }: GraphViewProps) {
         fit
       </button>
       <div className="absolute bottom-3 left-3 rounded border border-neutral-800 bg-neutral-900/90 px-3 py-2 text-xs text-neutral-400">
-        <div className="mb-1 text-neutral-500">chunks</div>
+        <div className="mb-1 text-neutral-500">nodes</div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#3b82f6" }} />
+          <span
+            className="inline-block h-2.5 w-4 rounded-sm border"
+            style={{ background: "#1e3a5f", borderColor: "#3b82f6" }}
+          />
           text
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#f97316" }} />
+          <span
+            className="inline-block h-2.5 w-4 rounded-sm border"
+            style={{ background: "#4a2a0a", borderColor: "#f97316" }}
+          />
           tool call
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#f59e0b" }} />
+          <span
+            className="inline-block h-2.5 w-4 rounded-sm border"
+            style={{ background: "#3d2a05", borderColor: "#f59e0b" }}
+          />
           tool result
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#22c55e" }} />
+          <span
+            className="inline-block h-2.5 w-4 rounded-sm border"
+            style={{ background: "#0a3d1f", borderColor: "#22c55e" }}
+          />
           user
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#8b5cf6" }} />
+          <span
+            className="inline-block h-2.5 w-4 rounded-sm border"
+            style={{ background: "#2d1f5e", borderColor: "#8b5cf6" }}
+          />
           reasoning
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: "#6b7280" }} />
+          <span
+            className="inline-block h-2.5 w-4 rounded-sm border"
+            style={{ background: "#1f2937", borderColor: "#4b5563" }}
+          />
           structural
         </div>
         <div className="mt-1.5 border-t border-neutral-800 pt-1.5 text-neutral-500">regions</div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className="inline-block h-2 w-3 rounded-sm"
-            style={{ background: "rgba(59,130,246,0.18)" }}
-          />
-          block
-        </div>
         <div className="flex items-center gap-1.5">
           <span
             className="inline-block h-2 w-3 rounded-sm"
@@ -284,7 +316,7 @@ export function GraphView({ graph }: GraphViewProps) {
           }}
         >
           <div className="font-bold">{hoveredNode.label}</div>
-          <div className="mt-1 text-neutral-500">{hoveredNode.kind}</div>
+          <div className="mt-1 text-neutral-500">{hoveredNode.blockType}</div>
         </div>
       )}
     </div>
