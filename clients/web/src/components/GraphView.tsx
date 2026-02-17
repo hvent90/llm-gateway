@@ -91,26 +91,47 @@ export function GraphView({ graph }: GraphViewProps) {
       ctx.lineWidth = (hoveredNodeRef.current?.id === forceNode.id ? 2 : 1) / globalScale;
       ctx.stroke();
 
-      // Text label inside the box
-      const fontSize = Math.max(10 / globalScale, 1);
+      // Type indicator in top-left
+      const typeFontSize = Math.max(7 / globalScale, 0.5);
+      ctx.fillStyle = forceNode.borderColor;
+      ctx.font = `${typeFontSize}px sans-serif`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText(forceNode.blockType, x + 4 / globalScale, y + 3 / globalScale);
+
+      // Text content with wrapping
+      const fontSize = Math.max(9 / globalScale, 0.8);
       ctx.fillStyle = "#e5e7eb";
       ctx.font = `${fontSize}px monospace`;
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
+      ctx.textBaseline = "top";
 
-      // Truncate text to fit within box
-      const maxTextWidth = w - 12 / globalScale;
-      let displayText = forceNode.label;
-      while (ctx.measureText(displayText).width > maxTextWidth && displayText.length > 3) {
-        displayText = displayText.slice(0, -4) + "...";
+      const padX = 6 / globalScale;
+      const textTop = y + 14 / globalScale;
+      const maxTextWidth = w - padX * 2;
+      const lineHeight = 12 / globalScale;
+      const maxLines = Math.floor((h - 16 / globalScale) / lineHeight);
+
+      // Word-wrap the label
+      const words = forceNode.label.split(/(\s+)/);
+      let line = "";
+      let lineNum = 0;
+      for (const word of words) {
+        const test = line + word;
+        if (ctx.measureText(test).width > maxTextWidth && line.length > 0) {
+          if (lineNum >= maxLines - 1) {
+            ctx.fillText(line.trimEnd() + "...", x + padX, textTop + lineNum * lineHeight);
+            lineNum++;
+            break;
+          }
+          ctx.fillText(line.trimEnd(), x + padX, textTop + lineNum * lineHeight);
+          lineNum++;
+          line = word;
+        } else {
+          line = test;
+        }
       }
-      ctx.fillText(displayText, x + 6 / globalScale, forceNode.y);
-
-      // Small type indicator in top-left corner at higher zoom
-      if (globalScale > 1) {
-        ctx.fillStyle = forceNode.borderColor;
-        ctx.font = `${Math.max(7 / globalScale, 0.5)}px sans-serif`;
-        ctx.fillText(forceNode.blockType, x + 4 / globalScale, y + 8 / globalScale);
+      if (lineNum < maxLines && line.length > 0) {
+        ctx.fillText(line.trimEnd(), x + padX, textTop + lineNum * lineHeight);
       }
     },
     [], // no deps — uses hoveredNodeRef

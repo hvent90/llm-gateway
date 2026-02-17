@@ -122,8 +122,8 @@ describe("projectForceGraph", () => {
     const result = projectForceGraph(g);
 
     for (const node of result.nodes) {
-      expect(node.width).toBeGreaterThanOrEqual(80);
-      expect(node.width).toBeLessThanOrEqual(200);
+      expect(node.width).toBeGreaterThanOrEqual(100);
+      expect(node.width).toBeLessThanOrEqual(400);
       expect(node.height).toBeGreaterThanOrEqual(30);
     }
   });

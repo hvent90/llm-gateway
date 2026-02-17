@@ -1,5 +1,5 @@
 import type { ConversationGraph, NodeId } from "../types";
-import { getNode } from "../primitives";
+import { getNode, findEdges } from "../primitives";
 import { chunksOf, blocksOf, blockOf } from "../queries";
 import { deriveBlockContent } from "../derived";
 
@@ -140,15 +140,15 @@ function blockLabel(graph: ConversationGraph, blockId: NodeId): string {
   }
   switch (content.kind) {
     case "text":
-      return content.text.slice(0, 40);
+      return content.text;
     case "reasoning":
-      return content.text.slice(0, 40) || "thinking...";
+      return content.text || "thinking...";
     case "tool_call":
       return content.name;
     case "user":
-      return typeof content.content === "string" ? content.content.slice(0, 40) : "[media]";
+      return typeof content.content === "string" ? content.content : "[media]";
     case "error":
-      return content.message.slice(0, 40);
+      return content.message;
     default:
       return content.kind;
   }
@@ -189,9 +189,11 @@ export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
 
     const blockType = deriveBlockType(graph, nodeId);
     const label = blockLabel(graph, nodeId);
-    const width = Math.min(Math.max(label.length * 7, 80), 200);
-    const chunkCount = chunksOf(graph, nodeId).length;
-    const height = chunkCount > 1 ? 45 : 30;
+    // Width: ~7px per char, min 100, max 400 for readability
+    const width = Math.min(Math.max(label.length * 7, 100), 400);
+    // Height: base 30, add 16 per ~50 chars of wrapped text
+    const lines = Math.ceil(label.length / 50);
+    const height = Math.max(30, 20 + lines * 16);
 
     nodes.push({
       id: nodeId,
@@ -208,9 +210,9 @@ export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
   // 2. Collect links between block nodes
   for (const edge of graph.edges.values()) {
     if (edge.type === "sequence") {
-      // Only emit block-to-block sequence links
       for (const pred of edge.roles.predecessor) {
         for (const succ of edge.roles.successor) {
+          // Block-to-block sequence (within same message/run)
           if (blockIds.has(pred) && blockIds.has(succ)) {
             links.push({
               source: pred,
@@ -218,6 +220,23 @@ export function projectForceGraph(graph: ConversationGraph): ForceGraphData {
               type: "sequence",
               dashed: false,
             });
+          }
+          // Message-to-message sequence: resolve to last block → first block
+          const predNode = graph.nodes.get(pred);
+          const succNode = graph.nodes.get(succ);
+          if (predNode?.kind === "message" && succNode?.kind === "message") {
+            const predBlocks = blocksOf(graph, pred);
+            const succBlocks = blocksOf(graph, succ);
+            const lastBlock = predBlocks[predBlocks.length - 1];
+            const firstBlock = succBlocks[0];
+            if (lastBlock && firstBlock && blockIds.has(lastBlock) && blockIds.has(firstBlock)) {
+              links.push({
+                source: lastBlock,
+                target: firstBlock,
+                type: "sequence",
+                dashed: false,
+              });
+            }
           }
         }
       }
