@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { createGraph } from "../../primitives";
+import { createGraph, addNode, addEdge } from "../../primitives";
 import { reduceEvent, createReducerState, type GraphEvent } from "../../reducer";
 import { projectDAG, type DAGNode, type DAGLayout } from "../../projections/dag";
 
@@ -364,5 +364,50 @@ describe("projectDAG", () => {
     if (assistantGroup) {
       expect(assistantGroup.color).toContain("59,130,246"); // blue
     }
+  });
+
+  test("summary groups have purple styling and 'summarized' label", () => {
+    let g = createGraph();
+    g = addNode(g, { id: "b1", kind: "block" });
+    g = addNode(g, { id: "b2", kind: "block" });
+    g = addNode(g, { id: "m1", kind: "message" });
+    g = addNode(g, { id: "m2", kind: "message" });
+    g = addEdge(g, {
+      id: "me1",
+      type: "message",
+      roles: { part: ["b1"], whole: ["m1"] },
+      properties: {},
+    });
+    g = addEdge(g, {
+      id: "me2",
+      type: "message",
+      roles: { part: ["b2"], whole: ["m2"] },
+      properties: {},
+    });
+    g = addEdge(g, {
+      id: "seq1",
+      type: "sequence",
+      roles: { predecessor: ["b1"], successor: ["b2"] },
+      properties: {},
+    });
+    g = addEdge(g, {
+      id: "seq2",
+      type: "sequence",
+      roles: { predecessor: ["m1"], successor: ["m2"] },
+      properties: {},
+    });
+    g = addEdge(g, {
+      id: "sum1",
+      type: "summary",
+      roles: { source: ["m1"], result: ["m2"] },
+      properties: {},
+    });
+
+    const result = projectDAG(g);
+
+    const summaryGroups = result.groups.filter((g) => g.edgeType === "summary");
+    expect(summaryGroups.length).toBe(1);
+    expect(summaryGroups[0]!.label).toBe("summarized");
+    expect(summaryGroups[0]!.color).toContain("167,139,250"); // purple
   });
 });
