@@ -155,4 +155,137 @@ describe("projectDAG", () => {
     expect(textNode?.color).toBe("#1e3a5f");
     expect(textNode?.borderColor).toBe("#3b82f6");
   });
+
+  test("spawn branch nodes are offset to the right", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        input: { task: "go" },
+      },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
+      { type: "text", id: "t1", runId: "r2", agentId: "a2", content: "Working" },
+      { type: "harness_end", runId: "r2", agentId: "a2" },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        output: "done",
+      },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const result = projectDAG(g);
+
+    // Find the tool_call node and the spawned subagent text node
+    const tcNode = result.nodes.find((n) => n.blockType === "tool_call");
+    const subagentTextNode = result.nodes.find(
+      (n) => n.blockType === "text" && n.label === "Working",
+    );
+    expect(tcNode).toBeDefined();
+    expect(subagentTextNode).toBeDefined();
+
+    // Subagent node should be to the right of the parent column
+    expect(subagentTextNode!.x).toBeGreaterThan(tcNode!.x);
+
+    // Spawn edge should exist
+    const spawnEdges = result.edges.filter((e) => e.type === "spawn");
+    expect(spawnEdges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("parent flow continues below spawn branch", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "text", id: "t0", runId: "r1", agentId: "a1", content: "Before" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        input: { task: "go" },
+      },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
+      { type: "text", id: "t1", runId: "r2", agentId: "a2", content: "Sub" },
+      { type: "harness_end", runId: "r2", agentId: "a2" },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        output: "done",
+      },
+      { type: "text", id: "t2", runId: "r1", agentId: "a1", content: "After" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const result = projectDAG(g);
+
+    const beforeNode = result.nodes.find((n) => n.label === "Before");
+    const afterNode = result.nodes.find((n) => n.label === "After");
+    expect(beforeNode).toBeDefined();
+    expect(afterNode).toBeDefined();
+
+    // "After" is below "Before" and in the same column (x=0)
+    expect(afterNode!.y).toBeGreaterThan(beforeNode!.y);
+    expect(afterNode!.x).toBe(beforeNode!.x);
+  });
+
+  test("nested spawns offset further right", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        input: {},
+      },
+      { type: "harness_start", runId: "r2", agentId: "a2", parentId: "tc1" },
+      {
+        type: "tool_call",
+        id: "tc2",
+        runId: "r2",
+        agentId: "a2",
+        name: "agent",
+        input: {},
+      },
+      { type: "harness_start", runId: "r3", agentId: "a3", parentId: "tc2" },
+      { type: "text", id: "t1", runId: "r3", agentId: "a3", content: "Deep" },
+      { type: "harness_end", runId: "r3", agentId: "a3" },
+      {
+        type: "tool_result",
+        id: "tc2",
+        runId: "r2",
+        agentId: "a2",
+        name: "agent",
+        output: "ok",
+      },
+      { type: "harness_end", runId: "r2", agentId: "a2" },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "agent",
+        output: "ok",
+      },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const result = projectDAG(g);
+
+    const tc1 = result.nodes.find((n) => n.blockType === "tool_call" && n.id.includes("tc1"));
+    const tc2 = result.nodes.find((n) => n.blockType === "tool_call" && n.id.includes("tc2"));
+    const deep = result.nodes.find((n) => n.label === "Deep");
+
+    // Each level offsets further right
+    expect(tc2!.x).toBeGreaterThan(tc1!.x);
+    expect(deep!.x).toBeGreaterThan(tc2!.x);
+  });
 });
