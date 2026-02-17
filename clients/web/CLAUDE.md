@@ -9,11 +9,12 @@ Browser-based chat UI for interacting with agents. Provides threaded conversatio
 **Stack:** Vite + React + TailwindCSS + streamdown
 
 - `App.tsx` — Main app: hypergraph conversation state, SSE streaming with RAF batching, permission relay handling, model selection, agent/rlm mode toggle, chat/graph view toggle
-- `ConversationThread.tsx` — Renders `projectThread()` output as grouped conversation bubbles with collapsible tool calls, subagent branches, and permission prompts. Uses `streamdown` for markdown rendering.
-- `GraphView.tsx` — DAG visualization using SVG. Projects hypergraph via `projectDAG()`, renders block nodes, edges, and group bounding boxes. Supports pan/zoom via `usePanZoom` hook.
-- `InputArea.tsx` — Chat input with model selector dropdown and agent/rlm mode toggle
-- `ErrorBoundary.tsx` — React error boundary
-- `types.ts` — Re-exports from `packages/ai/client/hypergraph` and `packages/ai/client/server-event`
+- `types.ts` — Re-exports from `packages/ai/client/hypergraph`, `server-event`, and `packages/ai/types`. Defines local `Permissions` interface.
+- `components/ConversationThread.tsx` — Renders `projectThread()` output as grouped conversation bubbles with collapsible tool calls, subagent branches, and inline permission prompts. Uses `streamdown` for markdown.
+- `components/GraphView.tsx` — DAG visualization using SVG+HTML. Projects hypergraph via `projectDAG()`, renders nodes/edges/groups. Pan/zoom via `usePanZoom`.
+- `components/graph/` — `DAGNode.tsx`, `DAGEdge.tsx`, `DAGGroup.tsx` — SVG/HTML rendering primitives for the graph view
+- `components/InputArea.tsx` — Chat input with model selector dropdown and agent/rlm mode toggle
+- `hooks/usePanZoom.ts` — Mouse drag, wheel zoom, touch pan, and pinch-to-zoom hook for GraphView
 
 Uses `reduceConversation`, `createInitialConversation`, `projectMessages`, `projectThread` from `packages/ai/client/hypergraph`, and transports from `packages/ai/client`.
 

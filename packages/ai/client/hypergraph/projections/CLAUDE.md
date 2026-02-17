@@ -16,3 +16,7 @@ Transform a `ConversationGraph` into view-specific formats. Each projection walk
 - `messages.ts` excludes branches — only the flat top-level ViewNode list is converted to messages
 - `dag.ts` resolves cross-message links by connecting last-block → first-block of adjacent messages
 - `dag.ts` lays out spawn branches in separate columns with `COLUMN_GAP` spacing
+
+## Docs
+
+- `docs/rendering.md` — ViewNode shape, key behaviors, and DAG data formats

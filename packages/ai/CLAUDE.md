@@ -15,7 +15,7 @@ This package implements a harness interface where LLM providers yield events thr
 - `skills.ts` — Discovers SKILL.md files with frontmatter for agent skills
 - `tools/` — Built-in tool implementations (bash, read, patch, agent spawning)
 - `harness/` — Agent and provider harness implementations
-- `client/` — Client-side state management (graph, projections, transports)
+- `client/` — Client-side state management (graph, projections, transports). The `hypergraph/` submodule is the active graph model (3-tier chunk→block→message nodes with typed hyperedges).
 - `primitives/` — Async coordination primitives (deferred, async-queue, passthrough)
 
 ## How It Works
