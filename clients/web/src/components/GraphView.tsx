@@ -42,6 +42,12 @@ export function GraphView({ graph }: GraphViewProps) {
 
   const data = useMemo(() => projectForceGraph(graph), [graph]);
 
+  // Memoize graphData object to prevent simulation reheats on re-render
+  const graphData = useMemo(
+    () => ({ nodes: data.nodes as any[], links: data.links as any[] }),
+    [data],
+  );
+
   // Force simulation tuning — more repulsion for larger rectangular nodes
   useEffect(() => {
     const fg = graphRef.current;
@@ -52,10 +58,14 @@ export function GraphView({ graph }: GraphViewProps) {
 
   const handleNodeHover = useCallback((node: ForceNode | null) => {
     hoveredNodeRef.current = node;
-    setHoveredNode(node);
-    setTooltipPos(node ? { ...mousePosRef.current } : null);
-    const canvas = containerRef.current?.querySelector("canvas");
-    if (canvas) canvas.style.cursor = node ? "default" : "default";
+    // Batch tooltip state updates into a single render
+    if (node) {
+      setTooltipPos({ ...mousePosRef.current });
+      setHoveredNode(node);
+    } else {
+      setHoveredNode(null);
+      setTooltipPos(null);
+    }
   }, []);
 
   // Draw block nodes as rounded rectangles with text content
@@ -216,8 +226,18 @@ export function GraphView({ graph }: GraphViewProps) {
     }
   }, []);
 
+  // Only zoomToFit on initial settle or when data changes — not on every reheat
+  const hasSettledRef = useRef(false);
+  const dataIdRef = useRef(data);
+  if (dataIdRef.current !== data) {
+    dataIdRef.current = data;
+    hasSettledRef.current = false;
+  }
   const handleEngineStop = useCallback(() => {
-    graphRef.current?.zoomToFit(400, 40);
+    if (!hasSettledRef.current) {
+      hasSettledRef.current = true;
+      graphRef.current?.zoomToFit(400, 40);
+    }
   }, []);
 
   if (data.nodes.length === 0) {
@@ -237,7 +257,7 @@ export function GraphView({ graph }: GraphViewProps) {
         ref={graphRef}
         width={dimensions.width}
         height={dimensions.height}
-        graphData={{ nodes: data.nodes as any[], links: data.links as any[] }}
+        graphData={graphData}
         nodeCanvasObject={drawNode}
         nodePointerAreaPaint={paintPointerArea}
         onRenderFramePost={drawHulls}
