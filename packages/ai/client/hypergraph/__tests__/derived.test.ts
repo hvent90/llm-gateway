@@ -23,7 +23,7 @@ describe("deriveBlockContent", () => {
     const g = buildGraph([
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hello" },
     ]);
-    const result = deriveBlockContent(g, "block:t1");
+    const result = deriveBlockContent(g, "block:r1:t1");
     expect(result).toEqual({ kind: "text", text: "Hello" });
   });
 
@@ -32,7 +32,7 @@ describe("deriveBlockContent", () => {
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hello " },
       { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "world" },
     ]);
-    const result = deriveBlockContent(g, "block:t1");
+    const result = deriveBlockContent(g, "block:r1:t1");
     expect(result).toEqual({ kind: "text", text: "Hello world" });
   });
 
@@ -40,7 +40,7 @@ describe("deriveBlockContent", () => {
     const g = buildGraph([
       { type: "reasoning", id: "r1", runId: "run1", agentId: "a1", content: "Thinking..." },
     ]);
-    const result = deriveBlockContent(g, "block:r1");
+    const result = deriveBlockContent(g, "block:run1:r1");
     expect(result).toEqual({ kind: "reasoning", text: "Thinking..." });
   });
 
@@ -49,7 +49,7 @@ describe("deriveBlockContent", () => {
       { type: "reasoning", id: "r1", runId: "run1", agentId: "a1", content: "First " },
       { type: "reasoning", id: "r1", runId: "run1", agentId: "a1", content: "second" },
     ]);
-    const result = deriveBlockContent(g, "block:r1");
+    const result = deriveBlockContent(g, "block:run1:r1");
     expect(result).toEqual({ kind: "reasoning", text: "First second" });
   });
 

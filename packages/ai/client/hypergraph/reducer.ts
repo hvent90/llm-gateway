@@ -15,6 +15,8 @@ export interface ReducerState {
   lastMessageId: NodeId | null;
   hadToolResultSinceLastText: Map<string, boolean>;
   messageCounter: number;
+  // Maps raw event ID → block node ID for spawn edge resolution
+  eventIdToBlockNodeId: Map<string, NodeId>;
 }
 
 export function createReducerState(): ReducerState {
@@ -28,6 +30,7 @@ export function createReducerState(): ReducerState {
     lastMessageId: null,
     hadToolResultSinceLastText: new Map(),
     messageCounter: 0,
+    eventIdToBlockNodeId: new Map(),
   };
 }
 
@@ -37,6 +40,7 @@ function deriveBlockKey(event: GraphEvent): string | null {
       return null;
     case "text":
     case "reasoning":
+      return `${event.runId}:${event.id}`;
     case "tool_call":
     case "relay":
     case "tool_progress":
@@ -85,6 +89,7 @@ export function reduceEvent(
     lastMessageId: state.lastMessageId,
     hadToolResultSinceLastText: new Map(state.hadToolResultSinceLastText),
     messageCounter: state.messageCounter,
+    eventIdToBlockNodeId: new Map(state.eventIdToBlockNodeId),
   };
 
   const runId = getRunId(event);
@@ -141,11 +146,16 @@ export function reduceEvent(
     newState.lastBlockByRunId.set(runId, blockNodeId);
     newState.currentBlockIdByRunId.set(runId, blockKey);
     newState.currentBlockEdgeByRunId.set(runId, blockEdgeId);
+
+    // Track raw event ID → block node ID for spawn resolution
+    if ("id" in event) {
+      newState.eventIdToBlockNodeId.set(event.id as string, blockNodeId);
+    }
   }
 
   // 4. Spawn edge for parentId
   if (parentId && !state.lastChunkByRunId.has(runId)) {
-    const parentBlockNodeId = `block:${parentId}`;
+    const parentBlockNodeId = newState.eventIdToBlockNodeId.get(parentId) ?? `block:${parentId}`;
     if (g.nodes.has(parentBlockNodeId)) {
       g = addEdge(g, {
         id: `spawn:${parentId}:${chunkId}`,

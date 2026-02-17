@@ -101,7 +101,8 @@ export function GraphView({ graph, pendingRelays = [], permissionHandlers }: Gra
         </svg>
         {/* HTML node layer */}
         {layout.nodes.map((node) => {
-          const relay = relayByToolCallId.get(node.id);
+          const rawId = node.id.startsWith("block:") ? node.id.slice(6) : node.id;
+          const relay = relayByToolCallId.get(rawId);
           return (
             <DAGNode
               key={node.id}
