@@ -1,6 +1,6 @@
 # Graph Pipeline
 
-This document explains how events flow through the client pipeline: from raw ServerEvents to the conversation Graph, then to projected views for rendering and API calls.
+This document explains how events flow through the client pipeline: from raw ServerEvents to the conversation hypergraph, then to projected views for rendering, API calls, and graph visualization.
 
 ## 1. Events
 
@@ -22,74 +22,111 @@ Event types (see `server-event.ts`):
 - `error` — error during execution
 - `relay` — permission request waiting for user response
 - `user` — user message (injected client-side, not from server)
+- `tool_progress` — streaming progress from tool execution
 
-## 2. Graph Reduction
+## 2. Hypergraph Model
 
-The `reduceEvent(graph, event)` function (graph.ts:141-190) is a pure reducer that builds an immutable conversation graph.
-
-### Node Creation
-
-Each event becomes a Node (types.ts:7-24). Node id is derived from the event (graph.ts:38-73):
-
-- Events with `id` field (text, reasoning, tool_call, relay) use that id directly
-- `tool_result` shares the tool_call's id but adds `:result` suffix
-- Lifecycle events (harness_start, harness_end, error) use `runId:event_type`
-- Usage events have no stable id, so use a counter: `runId:usage:N`
-
-### Streaming Append
-
-Text and reasoning nodes **append** content when the same id appears again:
+The conversation is represented as a `ConversationGraph` (see `hypergraph/types.ts`):
 
 ```typescript
-// graph.ts:155-165
-if (existingNode && event.type === "text" && existingNode.kind === "text") {
-  nodes.set(nodeId, {
-    ...existingNode,
-    content: existingNode.content + event.content
-  });
-  return { nodes, edges, lastNodeByRunId }; // No new edges
-}
+type ConversationGraph = {
+  nodes: Map<NodeId, ConversationNode>;
+  edges: Map<EdgeId, HyperEdge>;
+};
 ```
 
-This handles streaming — multiple events with the same id accumulate into one node.
+### Node Hierarchy
 
-### Edge Construction
+Three tiers of nodes, from finest to coarsest:
 
-Edges form a directed graph:
+- **chunk** — A single event snapshot. `{ id, kind: "chunk", content: ChunkEvent }`
+- **block** — Groups related chunks (e.g. all text deltas for one response). `{ id, kind: "block" }`
+- **message** — Groups blocks into a logical turn. `{ id, kind: "message" }`
 
-1. **Sequential edges**: Connect consecutive events in the same run. Tracked by `lastNodeByRunId` (graph.ts:182-184).
+### Typed Hyperedges
 
-2. **Cross-run edges**: Connect a tool_call (parent) to the first event in the spawned subagent run (child). Created when a new run's first event has a `parentId` (graph.ts:177-179).
+Each edge has a `type` and typed `roles` mapping role names to arrays of node IDs:
 
-Example:
+| Edge Type | Roles | Purpose |
+|-----------|-------|---------|
+| `sequence` | `predecessor → successor` | Ordering between same-tier nodes |
+| `block` | `part ↔ whole` | Chunks belong to a block |
+| `message` | `part ↔ whole` | Blocks belong to a message |
+| `summary` | `source → result` | Messages summarized by another |
+| `spawn` | `trigger → invocation` | Subagent spawning |
 
-```
-user:1 → text:2 → tool_call:3 → tool_result:3:result
-                       ↓
-                  harness_start:child → text:child:1 → harness_end:child
-```
+## 3. Graph Reduction
 
-- `user:1 → text:2 → tool_call:3 → tool_result:3:result` are sequential edges in the main run
-- `tool_call:3 → harness_start:child` is a cross-run edge (parentId = tool_call:3)
-- `harness_start:child → text:child:1 → harness_end:child` are sequential edges in the child run
+`reduceEvent(graph, state, event)` (see `hypergraph/reducer.ts`) is a pure reducer that returns `[ConversationGraph, ReducerState]`.
 
-## 3. Conversation State
+### ReducerState
 
-`reduceConversation(state, event)` (conversation.ts:45-91) wraps graph reduction with:
+Separate from the graph, tracks per-run cursors:
+
+- `lastChunkByRunId` / `lastBlockByRunId` — for building sequence edges
+- `currentBlockIdByRunId` / `currentBlockEdgeByRunId` — for grouping chunks into blocks
+- `pendingBlocksByRunId` — blocks waiting to be flushed into a message
+- `hadToolResultSinceLastText` — message boundary detection
+- `lastMessageId` / `messageCounter` — message sequencing
+- `chunkCounter` — monotonic ID generator for chunk nodes
+
+### Reduction Steps
+
+For each event:
+
+1. **Create chunk node** — every event becomes a chunk
+2. **Chunk sequence edge** — links to previous chunk in same run
+3. **Block grouping** — events with same `blockKey` extend the current block; new keys create a new block with its own block edge
+4. **Spawn edge** — first event in a run with `parentId` creates a spawn edge from parent block to first chunk
+5. **Message boundary** — blocks flush into messages at: user events (immediate), `harness_end`, or text-after-tool-result boundaries
+
+### Block Key Derivation
+
+The `blockKey` determines which chunks group together:
+
+- `text`, `reasoning`, `tool_call`, `relay`, `tool_progress` — use the event's `id` (so streaming deltas accumulate)
+- `tool_result` — `id:result` suffix (separate block from the tool_call)
+- Lifecycle events — `runId:event_type`
+- `user` — `runId:user`
+
+## 4. Conversation State
+
+`reduceConversation(state, event)` (see `hypergraph/conversation.ts`) wraps graph reduction with:
 
 - `sessionId` — from "connected" event
 - `pendingRelays` — relay events awaiting user approval
 - `isConnected` — SSE connection status
+- `active` — `Set<NodeId>` of currently visible messages, recomputed via `defaultActive()` after each event
+- `reducerState` — the ReducerState passed through to the graph reducer
 
-It delegates graph building to `reduceEvent()` and tracks higher-level state.
+## 5. Active Set & Walking
 
-## 4. Thread Projection
+The active set (see `hypergraph/walk.ts`) determines which messages are "visible" in the current view:
 
-`projectThread(graph)` (projections/thread.ts:266-280) walks the graph depth-first from roots (nodes with no incoming edges) and produces a flat `ViewNode[]` for UI rendering.
+- `defaultActive(graph)` — all message nodes, minus those replaced by summaries
+- `fullHistoryActive(graph)` — all message nodes regardless of summaries
+- `walk(graph, active)` — generator that yields nodes in sequence order
+- `findHead` / `findNextActive` / `findPrevActive` — navigation through sequence edges, climbing up/down the hierarchy when needed
 
-### ViewNode Structure
+### Operations (`hypergraph/operations.ts`)
 
-Each ViewNode (thread.ts:23-30) represents a renderable chunk:
+- `expand(graph, active, nodeId)` — replace an aggregate with its constituents in the active set
+- `collapse(graph, active, nodeIds)` — replace constituents with their aggregate
+- `summarize(graph, active, sourceIds, summaryNode)` — create a summary edge and swap in active set
+- `branch(graph, active, fromNodeId)` — walk active set up to a node (for branching)
+- `append(graph, active, message)` — add a message at the tail with sequence edge
+- `toggle(graph, active, nodeId)` — add/remove a node from the active set without structural checks
+
+### Queries (`hypergraph/queries.ts`)
+
+Downward traversal: `chunksOf(block)`, `blocksOf(message)`, `sourcesOf(summary)`
+Upward traversal: `blockOf(chunk)`, `messageOf(block)`, `summariesOf(message)`
+
+## 6. Thread Projection
+
+`projectThread(graph)` (see `hypergraph/projections/thread.ts`) walks the hypergraph and produces a flat `ViewNode[]` for chat UI rendering.
+
+Each ViewNode has:
 
 ```typescript
 {
@@ -102,89 +139,45 @@ Each ViewNode (thread.ts:23-30) represents a renderable chunk:
 }
 ```
 
-### Walk Algorithm
+Key behaviors:
 
-The walk (thread.ts:125-253) follows edges:
+- **Tool result attachment** — `tool_result` chunks retroactively attach their output to the matching `tool_call` ViewNode (backward scan) rather than creating separate entries.
+- **Tool progress accumulation** — `tool_progress` chunks accumulate into the matching `tool_call` ViewNode's `progress` field via `accumulate()` from `progress.ts`.
+- **Subagent branches** — spawn edges produce nested `branches` arrays on the tool_call that triggered them.
+- **Promotion logic** — when a chunk has no same-run continuation but has cross-run spawn targets, the first target is "promoted" from a branch to a continuation (inlined into the flat list) — unless the chunk is a `tool_call`, which always keeps spawns as branches.
+- **Pending placeholder** — a `harness_start` with no continuation yet (subagent just spawned, no content) emits a `{ kind: "pending" }` ViewNode so the branch isn't discarded while streaming.
 
-1. Start at a root node
-2. For each node:
-   - Convert to ViewContent (thread.ts:76-105)
-   - Separate edges into **continuation** (same-run) and **branches** (cross-run)
-   - If node is tool_call, recurse on branches to build nested `ViewNode[][]`
-   - Merge consecutive text/reasoning nodes in the same run
-   - Attach tool_result output back to the matching tool_call ViewNode
+## 7. Messages Projection
 
-3. Special case: tool_result nodes don't create their own ViewNode. Instead, their output is attached to the corresponding tool_call ViewNode (thread.ts:237-246).
+`projectMessages(graph)` (see `hypergraph/projections/messages.ts`) transforms the hypergraph into LLM API `Message[]` format for building follow-up requests. Builds on `projectThread` — walks the flat `ViewNode[]` output (branches excluded) rather than traversing the graph directly. Excludes reasoning, error, relay, and pending nodes.
 
-4. Special case: harness_start with no continuation (subagent just spawned, still streaming) emits a "pending" placeholder (thread.ts:219-233).
+## 8. DAG Projection
 
-### Branch Nesting
+`projectDAG(graph)` (see `hypergraph/projections/dag.ts`) produces `DAGLayout` for SVG graph visualization:
 
-Subagent runs appear as nested `branches` on the tool_call that spawned them:
+- **DAGNode[]** — one per block node. Block type derived from chunk content (text, reasoning, tool_call, tool_result, user, error, structural). Label extracted via `deriveBlockContent`. Each node has deterministic `x, y, width, height`.
+- **DAGEdge[]** — block-to-block sequence edges + spawn edges (dashed). Cross-message sequences resolved from last-block → first-block.
+- **DAGGroup[]** — message groups and summary groups as bounding boxes around their constituent nodes.
 
-```typescript
-// tool_call ViewNode
-{
-  content: { kind: "tool_call", name: "agent", input: { task: "..." } },
-  branches: [
-    [ /* ViewNode[] for the subagent run */ ]
-  ]
-}
-```
-
-This allows UIs to render subagent work as nested conversation threads.
-
-## 5. Messages Projection
-
-`projectMessages(graph)` (projections/messages.ts:20-79) transforms the graph into the LLM API `Message[]` format for building follow-up requests.
-
-### Algorithm
-
-1. Call `projectThread(graph)` to get the flat ViewNode[] (excludes nested branches)
-2. Walk the ViewNodes and accumulate:
-   - `text` → assistant message content
-   - `tool_call` → add to assistant's `tool_calls` array
-   - `tool_call` with `output` → emit tool message with `tool_call_id` and serialized output
-   - `user` → flush current assistant turn, emit user message
-
-3. Flush accumulated content at turn boundaries (when switching from assistant to user or encountering tool_calls followed by new text).
-
-### Output Format
+## 9. Usage Example
 
 ```typescript
-[
-  { role: "user", content: "..." },
-  {
-    role: "assistant",
-    content: "...",
-    tool_calls: [{ id: "...", name: "...", arguments: {...} }]
-  },
-  {
-    role: "tool",
-    tool_call_id: "...",
-    content: "..."
-  },
-  ...
-]
-```
-
-Reasoning, error, relay, and pending nodes are excluded — only user/assistant/tool messages are included.
-
-## 6. Usage Example
-
-```typescript
-import { stream } from "./transports/sse";
-import { reduceConversation, createInitialConversation } from "./conversation";
-import { projectThread } from "./projections/thread";
+import { createSSETransport } from "./transports/sse";
+import { reduceConversation, createInitialConversation } from "./hypergraph";
+import { projectThread } from "./hypergraph";
+import { projectDAG } from "./hypergraph";
 
 let state = createInitialConversation();
+const transport = createSSETransport({ baseUrl: "" });
 
-for await (const event of stream("/api/chat", { message: "Hello" })) {
+for await (const event of transport.stream(request, signal)) {
   state = reduceConversation(state, event);
 
-  // Render thread view
+  // Chat view
   const viewNodes = projectThread(state.graph);
-  console.log(viewNodes);
+
+  // Graph view
+  const dagLayout = projectDAG(state.graph);
 }
 ```
 
