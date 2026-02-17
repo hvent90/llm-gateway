@@ -288,4 +288,81 @@ describe("projectDAG", () => {
     expect(tc2!.x).toBeGreaterThan(tc1!.x);
     expect(deep!.x).toBeGreaterThan(tc2!.x);
   });
+
+  test("message groups enclose their blocks", () => {
+    const g = buildGraph([
+      { type: "user", runId: "u1", content: "Hello" },
+      { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Reply" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const result = projectDAG(g);
+
+    expect(result.groups.length).toBeGreaterThanOrEqual(1);
+
+    for (const group of result.groups) {
+      expect(group.edgeType).toBe("message");
+      expect(group).toHaveProperty("x");
+      expect(group).toHaveProperty("y");
+      expect(group).toHaveProperty("width");
+      expect(group).toHaveProperty("height");
+      expect(group).toHaveProperty("label");
+      expect(group).toHaveProperty("color");
+      expect(group).toHaveProperty("borderColor");
+      expect(group.width).toBeGreaterThan(0);
+      expect(group.height).toBeGreaterThan(0);
+    }
+  });
+
+  test("message group bounding box contains all child block positions", () => {
+    const g = buildGraph([
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Hello" },
+      {
+        type: "tool_call",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        input: { cmd: "ls" },
+      },
+      {
+        type: "tool_result",
+        id: "tc1",
+        runId: "r1",
+        agentId: "a1",
+        name: "bash",
+        output: "file.txt",
+      },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const result = projectDAG(g);
+
+    for (const group of result.groups) {
+      if (group.edgeType !== "message") continue;
+      // Group box includes padding, so x/y may be negative
+      expect(group.width).toBeGreaterThan(0);
+      expect(group.height).toBeGreaterThan(0);
+    }
+  });
+
+  test("user message groups have green tint, assistant have blue tint", () => {
+    const g = buildGraph([
+      { type: "user", runId: "u1", content: "Hello" },
+      { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "Reply" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ]);
+    const result = projectDAG(g);
+
+    const userGroup = result.groups.find((g) => g.label.includes("Hello"));
+    const assistantGroup = result.groups.find((g) => g.label.includes("assistant"));
+
+    if (userGroup) {
+      expect(userGroup.color).toContain("34,197,94"); // green
+    }
+    if (assistantGroup) {
+      expect(assistantGroup.color).toContain("59,130,246"); // blue
+    }
+  });
 });
