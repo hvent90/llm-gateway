@@ -42,6 +42,9 @@ export type { ViewNode, ViewContent } from "./projections/thread";
 export { projectForceGraph } from "./projections/force-graph";
 export type { ForceNode, ForceLink, ForceHull, ForceGraphData } from "./projections/force-graph";
 
+export { projectDAG } from "./projections/dag";
+export type { DAGNode, DAGEdge, DAGGroup, DAGLayout } from "./projections/dag";
+
 export { projectMessages } from "./projections/messages";
 
 export { expand, collapse, append, summarize, branch, toggle } from "./operations";
