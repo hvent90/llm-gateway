@@ -24,10 +24,14 @@ export function GraphView({ graph, pendingRelays = [], permissionHandlers }: Gra
   const { containerRef, contentRef, scale, zoomToFit } = usePanZoom();
   const hasInitialFit = useRef(false);
 
-  // Build relay lookup: toolCallId → PendingRelay
-  const relayByToolCallId = useMemo(() => {
+  // Build relay lookup: both toolCallId and relayId → PendingRelay
+  // so buttons appear on both the tool_call node and the relay node
+  const relayByNodeId = useMemo(() => {
     const map = new Map<string, PendingRelay>();
-    for (const r of pendingRelays) map.set(r.toolCallId, r);
+    for (const r of pendingRelays) {
+      map.set(r.toolCallId, r);
+      map.set(r.relayId, r);
+    }
     return map;
   }, [pendingRelays]);
 
@@ -102,7 +106,7 @@ export function GraphView({ graph, pendingRelays = [], permissionHandlers }: Gra
         {/* HTML node layer */}
         {layout.nodes.map((node) => {
           const rawId = node.id.startsWith("block:") ? node.id.slice(6) : node.id;
-          const relay = relayByToolCallId.get(rawId);
+          const relay = relayByNodeId.get(rawId);
           return (
             <DAGNode
               key={node.id}

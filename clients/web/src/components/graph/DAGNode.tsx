@@ -44,7 +44,7 @@ export function DAGNode({ node, relay, onAllow, onAllowAll, onDeny }: DAGNodePro
         className="px-2 pb-1.5 font-mono text-xs text-neutral-200"
         style={{ wordBreak: "break-word" }}
       >
-        {node.label.length > 300 ? node.label.slice(0, 300) + "..." : node.label}
+        {node.label}
       </div>
       {relay && (
         <div className="flex gap-1 border-t border-neutral-700 px-2 py-1.5">

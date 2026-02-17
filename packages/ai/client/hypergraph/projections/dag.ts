@@ -12,6 +12,7 @@ export type BlockType =
   | "tool_result"
   | "user"
   | "error"
+  | "relay"
   | "structural";
 
 export interface DAGNode {
@@ -68,6 +69,7 @@ const BLOCK_FILL_COLORS: Record<string, string> = {
   tool_result: "#3d2a05",
   user: "#0a3d1f",
   error: "#3d0a0a",
+  relay: "#3d2b08",
   structural: "#1f2937",
 };
 
@@ -78,6 +80,7 @@ const BLOCK_BORDER_COLORS: Record<string, string> = {
   tool_result: "#f59e0b",
   user: "#22c55e",
   error: "#ef4444",
+  relay: "#f59e0b",
   structural: "#4b5563",
 };
 
@@ -128,7 +131,7 @@ function deriveBlockType(graph: ConversationGraph, blockId: NodeId): BlockType {
       case "error":
         return "error";
       case "relay":
-        return "structural";
+        return "relay";
       default:
         return "structural";
     }
@@ -168,6 +171,8 @@ function blockLabel(graph: ConversationGraph, blockId: NodeId): string {
       return typeof content.content === "string" ? content.content : "[media]";
     case "error":
       return content.message;
+    case "relay":
+      return `${content.tool}(${Object.entries(content.params).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ")})`;
     default:
       return content.kind;
   }

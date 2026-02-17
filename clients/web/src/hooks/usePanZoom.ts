@@ -21,7 +21,12 @@ export function usePanZoom(options: UsePanZoomOptions = {}) {
   const [scale, setScale] = useState(1); // for UI display only
 
   // Pinch-to-zoom state
-  const pinchRef = useRef<{ startDist: number; startScale: number; midX: number; midY: number } | null>(null);
+  const pinchRef = useRef<{
+    startDist: number;
+    startScale: number;
+    midX: number;
+    midY: number;
+  } | null>(null);
 
   const applyTransform = useCallback(() => {
     const el = contentRef.current;
