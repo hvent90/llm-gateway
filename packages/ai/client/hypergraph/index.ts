@@ -39,9 +39,6 @@ export type { BlockContent } from "./derived";
 export { projectThread } from "./projections/thread";
 export type { ViewNode, ViewContent } from "./projections/thread";
 
-export { projectForceGraph } from "./projections/force-graph";
-export type { ForceNode, ForceLink, ForceHull, ForceGraphData } from "./projections/force-graph";
-
 export { projectDAG } from "./projections/dag";
 export type { DAGNode, DAGEdge, DAGGroup, DAGLayout } from "./projections/dag";
 

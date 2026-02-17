@@ -138,7 +138,7 @@ describe("projectDAG", () => {
     }
   });
 
-  test("color scheme matches force-graph colors", () => {
+  test("color scheme covers all block types", () => {
     const g = buildGraph([
       { type: "user", runId: "u1", content: "Hello" },
       { type: "harness_start", runId: "r1", agentId: "a1", parentId: "u1:user" },

@@ -58,7 +58,7 @@ const NODE_GAP = 12;
 const COLUMN_GAP = 40;
 const GROUP_PAD = 12;
 
-// --- Colors (same as force-graph.ts) ---
+// --- Colors ---
 
 const BLOCK_FILL_COLORS: Record<string, string> = {
   text: "#1e3a5f",
@@ -93,7 +93,7 @@ const MESSAGE_BORDER_COLORS: Record<string, string> = {
 const SUMMARY_HULL_COLOR = "rgba(167,139,250,0.12)";
 const SUMMARY_BORDER_COLOR = "rgba(167,139,250,0.3)";
 
-// --- Helpers (same logic as force-graph.ts) ---
+// --- Helpers ---
 
 function friendlyChunkType(type: string): string {
   switch (type) {
