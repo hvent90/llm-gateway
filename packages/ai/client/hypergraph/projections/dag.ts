@@ -57,6 +57,7 @@ export interface DAGLayout {
 const NODE_GAP = 12;
 const COLUMN_GAP = 40;
 const GROUP_PAD = 12;
+const LAYOUT_PAD = GROUP_PAD + 16; // room for group padding + labels above first row
 
 // --- Colors ---
 
@@ -306,6 +307,72 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     }
   }
 
+  // Build spawn target set: blocks that are the first block in a spawn branch
+  const spawnTargets = new Set(spawnEdges.map((e) => e.target));
+
+  // 2b. Bridge unflushed blocks to the message chain.
+  // During streaming, the current run's blocks aren't in a message yet and have
+  // no cross-message edges, so the topological sort would interleave them with
+  // earlier runs. Connect them to the tail of the last flushed message.
+  const blocksInMessages = new Set<string>();
+  for (const edge of graph.edges.values()) {
+    if (edge.type === "message") {
+      for (const partId of edge.roles.part) {
+        if (blockIds.has(partId)) blocksInMessages.add(partId);
+      }
+    }
+  }
+
+  // Find unflushed root blocks: not in any message, no sequence predecessor, not a spawn target
+  const unflushedRoots: string[] = [];
+  for (const blockId of blockIds) {
+    if (
+      !blocksInMessages.has(blockId) &&
+      !seqPredecessors.has(blockId) &&
+      !spawnTargets.has(blockId)
+    ) {
+      unflushedRoots.push(blockId);
+    }
+  }
+
+  if (unflushedRoots.length > 0) {
+    // Find the last message (no message-level successor)
+    const messageNodeIds = new Set<string>();
+    const messageHasSuccessor = new Set<string>();
+    for (const [nodeId, node] of graph.nodes) {
+      if (node.kind === "message") messageNodeIds.add(nodeId);
+    }
+    for (const edge of graph.edges.values()) {
+      if (edge.type === "sequence") {
+        for (const pred of edge.roles.predecessor) {
+          if (!messageNodeIds.has(pred)) continue;
+          for (const succ of edge.roles.successor) {
+            if (messageNodeIds.has(succ)) messageHasSuccessor.add(pred);
+          }
+        }
+      }
+    }
+
+    let lastMessageId: string | null = null;
+    for (const mid of messageNodeIds) {
+      if (!messageHasSuccessor.has(mid)) lastMessageId = mid;
+    }
+
+    if (lastMessageId) {
+      const lastMsgBlocks = blocksOf(graph, lastMessageId);
+      const tailBlock = lastMsgBlocks[lastMsgBlocks.length - 1];
+      if (tailBlock && blockIds.has(tailBlock)) {
+        for (const rootId of unflushedRoots) {
+          edges.push({ source: tailBlock, target: rootId, type: "sequence" });
+          if (!seqSuccessors.has(tailBlock)) seqSuccessors.set(tailBlock, []);
+          seqSuccessors.get(tailBlock)!.push(rootId);
+          if (!seqPredecessors.has(rootId)) seqPredecessors.set(rootId, []);
+          seqPredecessors.get(rootId)!.push(tailBlock);
+        }
+      }
+    }
+  }
+
   // 3. Build run membership: which blocks belong to which spawn branch
   // Find which runId each block belongs to by checking its chunks
   const blockRunId = new Map<string, string>();
@@ -318,9 +385,6 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
       }
     }
   }
-
-  // Build spawn target set: blocks that are the first block in a spawn branch
-  const spawnTargets = new Set(spawnEdges.map((e) => e.target));
 
   // Build runId → column depth from spawn edges
   // A spawn target's run gets parentColumn + 1
@@ -409,6 +473,22 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
   const columnY = new Map<number, number>();
   // Track max width per column for x offset computation
   const COLUMN_WIDTH = 300;
+  // Extra gap between blocks in different messages to prevent group overlap
+  const MESSAGE_GAP = 2 * GROUP_PAD + 16; // group padding on both sides + label height
+
+  // Build block → message map for boundary detection
+  const blockToMessage = new Map<string, string>();
+  for (const edge of graph.edges.values()) {
+    if (edge.type === "message") {
+      const msgId = edge.roles.whole[0];
+      if (msgId) {
+        for (const blockId of edge.roles.part) {
+          blockToMessage.set(blockId, msgId);
+        }
+      }
+    }
+  }
+  const lastMessageByColumn = new Map<number, string | null>();
 
   const positionedNodes = new Map<string, DAGNode>();
 
@@ -417,11 +497,16 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     if (!info) continue;
 
     const col = getColumn(blockId);
-    const x = col * (COLUMN_WIDTH + COLUMN_GAP);
-    const currentY = columnY.get(col) ?? 0;
+    const x = LAYOUT_PAD + col * (COLUMN_WIDTH + COLUMN_GAP);
+    const currentY = columnY.get(col) ?? LAYOUT_PAD;
 
-    // If this is a spawn target, start at least at the Y of the spawn source
+    // Add extra spacing at message boundaries to prevent group overlap
     let y = currentY;
+    const prevMsg = lastMessageByColumn.get(col) ?? null;
+    const curMsg = blockToMessage.get(blockId) ?? null;
+    if (prevMsg !== null && curMsg !== null && curMsg !== prevMsg) {
+      y += MESSAGE_GAP;
+    }
     if (spawnTargets.has(blockId)) {
       for (const se of spawnEdges) {
         if (se.target === blockId) {
@@ -448,6 +533,7 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     positionedNodes.set(blockId, dagNode);
     nodes.push(dagNode);
     columnY.set(col, y + info.height + NODE_GAP);
+    if (curMsg !== null) lastMessageByColumn.set(col, curMsg);
 
     // After placing a spawn branch, update the parent column's cursor
     // so the parent flow continues below the spawn branch
@@ -463,12 +549,12 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     }
   }
 
-  // 6. Compute totalWidth and totalHeight
+  // 6. Compute totalWidth and totalHeight (updated after groups are built)
   let totalWidth = 0;
   let totalHeight = 0;
   for (const node of nodes) {
-    totalWidth = Math.max(totalWidth, node.x + node.width);
-    totalHeight = Math.max(totalHeight, node.y + node.height);
+    totalWidth = Math.max(totalWidth, node.x + node.width + LAYOUT_PAD);
+    totalHeight = Math.max(totalHeight, node.y + node.height + LAYOUT_PAD);
   }
 
   // 7. Message groups

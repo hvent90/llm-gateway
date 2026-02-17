@@ -49,19 +49,19 @@ export function DAGNode({ node, relay, onAllow, onAllowAll, onDeny }: DAGNodePro
       {relay && (
         <div className="flex gap-1 border-t border-neutral-700 px-2 py-1.5">
           <button
-            className="rounded bg-green-800 px-2 py-0.5 text-[10px] text-green-200 hover:bg-green-700"
+            className="rounded bg-green-800 px-2 py-0.5 text-[10px] text-green-200 hover:bg-green-700 active:bg-green-700"
             onClick={() => onAllow?.(relay)}
           >
             Allow
           </button>
           <button
-            className="rounded bg-blue-800 px-2 py-0.5 text-[10px] text-blue-200 hover:bg-blue-700"
+            className="rounded bg-blue-800 px-2 py-0.5 text-[10px] text-blue-200 hover:bg-blue-700 active:bg-blue-700"
             onClick={() => onAllowAll?.(relay)}
           >
             Allow All
           </button>
           <button
-            className="rounded bg-red-900 px-2 py-0.5 text-[10px] text-red-200 hover:bg-red-800"
+            className="rounded bg-red-900 px-2 py-0.5 text-[10px] text-red-200 hover:bg-red-800 active:bg-red-800"
             onClick={() => onDeny?.(relay)}
           >
             Deny

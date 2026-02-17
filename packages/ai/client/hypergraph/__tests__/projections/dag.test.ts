@@ -32,9 +32,10 @@ describe("projectDAG", () => {
 
     expect(result.nodes.length).toBeGreaterThanOrEqual(1);
 
-    // All nodes at x=0 (main spine)
+    // All nodes at same x (main spine column)
+    const firstX = result.nodes[0]!.x;
     for (const node of result.nodes) {
-      expect(node.x).toBe(0);
+      expect(node.x).toBe(firstX);
     }
 
     // Y values are strictly increasing (top-to-bottom order)

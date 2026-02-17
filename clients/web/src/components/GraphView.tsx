@@ -117,7 +117,7 @@ export function GraphView({ graph, pendingRelays = [], permissionHandlers }: Gra
       </div>
       {/* Zoom controls */}
       <button
-        className="absolute bottom-3 right-3 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-700 hover:text-white"
+        className="absolute bottom-3 right-3 rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-700 hover:text-white active:bg-neutral-700 active:text-white"
         onClick={() => zoomToFit(layout.totalWidth, layout.totalHeight)}
       >
         fit
