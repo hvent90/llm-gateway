@@ -232,7 +232,11 @@ export default function App() {
             )}
           </div>
         ) : (
-          <GraphView graph={state.graph} />
+          <GraphView
+            graph={state.graph}
+            pendingRelays={state.pendingRelays}
+            permissionHandlers={permissionHandlers}
+          />
         )}
       </main>
       <InputArea
