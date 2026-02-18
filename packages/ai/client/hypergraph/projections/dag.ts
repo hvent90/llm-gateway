@@ -172,7 +172,9 @@ function blockLabel(graph: ConversationGraph, blockId: NodeId): string {
     case "error":
       return content.message;
     case "relay":
-      return `${content.tool}(${Object.entries(content.params).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ")})`;
+      return `${content.tool}(${Object.entries(content.params)
+        .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+        .join(", ")})`;
     default:
       return content.kind;
   }
@@ -415,7 +417,7 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     const triggerInfo = blockInfoMap.get(se.source);
     if (triggerInfo?.blockType === "tool_call") {
       const parentCol = runColumn.get(parentRunId)!;
-      const nextCol = nextSpawnColumn.get(parentRunId) ?? (parentCol + 1);
+      const nextCol = nextSpawnColumn.get(parentRunId) ?? parentCol + 1;
       runColumn.set(childRunId, nextCol);
       nextSpawnColumn.set(parentRunId, nextCol + 1);
     } else {

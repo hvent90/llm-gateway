@@ -93,9 +93,7 @@ export function reduceEvent(
     hadToolResultSinceLastText: new Map(state.hadToolResultSinceLastText),
     messageCounter: state.messageCounter,
     eventIdToBlockNodeId: new Map(state.eventIdToBlockNodeId),
-    childRunsByParent: new Map(
-      [...state.childRunsByParent].map(([k, v]) => [k, new Set(v)]),
-    ),
+    childRunsByParent: new Map([...state.childRunsByParent].map(([k, v]) => [k, new Set(v)])),
   };
 
   const runId = getRunId(event);
@@ -226,7 +224,8 @@ export function reduceEvent(
       (parentId && state.hadToolResultSinceLastText.get(parentId));
     if (hadToolResult) {
       // Flush the parent's pending blocks (which include child run blocks)
-      const flushRunId = parentId && state.hadToolResultSinceLastText.get(parentId) ? parentId : runId;
+      const flushRunId =
+        parentId && state.hadToolResultSinceLastText.get(parentId) ? parentId : runId;
       const pending = [...(newState.pendingBlocksByRunId.get(flushRunId) ?? [])];
       // Also gather child run blocks
       const childRuns = newState.childRunsByParent.get(flushRunId);
