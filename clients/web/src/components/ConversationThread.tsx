@@ -1,7 +1,14 @@
 import { useState, memo } from "react";
 import { Streamdown } from "streamdown";
 import { projectThread } from "../../../../packages/ai/client/hypergraph";
-import type { ViewNode, ViewContent, ConversationGraph, PendingRelay } from "../types";
+import type {
+  ViewNode,
+  ViewContent,
+  ConversationGraph,
+  PendingRelay,
+  NodeId,
+  Message,
+} from "../types";
 import type { ExecProgressState } from "../../../../packages/ai/rlm/exec-progress";
 
 export interface PermissionHandlers {
@@ -12,8 +19,13 @@ export interface PermissionHandlers {
 
 interface ConversationThreadProps {
   graph: ConversationGraph;
+  active: Set<NodeId>;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  onSummarize: (sourceIds: string[], messages: Message[]) => void;
+  onExpand: (nodeId: string) => void;
+  onCollapse: (nodeIds: string[]) => void;
+  isSummarizing: boolean;
 }
 
 interface MessageGroup {
@@ -377,8 +389,13 @@ function PermissionPromptInline({
 
 export function ConversationThread({
   graph,
+  active,
   pendingRelays,
   permissionHandlers,
+  onSummarize,
+  onExpand,
+  onCollapse,
+  isSummarizing,
 }: ConversationThreadProps) {
   const viewNodes = projectThread(graph);
 

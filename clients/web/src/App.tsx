@@ -9,7 +9,14 @@ import {
   createInitialConversation,
   projectMessages,
 } from "../../../packages/ai/client/hypergraph";
-import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
+import type {
+  ConversationState,
+  Message,
+  PendingRelay,
+  Permissions,
+  ServerEvent,
+  NodeId,
+} from "./types";
 
 const sseTransport = createSSETransport({ baseUrl: "" });
 const httpTransport = createHTTPTransport({ baseUrl: "" });
@@ -26,6 +33,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [mode, setMode] = useState<"agent" | "rlm">("agent");
   const [view, setView] = useState<"chat" | "graph">("chat");
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -180,6 +188,18 @@ export default function App() {
     abortControllerRef.current?.abort();
   }, []);
 
+  const handleSummarize = useCallback(async (sourceIds: string[], messages: Message[]) => {
+    console.log("summarize", sourceIds, messages);
+  }, []);
+
+  const handleExpand = useCallback((nodeId: string) => {
+    console.log("expand", nodeId);
+  }, []);
+
+  const handleCollapse = useCallback((nodeIds: string[]) => {
+    console.log("collapse", nodeIds);
+  }, []);
+
   const permissionHandlers: PermissionHandlers = {
     onAllow: handleAllow,
     onAllowAll: handleAllowAll,
@@ -222,8 +242,13 @@ export default function App() {
           <div>
             <ConversationThread
               graph={state.graph}
+              active={state.active}
               pendingRelays={state.pendingRelays}
               permissionHandlers={permissionHandlers}
+              onSummarize={handleSummarize}
+              onExpand={handleExpand}
+              onCollapse={handleCollapse}
+              isSummarizing={isSummarizing}
             />
             {streamError && (
               <div className="mt-4 border border-neutral-700 p-3 text-sm text-red-400">
