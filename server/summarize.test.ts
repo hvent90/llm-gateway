@@ -109,4 +109,29 @@ describe("POST /summarize", () => {
     expect(textData.type).toBe("text");
     expect(textData.content).toBe("This is the summary.");
   });
+
+  it("uses defaultModel when model is not provided", async () => {
+    const providerHarness = createDeterministicHarness({
+      responses: [{ events: [{ type: "text", content: "Summary." }] }],
+      models: ["default-model"],
+    });
+    const agentHarness = createAgentHarness({ harness: providerHarness });
+    const app = await createApp({
+      harness: agentHarness,
+      providerHarness,
+      defaultModel: "default-model",
+    });
+
+    const response = await app.request("/summarize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "hello" }],
+        sourceIds: ["msg_1"],
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+  });
 });
