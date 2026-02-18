@@ -85,16 +85,17 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
           tools: isSummarizing ? [] : params.tools,
           env: { parentId: myRunId },
         })) {
-          // Pass through text, reasoning, and error events
+          // Pass through provider events untouched — they carry
+          // the provider's own runId and parentId (true provenance)
           if (event.type === "text") {
-            yield tag(event);
+            yield event;
             assistantText += event.content;
           } else if (event.type === "reasoning") {
-            yield tag(event);
+            yield event;
           } else if (event.type === "usage") {
-            yield tag(event);
+            yield event;
           } else if (event.type === "error") {
-            yield tag(event);
+            yield event;
             yield tag({ type: "harness_end", runId: myRunId });
             return assistantText; // Stop on error
           } else if (event.type === "tool_call") {

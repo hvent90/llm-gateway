@@ -404,6 +404,8 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
   // For each spawn edge, compute the child run's column.
   // Only tool_call triggers create a new column (real subagent spawns).
   // User→assistant spawns stay on the main spine.
+  // Parallel subagents each get their own column via nextSpawnColumn.
+  const nextSpawnColumn = new Map<string, number>(); // parentRunId → next available column
   for (const se of spawnEdges) {
     const parentRunId = blockRunId.get(se.source);
     const childRunId = blockRunId.get(se.target);
@@ -413,9 +415,11 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     const triggerInfo = blockInfoMap.get(se.source);
     if (triggerInfo?.blockType === "tool_call") {
       const parentCol = runColumn.get(parentRunId)!;
-      runColumn.set(childRunId, parentCol + 1);
+      const nextCol = nextSpawnColumn.get(parentRunId) ?? (parentCol + 1);
+      runColumn.set(childRunId, nextCol);
+      nextSpawnColumn.set(parentRunId, nextCol + 1);
     } else {
-      // Non-tool_call spawns (e.g. user→assistant): same column as parent
+      // Non-tool_call spawns (e.g. provider calls, user→assistant): same column as parent
       if (!runColumn.has(childRunId)) {
         runColumn.set(childRunId, runColumn.get(parentRunId)!);
       }
@@ -477,7 +481,7 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
   // Track the current y cursor per column
   const columnY = new Map<number, number>();
   // Track max width per column for x offset computation
-  const COLUMN_WIDTH = 300;
+  const COLUMN_WIDTH = 400; // matches max nodeWidth
   // Extra gap between blocks in different messages to prevent group overlap
   const MESSAGE_GAP = 2 * GROUP_PAD + 16; // group padding on both sides + label height
 
@@ -540,16 +544,17 @@ export function projectDAG(graph: ConversationGraph): DAGLayout {
     columnY.set(col, y + info.height + NODE_GAP);
     if (curMsg !== null) lastMessageByColumn.set(col, curMsg);
 
-    // After placing a spawn branch, update the parent column's cursor
-    // so the parent flow continues below the spawn branch
+    // After placing a spawn branch, push all ancestor columns' cursors
+    // past the child so the parent flow continues below the spawn branch
     if (col > 0) {
-      // Find the parent column
-      const parentCol = col - 1;
-      const parentY = columnY.get(parentCol) ?? 0;
       const childBottom = y + info.height + NODE_GAP;
-      if (childBottom > parentY) {
-        // Don't update here — we'll handle it when a sequence successor in the parent
-        // column tries to place itself. The topo sort + spawn source Y check handles this.
+      for (let c = col - 1; c >= 0; c--) {
+        const curY = columnY.get(c) ?? 0;
+        if (childBottom > curY) {
+          columnY.set(c, childBottom);
+        } else {
+          break; // ancestor is already past this point
+        }
       }
     }
   }
