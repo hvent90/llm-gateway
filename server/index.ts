@@ -21,6 +21,7 @@ import { discoverSkills, formatSkillsPrompt } from "../packages/ai/skills.ts";
 
 export interface AppConfig {
   harness?: GeneratorHarnessModule;
+  providerHarness?: GeneratorHarnessModule;
   tools?: ToolDefinition[];
   defaultModel?: string;
   skillDirs?: string[];
@@ -37,6 +38,12 @@ interface ChatRequest {
 interface RelayRequest {
   sessionId: string;
   response: ResolveResponse;
+}
+
+interface SummarizeRequest {
+  model: string;
+  messages: Message[];
+  sourceIds: string[];
 }
 
 // Serialize a ConsumerHarnessEvent to JSON-safe format, adding agentId
@@ -202,6 +209,78 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
     }
 
     return c.json({ success: true });
+  });
+
+  app.post("/summarize", async (c) => {
+    let body: SummarizeRequest;
+    try {
+      body = await c.req.json<SummarizeRequest>();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const model = body.model || defaultModel;
+    if (!model || !body.messages) {
+      return c.json({ error: "model and messages are required" }, 400);
+    }
+
+    const sessionId = v7();
+    const sourceIds = body.sourceIds ?? [];
+    const provider = config?.providerHarness ?? createGeneratorHarness();
+
+    const systemPrompt =
+      "Summarize the following conversation concisely. Preserve key decisions, conclusions, and important details. Output only the summary, no preamble.";
+    const userContent = body.messages
+      .map((m) => {
+        const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+        return `[${m.role}]: ${content ?? ""}`;
+      })
+      .join("\n");
+
+    return streamSSE(c, async (stream) => {
+      try {
+        await stream.writeSSE({
+          event: "connected",
+          data: JSON.stringify({ type: "connected", sessionId, sourceIds }),
+        });
+
+        const events = provider.invoke({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userContent },
+          ],
+        });
+
+        for await (const event of events) {
+          if (event.type === "error") {
+            await stream.writeSSE({
+              event: "error",
+              data: JSON.stringify({
+                type: "error",
+                runId: event.runId,
+                message: event.error.message,
+              }),
+            });
+          } else {
+            await stream.writeSSE({
+              event: event.type,
+              data: JSON.stringify(event),
+            });
+          }
+        }
+      } catch (error) {
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({
+            type: "error",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        });
+      } finally {
+        log("I", sessionId, "summarize_end");
+      }
+    });
   });
 
   return app;
