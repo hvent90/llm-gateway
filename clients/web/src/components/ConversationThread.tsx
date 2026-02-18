@@ -1,6 +1,12 @@
-import { useState, memo } from "react";
+import React, { useState, memo, useCallback } from "react";
 import { Streamdown } from "streamdown";
-import { projectThread } from "../../../../packages/ai/client/hypergraph";
+import {
+  projectThread,
+  walk,
+  deriveMessageContent,
+  sourcesOf,
+  summariesOf,
+} from "../../../../packages/ai/client/hypergraph";
 import type {
   ViewNode,
   ViewContent,
@@ -209,17 +215,64 @@ const MessageGroupComponent = memo(function MessageGroupComponent({
   group,
   pendingRelays,
   permissionHandlers,
+  messageId,
+  selected,
+  anySelected,
+  onToggleSelect,
+  graph,
+  onExpand,
+  onCollapse,
 }: {
   group: MessageGroup;
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  messageId?: string;
+  selected: boolean;
+  anySelected: boolean;
+  onToggleSelect: (shiftKey: boolean) => void;
+  graph?: ConversationGraph;
+  onExpand?: (nodeId: string) => void;
+  onCollapse?: (nodeIds: string[]) => void;
 }) {
   const isUser = group.role === "user";
   const isStreaming = group.nodes.some((n) => n.status === "streaming");
   const groupRelays = pendingRelays.filter((r) => r.runId === group.runId);
 
+  const sources = messageId && graph ? sourcesOf(graph, messageId as NodeId) : [];
+  const isSummary = sources.length > 0;
+
   return (
-    <div className="mb-4">
+    <div
+      className={`group relative mb-4 pl-6 ${isSummary ? "border-l-2 border-dashed border-blue-800 pl-10" : ""}`}
+    >
+      {messageId && (
+        <div
+          className={`absolute left-0 top-0 flex h-6 w-6 items-center justify-center ${
+            anySelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          } transition-opacity`}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(e) =>
+              onToggleSelect(e.nativeEvent instanceof MouseEvent && e.nativeEvent.shiftKey)
+            }
+            className="h-3.5 w-3.5 cursor-pointer accent-blue-500"
+          />
+        </div>
+      )}
+      {isSummary && messageId && (
+        <div className="mb-1 flex items-center gap-2">
+          <span className="text-xs text-blue-400">Summary</span>
+          <button
+            type="button"
+            onClick={() => onExpand?.(messageId)}
+            className="text-xs text-neutral-500 hover:text-white"
+          >
+            show {sources.length} original messages
+          </button>
+        </div>
+      )}
       <div className={`font-bold ${isUser ? "text-white" : "text-green-400"}`}>
         &gt; {isUser ? "you" : `agent-${group.runId.replace(/-/g, "").slice(-7)}`}
         {isStreaming && (
@@ -304,7 +357,6 @@ function BranchView({
             nodes={branch}
             pendingRelays={pendingRelays}
             permissionHandlers={permissionHandlers}
-            isConnected={false}
           />
         </div>
       </div>
@@ -325,23 +377,100 @@ function Thread({
   nodes,
   pendingRelays,
   permissionHandlers,
+  messageIds,
+  selectedIds,
+  anySelected,
+  onToggleSelect,
+  lastSelectedGroupIndex,
+  onSummarizeClick,
+  onClearSelection,
+  isSummarizing,
+  graph,
+  onExpand,
+  onCollapse,
 }: {
   nodes: ViewNode[];
   pendingRelays: PendingRelay[];
   permissionHandlers: PermissionHandlers;
+  messageIds?: string[];
+  selectedIds?: Set<string>;
+  anySelected?: boolean;
+  onToggleSelect?: (index: number, shiftKey: boolean) => void;
+  lastSelectedGroupIndex?: number;
+  onSummarizeClick?: () => void;
+  onClearSelection?: () => void;
+  isSummarizing?: boolean;
+  graph?: ConversationGraph;
+  onExpand?: (nodeId: string) => void;
+  onCollapse?: (nodeIds: string[]) => void;
 }) {
   const groups = groupNodes(nodes);
 
   return (
     <>
-      {groups.map((group) => (
-        <MessageGroupComponent
-          key={`${group.runId}-${group.nodes[0]!.id}`}
-          group={group}
-          pendingRelays={pendingRelays}
-          permissionHandlers={permissionHandlers}
-        />
-      ))}
+      {groups.map((group, i) => {
+        const msgId = messageIds?.[i];
+
+        // Determine if this is the last source message of a summary (for collapse button)
+        let isLastSource = false;
+        let collapseSourceIds: string[] = [];
+        if (msgId && graph) {
+          const sums = summariesOf(graph, msgId as NodeId);
+          if (sums.length > 0) {
+            const sumSources = sourcesOf(graph, sums[0]!);
+            const nextMsgId = messageIds?.[i + 1];
+            isLastSource = !nextMsgId || !sumSources.includes(nextMsgId as NodeId);
+            if (isLastSource) {
+              collapseSourceIds = sumSources as string[];
+            }
+          }
+        }
+
+        return (
+          <React.Fragment key={`${group.runId}-${group.nodes[0]!.id}`}>
+            <MessageGroupComponent
+              group={group}
+              pendingRelays={pendingRelays}
+              permissionHandlers={permissionHandlers}
+              messageId={msgId}
+              selected={msgId ? (selectedIds?.has(msgId) ?? false) : false}
+              anySelected={anySelected ?? false}
+              onToggleSelect={(shiftKey: boolean) => onToggleSelect?.(i, shiftKey)}
+              graph={graph}
+              onExpand={onExpand}
+              onCollapse={onCollapse}
+            />
+            {isLastSource && collapseSourceIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onCollapse?.(collapseSourceIds)}
+                className="my-1 text-xs text-neutral-500 hover:text-white"
+              >
+                ▲ collapse to summary
+              </button>
+            )}
+            {i === lastSelectedGroupIndex && selectedIds && selectedIds.size > 0 && (
+              <div className="my-2 flex items-center gap-2 pl-6">
+                <button
+                  type="button"
+                  onClick={onSummarizeClick}
+                  disabled={isSummarizing}
+                  className="border border-blue-800 bg-blue-950 px-3 py-1 text-sm text-blue-300 hover:bg-blue-900 disabled:opacity-50"
+                >
+                  {isSummarizing ? "summarizing..." : `summarize ${selectedIds.size} messages`}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearSelection}
+                  className="px-2 py-1 text-sm text-neutral-500 hover:text-white"
+                >
+                  cancel
+                </button>
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
     </>
   );
 }
@@ -399,6 +528,59 @@ export function ConversationThread({
 }: ConversationThreadProps) {
   const viewNodes = projectThread(graph);
 
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+
+  const messageIds = [...walk(graph, active)].map((n) => n.id);
+
+  const handleToggleSelect = useCallback(
+    (index: number, shiftKey: boolean) => {
+      const msgId = messageIds[index];
+      if (!msgId) return;
+
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (shiftKey && lastClickedIndex !== null) {
+          const start = Math.min(lastClickedIndex, index);
+          const end = Math.max(lastClickedIndex, index);
+          for (let i = start; i <= end; i++) {
+            const id = messageIds[i];
+            if (id) next.add(id);
+          }
+        } else if (next.has(msgId)) {
+          next.delete(msgId);
+        } else {
+          next.add(msgId);
+        }
+        return next;
+      });
+      setLastClickedIndex(index);
+    },
+    [messageIds, lastClickedIndex],
+  );
+
+  const handleSummarizeClick = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    const sourceIds = [...selectedIds];
+    const messages: Message[] = [];
+    for (const id of sourceIds) {
+      messages.push(...deriveMessageContent(graph, id));
+    }
+    onSummarize(sourceIds, messages);
+    setSelectedIds(new Set());
+    setLastClickedIndex(null);
+  }, [selectedIds, graph, onSummarize]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setLastClickedIndex(null);
+  }, []);
+
+  const lastSelectedGroupIndex = messageIds.reduce(
+    (last: number, id: string, i: number) => (selectedIds.has(id) ? i : last),
+    -1,
+  );
+
   if (viewNodes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-neutral-600">
@@ -413,6 +595,17 @@ export function ConversationThread({
         nodes={viewNodes}
         pendingRelays={pendingRelays}
         permissionHandlers={permissionHandlers}
+        messageIds={messageIds}
+        selectedIds={selectedIds}
+        anySelected={selectedIds.size > 0}
+        onToggleSelect={handleToggleSelect}
+        lastSelectedGroupIndex={lastSelectedGroupIndex}
+        onSummarizeClick={handleSummarizeClick}
+        onClearSelection={handleClearSelection}
+        isSummarizing={isSummarizing}
+        graph={graph}
+        onExpand={onExpand}
+        onCollapse={onCollapse}
       />
     </div>
   );
