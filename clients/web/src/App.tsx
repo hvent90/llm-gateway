@@ -8,7 +8,10 @@ import {
   reduceConversation,
   createInitialConversation,
   projectMessages,
+  expand,
+  collapse,
 } from "../../../packages/ai/client/hypergraph";
+import { summarizeFromEvents } from "../../../packages/ai/client/summarize";
 import type {
   ConversationState,
   Message,
@@ -188,16 +191,68 @@ export default function App() {
     abortControllerRef.current?.abort();
   }, []);
 
-  const handleSummarize = useCallback(async (sourceIds: string[], messages: Message[]) => {
-    console.log("summarize", sourceIds, messages);
-  }, []);
+  const handleSummarize = useCallback(
+    async (sourceIds: string[], messages: Message[]) => {
+      setIsSummarizing(true);
+      try {
+        const response = await fetch("/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: selectedModel,
+            messages,
+            sourceIds,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        // Collect all text from the SSE stream
+        const text = await response.text();
+        let summaryText = "";
+        for (const block of text.split("\n\n")) {
+          for (const line of block.split("\n")) {
+            if (line.startsWith("data: ")) {
+              try {
+                const event = JSON.parse(line.slice(6));
+                if (event.type === "text") {
+                  summaryText += event.content;
+                }
+              } catch {}
+            }
+          }
+        }
+
+        if (summaryText) {
+          setState((s) => {
+            const result = summarizeFromEvents(s.graph, s.active, sourceIds, summaryText);
+            return { ...s, graph: result.graph, active: result.active };
+          });
+        }
+      } catch (error) {
+        console.error("Summarize error:", error);
+        setStreamError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setIsSummarizing(false);
+      }
+    },
+    [selectedModel],
+  );
 
   const handleExpand = useCallback((nodeId: string) => {
-    console.log("expand", nodeId);
+    setState((s) => ({
+      ...s,
+      active: expand(s.graph, s.active, nodeId),
+    }));
   }, []);
 
   const handleCollapse = useCallback((nodeIds: string[]) => {
-    console.log("collapse", nodeIds);
+    setState((s) => ({
+      ...s,
+      active: collapse(s.graph, s.active, nodeIds),
+    }));
   }, []);
 
   const permissionHandlers: PermissionHandlers = {
