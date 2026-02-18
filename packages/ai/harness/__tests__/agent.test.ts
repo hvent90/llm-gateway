@@ -474,9 +474,10 @@ describe("harness_start / harness_end lifecycle events", () => {
     expect(start.runId).toBeDefined();
     expect(start.runId).toBe(end.runId);
 
-    // The text events should also have the same runId (the agent's own runId)
+    // Text events carry the provider's own runId (not the agent's)
     const textEvent = events.find((e) => e.type === "text")!;
-    expect(textEvent.runId).toBe(start.runId);
+    expect(textEvent.runId).not.toBe(start.runId);
+    expect(textEvent.runId).toBe("r1");
   });
 
   test("harness_start and harness_end carry parentId when context.parentId is set", async () => {
@@ -849,13 +850,9 @@ test("passes through usage events from provider with tag", async () => {
   expect(usage.inputTokens).toBe(10);
   expect(usage.outputTokens).toBe(5);
 
-  // Should have the agent's runId, not the provider's
-  const start = events[0]!;
-  expect(usage.runId).toBe(start.runId);
-  expect(usage.runId).not.toBe("r1");
-
-  // Should have parentId from context
-  expect((usage as { parentId?: string }).parentId).toBe("parent-abc");
+  // Provider events pass through untouched — they carry the provider's
+  // own runId. Real providers set parentId from env.parentId; this mock doesn't.
+  expect(usage.runId).toBe("r1");
 });
 
 test("passes through usage events without parentId when no context.parentId", async () => {

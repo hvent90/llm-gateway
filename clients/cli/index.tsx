@@ -9,17 +9,15 @@
 import { render, useRenderer } from "@opentui/solid";
 import { createTextAttributes } from "@opentui/core";
 import { createSignal, For, Show, onMount } from "solid-js";
+import { createSSETransport, createHTTPTransport } from "../../packages/ai/client";
 import {
-  createSSETransport,
-  createHTTPTransport,
   createInitialConversation,
   reduceConversation,
-  getRoots,
-  getChildren,
-  getContentBlocks,
-  getRole,
-} from "../../packages/ai/client";
-import type { ConversationState, ContentBlock, PendingRelay } from "../../packages/ai/client";
+  projectThread,
+  projectMessages,
+} from "../../packages/ai/client/hypergraph";
+import type { ConversationState, PendingRelay } from "../../packages/ai/client/hypergraph";
+import type { ViewNode, ViewContent } from "../../packages/ai/client/hypergraph";
 
 // Configuration from environment
 const MODEL = process.env.DEFAULT_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
@@ -42,134 +40,102 @@ function formatOutput(output: unknown): string {
   return lines.slice(0, 5).join("\n") + `\n... (${lines.length - 5} more lines)`;
 }
 
-// Block renderer for a single ContentBlock
-function BlockView(props: { block: ContentBlock; isUser: boolean }) {
-  return (
-    <Show
-      when={props.block.type === "reasoning"}
-      fallback={
-        <Show
-          when={props.block.type === "tool_call"}
-          fallback={
-            <text wrapMode="word">
-              {props.isUser ? "You: " : ""}
-              {(props.block as Extract<ContentBlock, { type: "text" }>).content.trimEnd()}
-            </text>
-          }
-        >
-          {(() => {
-            const tc = props.block as Extract<ContentBlock, { type: "tool_call" }>;
-            const inputStr = typeof tc.input === "string" ? tc.input : JSON.stringify(tc.input);
-            const outputStr = tc.output !== undefined ? formatOutput(tc.output) : null;
-            return (
-              <box>
-                <text wrapMode="word">{`[tool] ${tc.name}: ${inputStr}`}</text>
-                <Show when={outputStr !== null}>
-                  <text wrapMode="word">{`   -> ${outputStr}`}</text>
-                </Show>
-              </box>
-            );
-          })()}
-        </Show>
-      }
-    >
-      <box paddingLeft={2} borderLeft borderColor="gray">
-        <text
-          wrapMode="word"
-          fg="gray"
-          attributes={createTextAttributes({ dim: true, italic: true })}
-        >
-          {(props.block as Extract<ContentBlock, { type: "reasoning" }>).content.trimEnd()}
+// Render a single ViewContent item
+function ContentView(props: { content: ViewContent; isUser: boolean }) {
+  switch (props.content.kind) {
+    case "user":
+      return (
+        <text wrapMode="word">
+          {"You: "}
+          {typeof props.content.content === "string"
+            ? props.content.content
+            : props.content.content
+                .filter((p) => p.type === "text")
+                .map((p) => (p as { type: "text"; text: string }).text)
+                .join("\n")}
         </text>
+      );
+    case "text":
+      return <text wrapMode="word">{props.content.text.trimEnd()}</text>;
+    case "reasoning":
+      return (
+        <box paddingLeft={2} borderLeft borderColor="gray">
+          <text
+            wrapMode="word"
+            fg="gray"
+            attributes={createTextAttributes({ dim: true, italic: true })}
+          >
+            {props.content.text.trimEnd()}
+          </text>
+        </box>
+      );
+    case "tool_call": {
+      const inputStr =
+        typeof props.content.input === "string"
+          ? props.content.input
+          : JSON.stringify(props.content.input);
+      const outputStr =
+        props.content.output !== undefined ? formatOutput(props.content.output) : null;
+      return (
+        <box>
+          <text wrapMode="word">{`[tool] ${props.content.name}: ${inputStr}`}</text>
+          <Show when={outputStr !== null}>
+            <text wrapMode="word">{`   -> ${outputStr}`}</text>
+          </Show>
+        </box>
+      );
+    }
+    case "error":
+      return (
+        <text wrapMode="word" fg="red">
+          {`[error] ${props.content.message}`}
+        </text>
+      );
+    case "relay":
+      return (
+        <box marginTop={1}>
+          <text wrapMode="word" fg="yellow">
+            {`[!] Permission Required\n   Tool: ${props.content.tool}\n   Params: ${JSON.stringify(props.content.params, null, 2)}\n   Enter 'y' to allow, 'n' to deny`}
+          </text>
+        </box>
+      );
+    case "pending":
+      return (
+        <text wrapMode="word" fg="gray">
+          {"..."}
+        </text>
+      );
+  }
+}
+
+// Render a subagent branch (indented)
+function BranchView(props: { nodes: ViewNode[]; pendingRelays: PendingRelay[] }) {
+  return (
+    <Show when={props.nodes.length > 0}>
+      <box marginLeft={2} borderLeft borderColor="gray" paddingLeft={1} marginTop={1}>
+        <text fg="green" attributes={createTextAttributes({ dim: true })}>
+          {`agent-${props.nodes[0]!.runId.replace(/-/g, "").slice(-7)}`}
+        </text>
+        <ThreadView nodes={props.nodes} pendingRelays={props.pendingRelays} />
       </box>
     </Show>
   );
 }
 
-// Extract error messages from a graph node's events
-function getErrorMessages(graph: ConversationState["graph"], runId: string): string[] {
-  const node = graph.nodes.get(runId);
-  if (!node) return [];
-  return node.events.filter((e) => e.type === "error").map((e) => e.message);
-}
-
-// Recursive node renderer — walks the conversation graph
-function NodeView(props: {
-  graph: ConversationState["graph"];
-  runId: string;
-  pendingRelays: PendingRelay[];
-}) {
-  const role = () => getRole(props.graph, props.runId);
-  const blocks = () => getContentBlocks(props.graph, props.runId);
-  const children = () => getChildren(props.graph, props.runId);
-  const errors = () => getErrorMessages(props.graph, props.runId);
-  const nodeRelays = () => props.pendingRelays.filter((r) => r.runId === props.runId);
-
+// Render the flat ViewNode[] thread
+function ThreadView(props: { nodes: ViewNode[]; pendingRelays: PendingRelay[] }) {
   return (
-    <box marginTop={role() === "user" ? 1 : 0} marginBottom={role() === "user" ? 1 : 0}>
-      <For each={blocks()}>{(block) => <BlockView block={block} isUser={role() === "user"} />}</For>
-      <For each={errors()}>
-        {(msg) => (
-          <text wrapMode="word" fg="red">
-            {`[error] ${msg}`}
-          </text>
-        )}
-      </For>
-      <For each={nodeRelays()}>
-        {(relay) => {
-          const paramsStr = JSON.stringify(relay.params, null, 2);
-          return (
-            <box marginTop={1}>
-              <text wrapMode="word" fg="yellow">
-                {`[!] Permission Required\n   Tool: ${relay.tool}\n   Params: ${paramsStr}\n   Enter 'y' to allow, 'n' to deny`}
-              </text>
-            </box>
-          );
-        }}
-      </For>
-      <For each={children()}>
-        {(childId) => (
-          <NodeView graph={props.graph} runId={childId} pendingRelays={props.pendingRelays} />
-        )}
-      </For>
-    </box>
+    <For each={props.nodes}>
+      {(node) => (
+        <box marginTop={node.role === "user" ? 1 : 0} marginBottom={node.role === "user" ? 1 : 0}>
+          <ContentView content={node.content} isUser={node.role === "user"} />
+          <For each={node.branches}>
+            {(branch) => <BranchView nodes={branch} pendingRelays={props.pendingRelays} />}
+          </For>
+        </box>
+      )}
+    </For>
   );
-}
-
-// Build API messages from the conversation graph
-function buildApiMessages(
-  graph: ConversationState["graph"],
-): Array<{ role: string; content: string }> {
-  const messages: Array<{ role: string; content: string }> = [];
-  const traverse = (runIds: string[]) => {
-    for (const runId of runIds) {
-      const role = getRole(graph, runId);
-      const blocks = getContentBlocks(graph, runId);
-
-      // Build content from all block types (text + tool calls)
-      const parts: string[] = [];
-      for (const b of blocks) {
-        if (b.type === "text") {
-          parts.push(b.content);
-        } else if (b.type === "tool_call") {
-          const inputStr = typeof b.input === "string" ? b.input : JSON.stringify(b.input);
-          parts.push(`[tool] ${b.name}: ${inputStr}`);
-          if (b.output !== undefined) {
-            parts.push(`   -> ${formatOutput(b.output)}`);
-          }
-        }
-        // Skip reasoning blocks — not sent to API
-      }
-
-      const content = parts.join("\n");
-      if (content && role) {
-        messages.push({ role, content });
-      }
-      traverse(getChildren(graph, runId));
-    }
-  };
-  traverse(getRoots(graph));
-  return messages;
 }
 
 // Main App Component
@@ -189,7 +155,7 @@ function ChatApp() {
 
   const isStreaming = () => conversation().isConnected;
   const pendingRelay = () => conversation().pendingRelays[0] ?? null;
-  const roots = () => getRoots(conversation().graph);
+  const viewNodes = () => projectThread(conversation().graph);
 
   // Resolve a pending relay request
   async function resolveRelay(approved: boolean) {
@@ -269,7 +235,7 @@ function ChatApp() {
     setStatusText("Streaming...");
 
     // Build messages array for API from the graph
-    const apiMessages = buildApiMessages(conversation().graph);
+    const apiMessages = projectMessages(conversation().graph);
 
     try {
       await streamChat(apiMessages);
@@ -300,18 +266,10 @@ function ChatApp() {
       {/* Messages */}
       <box flexGrow={1} border borderStyle="single" borderColor="#6b7280">
         <scrollbox width="100%" height="100%" scrollY stickyScroll stickyStart="bottom">
-          <Show when={roots().length === 0}>
+          <Show when={viewNodes().length === 0}>
             <text wrapMode="word">Welcome! Type a message and press Enter to start chatting.</text>
           </Show>
-          <For each={roots()}>
-            {(runId) => (
-              <NodeView
-                graph={conversation().graph}
-                runId={runId}
-                pendingRelays={conversation().pendingRelays}
-              />
-            )}
-          </For>
+          <ThreadView nodes={viewNodes()} pendingRelays={conversation().pendingRelays} />
         </scrollbox>
       </box>
 

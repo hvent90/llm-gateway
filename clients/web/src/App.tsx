@@ -2,12 +2,13 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import type { PermissionHandlers } from "./components/ConversationThread";
+import { GraphView } from "./components/GraphView";
+import { createSSETransport, createHTTPTransport } from "../../../packages/ai/client";
 import {
-  createSSETransport,
-  createHTTPTransport,
+  reduceConversation,
+  createInitialConversation,
   projectMessages,
-} from "../../../packages/ai/client";
-import { reduceConversation, createInitialConversation } from "../../../packages/ai/client";
+} from "../../../packages/ai/client/hypergraph";
 import type { ConversationState, Message, PendingRelay, Permissions, ServerEvent } from "./types";
 
 const sseTransport = createSSETransport({ baseUrl: "" });
@@ -24,6 +25,7 @@ export default function App() {
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [mode, setMode] = useState<"agent" | "rlm">("agent");
+  const [view, setView] = useState<"chat" | "graph">("chat");
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -188,22 +190,54 @@ export default function App() {
 
   return (
     <div className="flex h-dvh flex-col bg-black text-white">
-      <header className="border-b border-neutral-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:py-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:py-3 sm:pt-[max(0.75rem,env(safe-area-inset-top))]">
         <h1 className="text-lg font-bold tracking-tight">LLM Gateway</h1>
+        <div className="flex gap-1 rounded bg-neutral-800 p-0.5 text-sm" role="tablist">
+          <button
+            role="tab"
+            aria-selected={view === "chat"}
+            className={`rounded px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${view === "chat" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            onClick={() => setView("chat")}
+          >
+            Chat
+          </button>
+          <button
+            role="tab"
+            aria-selected={view === "graph"}
+            className={`rounded px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${view === "graph" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            onClick={() => setView("graph")}
+          >
+            Graph
+          </button>
+        </div>
       </header>
-      <main className="flex flex-1 flex-col-reverse overflow-y-auto p-3 sm:p-4">
-        <div>
-          <ConversationThread
+      <main
+        className={
+          view === "chat"
+            ? "flex flex-1 flex-col-reverse overflow-y-auto p-3 sm:p-4"
+            : "flex flex-1 overflow-hidden"
+        }
+      >
+        {view === "chat" ? (
+          <div>
+            <ConversationThread
+              graph={state.graph}
+              pendingRelays={state.pendingRelays}
+              permissionHandlers={permissionHandlers}
+            />
+            {streamError && (
+              <div className="mt-4 border border-neutral-700 p-3 text-sm text-red-400">
+                error: {streamError}
+              </div>
+            )}
+          </div>
+        ) : (
+          <GraphView
             graph={state.graph}
             pendingRelays={state.pendingRelays}
             permissionHandlers={permissionHandlers}
           />
-          {streamError && (
-            <div className="mt-4 border border-neutral-700 p-3 text-sm text-red-400">
-              error: {streamError}
-            </div>
-          )}
-        </div>
+        )}
       </main>
       <InputArea
         onSubmit={handleSubmit}

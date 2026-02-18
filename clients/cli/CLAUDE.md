@@ -6,13 +6,13 @@ Terminal-based chat client with rich TUI rendering. Uses SolidJS fine-grained re
 
 ## WHAT
 
-**Single file:** `index.tsx` (~350 lines)
+**Single file:** `index.tsx` (~300 lines)
 
 **Stack:** SolidJS + @opentui/solid (optional peer dependency)
 
-Three components: `ChatApp` (state management), `NodeView` (recursive graph renderer), `BlockView` (content block rendering). Uses SolidJS fine-grained reactivity so streaming updates re-render only changed DOM nodes.
+Three components: `ChatApp` (state management + layout), `ThreadView` (flat thread renderer using `projectThread()`), `ContentView` (ViewContent kind renderer). Uses SolidJS fine-grained reactivity so streaming updates re-render only changed DOM nodes. Subagent branches rendered via `BranchView` with terminal indentation.
 
-Uses `reduceConversation`, `projectThread`, transports from `packages/ai/client` (see `packages/ai/client/CLAUDE.md`).
+Uses `reduceConversation`, `projectThread`, `projectMessages` from `packages/ai/client/hypergraph`, and transports from `packages/ai/client`.
 
 ## HOW
 
