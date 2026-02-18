@@ -221,7 +221,6 @@ const MessageGroupComponent = memo(function MessageGroupComponent({
   onToggleSelect,
   graph,
   onExpand,
-  onCollapse,
 }: {
   group: MessageGroup;
   pendingRelays: PendingRelay[];
@@ -232,13 +231,12 @@ const MessageGroupComponent = memo(function MessageGroupComponent({
   onToggleSelect: (shiftKey: boolean) => void;
   graph?: ConversationGraph;
   onExpand?: (nodeId: string) => void;
-  onCollapse?: (nodeIds: string[]) => void;
 }) {
   const isUser = group.role === "user";
   const isStreaming = group.nodes.some((n) => n.status === "streaming");
   const groupRelays = pendingRelays.filter((r) => r.runId === group.runId);
 
-  const sources = messageId && graph ? sourcesOf(graph, messageId as NodeId) : [];
+  const sources = messageId && graph ? sourcesOf(graph, messageId) : [];
   const isSummary = sources.length > 0;
 
   return (
@@ -415,13 +413,13 @@ function Thread({
         let isLastSource = false;
         let collapseSourceIds: string[] = [];
         if (msgId && graph) {
-          const sums = summariesOf(graph, msgId as NodeId);
+          const sums = summariesOf(graph, msgId);
           if (sums.length > 0) {
             const sumSources = sourcesOf(graph, sums[0]!);
             const nextMsgId = messageIds?.[i + 1];
-            isLastSource = !nextMsgId || !sumSources.includes(nextMsgId as NodeId);
+            isLastSource = !nextMsgId || !sumSources.includes(nextMsgId);
             if (isLastSource) {
-              collapseSourceIds = sumSources as string[];
+              collapseSourceIds = sumSources;
             }
           }
         }
@@ -438,7 +436,6 @@ function Thread({
               onToggleSelect={(shiftKey: boolean) => onToggleSelect?.(i, shiftKey)}
               graph={graph}
               onExpand={onExpand}
-              onCollapse={onCollapse}
             />
             {isLastSource && collapseSourceIds.length > 0 && (
               <button
