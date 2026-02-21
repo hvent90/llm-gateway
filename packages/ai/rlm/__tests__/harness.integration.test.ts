@@ -187,7 +187,7 @@ describe(
             maxIterations: 25,
             maxStdoutLength: 4000,
             metadataPrefixLength: 300,
-            subCharBudget: 16000,
+            subPromptBudget: 16000,
           },
         });
 

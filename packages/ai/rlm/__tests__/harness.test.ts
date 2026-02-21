@@ -856,7 +856,7 @@ describe("RLM harness", () => {
 
   describe("recursive llm_query", () => {
     test("llm_query at depth > 0 spawns child RLM that iterates and returns", async () => {
-      // Parent RLM: model calls llm_query("child task") then FINALs the result
+      // Parent RLM: model calls llm_query("child task", "child data") then FINALs the result
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -864,14 +864,15 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'scope.answer = await llm_query("child task");\nFINAL(scope.answer);',
+                content:
+                  'scope.answer = await llm_query("child task", "child data");\nFINAL(scope.answer);',
               },
             ],
           },
         ],
       });
 
-      // Child RLM (sub-harness): gets "child task" as context, processes it
+      // Child RLM (sub-harness): gets "child data" as context, "child task" as user message
       const subHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -898,7 +899,7 @@ describe("RLM harness", () => {
       const textEvent = events.find((e) => e.type === "text" && !("parentId" in e));
       expect(textEvent).toBeDefined();
       if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("child result: child task");
+        expect(textEvent.content).toBe("child result: child data");
       }
 
       // Child events should bubble up as progress (harness_start, tool_call, tool_result, text, harness_end)

@@ -2,9 +2,9 @@
 export function buildRlmSystemPrompt(metadata: {
   contextLength: number;
   contextPrefix: string;
-  subCharBudget?: number;
+  subPromptBudget?: number;
 }): string {
-  const charBudget = metadata.subCharBudget ?? 120_000;
+  const promptBudget = metadata.subPromptBudget ?? 10_000;
 
   return `You are an RLM (Recursive Language Model) agent. You have a JavaScript REPL environment where you write code to solve the user's task.
 
@@ -20,7 +20,7 @@ You do NOT see the full context directly. Use code to examine and process it.
 
 ## Available Functions
 
-- \`llm_query(prompt)\` — Send a prompt to a sub-agent with its own REPL and iteration loop. The prompt becomes the sub-agent's \`context\`. Returns a Promise<string> with the sub-agent's final answer.${charBudget ? ` Prompts are limited to ${charBudget} characters — exceeding this throws an error. Size your chunks accordingly.` : ""}
+- \`llm_query(prompt, context?)\` — Send a task to a sub-agent with its own REPL and iteration loop. \`prompt\` is a short instruction (becomes the sub-agent's task, max ${promptBudget} chars). \`context\` is an optional data string (becomes the sub-agent's \`context\` variable — no size limit). Returns a Promise<string> with the sub-agent's final answer.
 - \`exec(command, timeout?)\` — Execute a shell command. Returns a Promise<{ stdout, stderr, exitCode }>. Default timeout: 10 seconds.
 - \`FINAL(answer)\` — Emit a string as the final answer and stop.
 - \`FINAL_VAR(varName)\` — Emit the value of a REPL variable as the final answer and stop.
@@ -49,11 +49,11 @@ for (let i = 0; i < context.length; i += chunkSize) {
 
 // Fan out — all llm_query calls run in parallel
 const summaries = await Promise.all(
-  chunks.map(chunk => llm_query("Summarize this text:\\n" + chunk))
+  chunks.map(chunk => llm_query("Summarize this text.", chunk))
 );
 
 const combined = summaries.join("\\n");
-const answer = await llm_query("Combine these summaries into a final answer:\\n" + combined);
+const answer = await llm_query("Combine these summaries into a final answer.", combined);
 FINAL(answer);
 \`\`\`
 
@@ -68,7 +68,7 @@ print(\`Total lines: \${scope.lines.length}\`);
 \`\`\`js
 // Turn 2: read back from scope
 const results = await Promise.all(
-  scope.lines.map(line => llm_query("Classify: " + line))
+  scope.lines.map(line => llm_query("Classify this line.", line))
 );
 FINAL(results.join("\\n"));
 \`\`\`
@@ -81,7 +81,7 @@ const result = await exec("ls -la /tmp");
 print(result.stdout);
 
 // Use exec output in further processing
-const answer = await llm_query("Describe these files:\\n" + result.stdout);
+const answer = await llm_query("Describe these files.", result.stdout);
 FINAL(answer);
 \`\`\`
 

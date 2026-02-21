@@ -4,7 +4,7 @@ import { createRepl } from "../repl";
 function makeRepl(
   overrides: {
     context?: string;
-    llmQuery?: (prompt: string) => Promise<string>;
+    llmQuery?: (prompt: string, context?: string) => Promise<string>;
     exec?: (
       command: string,
       timeout?: number,
@@ -133,27 +133,32 @@ describe("REPL sandbox", () => {
   });
 
   describe("llm_query integration", () => {
-    test("llm_query calls the provided callback", async () => {
-      const calls: string[] = [];
+    test("llm_query passes prompt and context to callback", async () => {
+      const calls: { prompt: string; context?: string }[] = [];
       const repl = makeRepl({
-        llmQuery: async (prompt: string) => {
-          calls.push(prompt);
+        llmQuery: async (prompt: string, context?: string) => {
+          calls.push({ prompt, context });
           return `response to: ${prompt}`;
         },
       });
       const result = await repl.execute(`
-        const response = await llm_query("what is 2+2?");
+        const response = await llm_query("summarize", "some data here");
         print(response);
       `);
-      expect(calls).toEqual(["what is 2+2?"]);
-      expect(result.stdout).toBe("response to: what is 2+2?");
+      expect(calls).toEqual([{ prompt: "summarize", context: "some data here" }]);
+      expect(result.stdout).toBe("response to: summarize");
     });
 
-    test("llm_query result can be stored in scope", async () => {
+    test("llm_query works with prompt only (no context)", async () => {
+      const calls: { prompt: string; context?: string }[] = [];
       const repl = makeRepl({
-        llmQuery: async () => "42",
+        llmQuery: async (prompt: string, context?: string) => {
+          calls.push({ prompt, context });
+          return "42";
+        },
       });
       await repl.execute('scope.answer = await llm_query("meaning of life");');
+      expect(calls).toEqual([{ prompt: "meaning of life", context: undefined }]);
       expect(repl.getState().variables.get("answer")).toBe("42");
     });
   });

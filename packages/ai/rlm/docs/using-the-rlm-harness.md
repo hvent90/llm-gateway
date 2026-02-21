@@ -35,6 +35,7 @@ for await (const event of rlm.invoke({
 | `maxIterations` | `number` | Max REPL turns before forcing completion. Safety limit to prevent infinite loops. |
 | `maxStdoutLength` | `number` | Max characters of stdout fed back per turn. Prevents the model from flooding its own context. |
 | `metadataPrefixLength` | `number` | Length of the context prefix shown in the system prompt metadata. Gives the model a hint about the data. |
+| `subPromptBudget` | `number?` | Max chars for `llm_query` prompt arg (the instruction). Defaults to 10000. Data goes in the second `context` arg (no limit). |
 | `subModel` | `string?` | Model ID for `llm_query` calls inside the REPL. Defaults to the sub-harness's default model. Use a cheaper model here. |
 
 ### Choosing values
@@ -193,7 +194,7 @@ import { createRepl } from "@/packages/ai/rlm/repl";
 
 const repl = createRepl({
   context: "some long document...",
-  llmQuery: async (prompt) => callMyLlm(prompt),
+  llmQuery: async (prompt, context) => callMyLlm(prompt, context),
 });
 
 // Execute code
@@ -201,7 +202,7 @@ const result = await repl.execute('print(context.slice(0, 100));');
 console.log(result.stdout); // first 100 chars
 
 // Variables persist
-await repl.execute('scope.summary = await llm_query("Summarize: " + context);');
+await repl.execute('scope.summary = await llm_query("Summarize this text.", context);');
 const state = repl.getState();
 console.log(state.variables.get("summary"));
 

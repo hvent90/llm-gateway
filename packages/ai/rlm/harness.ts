@@ -69,11 +69,12 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
       // llm_query callback: depth-aware. At depth > 0, spawns a child RLM session.
       // At depth 0, falls back to a flat one-shot call.
       const depth = config.maxDepth ?? 2;
-      const llmQuery = async (prompt: string): Promise<string> => {
-        const charBudget = config.subCharBudget ?? 120_000;
-        if (prompt.length > charBudget) {
+      const llmQuery = async (prompt: string, context?: string): Promise<string> => {
+        const promptBudget = config.subPromptBudget ?? 10_000;
+        const ctx = context ?? "";
+        if (prompt.length > promptBudget) {
           throw new Error(
-            `llm_query prompt exceeds ${charBudget} char limit (got ${prompt.length}). Use smaller chunks.`,
+            `llm_query prompt exceeds ${promptBudget} char limit (got ${prompt.length}). Keep instructions short — pass data as the second argument (context).`,
           );
         }
         execEvents?.push({
@@ -84,7 +85,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
             id: uuidv7(),
             toolCallId: currentCallId ?? uuidv7(),
             name: "llm_query",
-            content: { promptLength: prompt.length, depth },
+            content: { promptLength: prompt.length, contextLength: ctx.length, depth },
           }),
         });
 
@@ -97,8 +98,8 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           let text = "";
           for await (const childEvent of childRlm.invoke({
             model: config.subModel ?? params.model,
-            context: prompt,
-            messages: [{ role: "user", content: "Process the context and return a result." }],
+            context: ctx,
+            messages: [{ role: "user", content: prompt }],
             env: { parentId: runId },
           })) {
             // Forward child events as progress
@@ -109,10 +110,11 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         }
 
         // Flat: one-shot LLM call (base case)
+        const message = ctx ? `${prompt}\n\n${ctx}` : prompt;
         const { text } = await collectText(
           subHarness.invoke({
             model: config.subModel ?? params.model,
-            messages: [{ role: "user", content: prompt }],
+            messages: [{ role: "user", content: message }],
           }),
         );
         return text;
@@ -327,7 +329,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
       const systemPrompt = buildRlmSystemPrompt({
         contextLength: ctx.length,
         contextPrefix: ctx.slice(0, config.metadataPrefixLength),
-        subCharBudget: config.subCharBudget,
+        subPromptBudget: config.subPromptBudget,
       });
 
       // Internal message history for the RLM loop

@@ -26,10 +26,10 @@ The model then writes code like:
 const chunkSize = 2000;
 const summaries = [];
 for (let i = 0; i < context.length; i += chunkSize) {
-  const summary = await llm_query("Summarize:\n" + context.slice(i, i + chunkSize));
+  const summary = await llm_query("Summarize this text.", context.slice(i, i + chunkSize));
   summaries.push(summary);
 }
-FINAL(await llm_query("Combine:\n" + summaries.join("\n")));
+FINAL(await llm_query("Combine these summaries into a final answer.", summaries.join("\n")));
 ```
 
 This approach decouples input size from context window size. The model decides how to traverse the data.
@@ -67,7 +67,7 @@ The REPL (`repl.ts`) provides a sandboxed async JavaScript execution environment
 | Name | Type | Description |
 |------|------|-------------|
 | `context` | `string` | The user's input, available as a plain JS string |
-| `llm_query(prompt)` | `(string) => Promise<string>` | Send a prompt to a sub-agent with its own REPL and iteration loop. The prompt becomes the sub-agent's `context`. At depth 0, falls back to a flat one-shot call. |
+| `llm_query(prompt, context?)` | `(string, string?) => Promise<string>` | Send a task to a sub-agent with its own REPL and iteration loop. `prompt` is a short instruction (becomes the sub-agent's task). `context` is an optional data string (becomes the sub-agent's `context` variable). At depth 0, falls back to a flat one-shot call. |
 | `exec(command, timeout?)` | `(string, number?) => Promise<ShellResult>` | Execute a shell command. Returns `{ stdout, stderr, exitCode }`. Default timeout: 10s |
 | `FINAL(answer)` | `(unknown) => void` | Emit a value as the final answer and stop the loop |
 | `FINAL_VAR(varName)` | `(string) => void` | Emit a scope variable as the final answer and stop |
