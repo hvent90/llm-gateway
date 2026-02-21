@@ -246,7 +246,7 @@ const MessageGroupComponent = memo(function MessageGroupComponent({
       {messageId && (
         <div
           className={`absolute left-0 top-0 flex h-6 w-6 items-center justify-center ${
-            anySelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            anySelected ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
           } transition-opacity`}
         >
           <input
