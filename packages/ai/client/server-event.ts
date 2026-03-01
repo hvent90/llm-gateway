@@ -124,4 +124,6 @@ export interface StreamRequest {
   messages: Message[];
   permissions?: Permissions;
   mode?: "agent" | "rlm";
+  maxIterations?: number;
+  maxDepth?: number;
 }

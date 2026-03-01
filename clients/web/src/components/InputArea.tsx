@@ -10,6 +10,10 @@ interface InputAreaProps {
   onModelChange: (model: string) => void;
   mode: "agent" | "rlm";
   onModeChange: (mode: "agent" | "rlm") => void;
+  maxIterations: number;
+  onMaxIterationsChange: (n: number) => void;
+  maxDepth: number;
+  onMaxDepthChange: (n: number) => void;
 }
 
 export function InputArea({
@@ -22,6 +26,10 @@ export function InputArea({
   onModelChange,
   mode,
   onModeChange,
+  maxIterations,
+  onMaxIterationsChange,
+  maxDepth,
+  onMaxDepthChange,
 }: InputAreaProps) {
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -95,6 +103,34 @@ export function InputArea({
             rlm
           </button>
         </div>
+        {mode === "rlm" && (
+          <>
+            <label className="flex items-center gap-1 text-xs text-neutral-400">
+              iter
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={maxIterations}
+                onChange={(e) => onMaxIterationsChange(Math.max(1, Number(e.target.value)))}
+                disabled={isStreaming}
+                className="w-12 border border-neutral-700 bg-black px-1 py-1 text-xs text-neutral-300 focus:border-white focus:outline-none disabled:opacity-50"
+              />
+            </label>
+            <label className="flex items-center gap-1 text-xs text-neutral-400">
+              depth
+              <input
+                type="number"
+                min={0}
+                max={5}
+                value={maxDepth}
+                onChange={(e) => onMaxDepthChange(Math.max(0, Number(e.target.value)))}
+                disabled={isStreaming}
+                className="w-12 border border-neutral-700 bg-black px-1 py-1 text-xs text-neutral-300 focus:border-white focus:outline-none disabled:opacity-50"
+              />
+            </label>
+          </>
+        )}
       </div>
       <div className="flex gap-2">
         <textarea

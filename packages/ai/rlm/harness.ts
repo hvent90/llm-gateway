@@ -36,9 +36,7 @@ function extractCode(text: string): string {
     );
   }
   if (matches.length === 1) return matches[0][1].trim();
-  throw new Error(
-    "Response contained no code block. Expected exactly one ```js block per turn.",
-  );
+  throw new Error("Response contained no code block. Expected exactly one ```js block per turn.");
 }
 
 /** Collect all text from a provider harness invocation. */
@@ -122,7 +120,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
             model: config.subModel ?? params.model,
             context: ctx,
             messages: [{ role: "user", content: prompt }],
-            env: { parentId: runId },
+            env: { parentId: currentCallId! },
           })) {
             // Forward child events as progress
             execEvents?.push({ type: "progress", event: childEvent });

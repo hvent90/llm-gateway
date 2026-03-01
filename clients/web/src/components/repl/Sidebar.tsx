@@ -133,58 +133,55 @@ function AgentTreeNode({
         <span style={{ color: "#666", fontSize: 10 }}>{statusLabel(agent.status)}</span>
       </div>
 
-      {/* Turn rows */}
+      {/* Turn rows interleaved with child agents */}
       {agent.turns.map((turn, i) => {
         const turnSelected = isSelected && selectedTurn === i;
         return (
-          <div
-            key={i}
-            className="flex cursor-pointer items-center gap-1 px-2"
-            style={{
-              height: 20,
-              fontSize: 11,
-              fontFamily: "Inter, sans-serif",
-              paddingLeft: (depth + 1) * 12 + 8,
-              backgroundColor: turnSelected ? "#264f78" : "transparent",
-              color: turnSelected ? "#d4d4d4" : "#888",
-            }}
-            onClick={() => onSelectTurn(agent.runId, i)}
-            onMouseEnter={(e) => {
-              if (!turnSelected) e.currentTarget.style.backgroundColor = "#37373d";
-            }}
-            onMouseLeave={(e) => {
-              if (!turnSelected) e.currentTarget.style.backgroundColor = "transparent";
-            }}
-          >
-            <span
+          <div key={i}>
+            <div
+              className="flex cursor-pointer items-center gap-1 px-2"
               style={{
-                color: phaseColor(turn.phase),
-                width: 10,
-                flexShrink: 0,
-                textAlign: "center",
-                fontSize: 10,
+                height: 20,
+                fontSize: 11,
+                fontFamily: "Inter, sans-serif",
+                paddingLeft: (depth + 1) * 12 + 8,
+                backgroundColor: turnSelected ? "#264f78" : "transparent",
+                color: turnSelected ? "#d4d4d4" : "#888",
+              }}
+              onClick={() => onSelectTurn(agent.runId, i)}
+              onMouseEnter={(e) => {
+                if (!turnSelected) e.currentTarget.style.backgroundColor = "#37373d";
+              }}
+              onMouseLeave={(e) => {
+                if (!turnSelected) e.currentTarget.style.backgroundColor = "transparent";
               }}
             >
-              {phaseIcon(turn.phase)}
-            </span>
-            <span className="truncate">Turn {turn.iteration}</span>
+              <span
+                style={{
+                  color: phaseColor(turn.phase),
+                  width: 10,
+                  flexShrink: 0,
+                  textAlign: "center",
+                  fontSize: 10,
+                }}
+              >
+                {phaseIcon(turn.phase)}
+              </span>
+              <span className="truncate">Turn {turn.iteration}</span>
+            </div>
+            {turn.childAgents.map((child) => (
+              <AgentTreeNode
+                key={child.runId}
+                agent={child}
+                selectedRunId={selectedRunId}
+                selectedTurn={selectedTurn}
+                onSelectTurn={onSelectTurn}
+                depth={depth + 2}
+              />
+            ))}
           </div>
         );
       })}
-
-      {/* Recursively render child agents */}
-      {agent.turns.map((turn, i) =>
-        turn.childAgents.map((child) => (
-          <AgentTreeNode
-            key={child.runId}
-            agent={child}
-            selectedRunId={selectedRunId}
-            selectedTurn={selectedTurn}
-            onSelectTurn={onSelectTurn}
-            depth={depth + 2}
-          />
-        )),
-      )}
     </div>
   );
 }

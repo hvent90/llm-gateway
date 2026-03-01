@@ -33,6 +33,8 @@ interface ChatRequest {
   context?: string;
   permissions?: Permissions;
   mode?: "agent" | "rlm";
+  maxIterations?: number;
+  maxDepth?: number;
 }
 
 interface RelayRequest {
@@ -99,7 +101,12 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
       return streamSSE(c, async (stream) => {
         const rlm = createRlmHarness({
           rootHarness: createGeneratorHarness(),
-          config: { maxIterations: 10, maxStdoutLength: 4000, metadataPrefixLength: 200 },
+          config: {
+            maxIterations: body.maxIterations ?? 10,
+            maxStdoutLength: 4000,
+            metadataPrefixLength: 200,
+            maxDepth: body.maxDepth ?? 2,
+          },
         });
         const orchestrator = new AgentOrchestrator(rlm);
         orchestrators.set(sessionId, orchestrator);

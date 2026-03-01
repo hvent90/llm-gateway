@@ -37,6 +37,8 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [mode, setMode] = useState<"agent" | "rlm">("agent");
   const [view, setView] = useState<"chat" | "graph" | "repl">("chat");
+  const [maxIterations, setMaxIterations] = useState(10);
+  const [maxDepth, setMaxDepth] = useState(2);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -68,6 +70,7 @@ export default function App() {
       messages: Message[],
       permissions: Permissions,
       chatMode: "agent" | "rlm",
+      rlmOpts?: { maxIterations?: number; maxDepth?: number },
     ) => {
       setState((s) => reduceConversation(s, { type: "stream_start" }));
       const controller = new AbortController();
@@ -90,7 +93,7 @@ export default function App() {
 
       try {
         const stream = sseTransport.stream(
-          { model, messages, permissions, mode: chatMode },
+          { model, messages, permissions, mode: chatMode, ...rlmOpts },
           controller.signal,
         );
         for await (const event of stream) {
@@ -128,9 +131,15 @@ export default function App() {
       setState((s) => reduceConversation(s, { type: "user", runId: userId, content }));
       const current = stateRef.current;
       const messages = [...projectMessages(current.graph), { role: "user" as const, content }];
-      await sendChat(selectedModel, messages, {}, mode);
+      await sendChat(
+        selectedModel,
+        messages,
+        {},
+        mode,
+        mode === "rlm" ? { maxIterations, maxDepth } : undefined,
+      );
     },
-    [sendChat, selectedModel, mode],
+    [sendChat, selectedModel, mode, maxIterations, maxDepth],
   );
 
   const handleAllow = useCallback(
@@ -350,6 +359,10 @@ export default function App() {
         onModelChange={setSelectedModel}
         mode={mode}
         onModeChange={setMode}
+        maxIterations={maxIterations}
+        onMaxIterationsChange={setMaxIterations}
+        maxDepth={maxDepth}
+        onMaxDepthChange={setMaxDepth}
       />
     </div>
   );

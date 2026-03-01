@@ -17,6 +17,8 @@ export interface ReducerState {
   messageCounter: number;
   // Maps raw event ID → block node ID for spawn edge resolution
   eventIdToBlockNodeId: Map<string, NodeId>;
+  // Maps raw event ID → runId that produced it
+  eventIdToRunId: Map<string, string>;
   // Parent-child run tracking: parentRunId → Set<childRunId>
   childRunsByParent: Map<string, Set<string>>;
 }
@@ -33,6 +35,7 @@ export function createReducerState(): ReducerState {
     hadToolResultSinceLastText: new Map(),
     messageCounter: 0,
     eventIdToBlockNodeId: new Map(),
+    eventIdToRunId: new Map(),
     childRunsByParent: new Map(),
   };
 }
@@ -98,6 +101,7 @@ export function reduceEvent(
     hadToolResultSinceLastText: new Map(state.hadToolResultSinceLastText),
     messageCounter: state.messageCounter,
     eventIdToBlockNodeId: new Map(state.eventIdToBlockNodeId),
+    eventIdToRunId: new Map(state.eventIdToRunId),
     childRunsByParent: new Map([...state.childRunsByParent].map(([k, v]) => [k, new Set(v)])),
   };
 
@@ -173,13 +177,15 @@ export function reduceEvent(
     newState.currentBlockIdByRunId.set(runId, blockKey);
     newState.currentBlockEdgeByRunId.set(runId, blockEdgeId);
 
-    // Track raw event ID → block node ID for spawn resolution
+    // Track raw event ID → block node ID and runId for spawn resolution
     if ("id" in event) {
       newState.eventIdToBlockNodeId.set(event.id as string, blockNodeId);
+      newState.eventIdToRunId.set(event.id as string, runId);
     }
     // Register runId → harness_start block so child runs can resolve their parentId
     if (event.type === "harness_start") {
       newState.eventIdToBlockNodeId.set(runId, blockNodeId);
+      newState.eventIdToRunId.set(runId, runId);
     }
   }
 
@@ -194,15 +200,16 @@ export function reduceEvent(
         properties: {},
       });
 
-      // Register child run for message grouping
-      const children = newState.childRunsByParent.get(parentId) ?? new Set();
+      // Register child run for message grouping — key by parent's runId
+      const parentRunId = newState.eventIdToRunId.get(parentId) ?? parentId;
+      const children = newState.childRunsByParent.get(parentRunId) ?? new Set();
       children.add(runId);
-      newState.childRunsByParent.set(parentId, children);
+      newState.childRunsByParent.set(parentRunId, children);
 
       // Thread child into parent's timeline: sequence edge from the parent
       // run's current last block to the child's first block. This preserves
       // temporal ordering across runs without lying about attribution.
-      const parentLastBlock = state.lastBlockByRunId.get(parentId);
+      const parentLastBlock = state.lastBlockByRunId.get(parentRunId);
       const thisBlock = `block:${blockKey}`;
       if (parentLastBlock && parentLastBlock !== thisBlock) {
         g = addEdge(g, {

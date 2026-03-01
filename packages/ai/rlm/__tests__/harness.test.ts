@@ -272,7 +272,9 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: fence('scope.answer = await llm_query("what is 2+2?");\nFINAL(scope.answer);'),
+                content: fence(
+                  'scope.answer = await llm_query("what is 2+2?");\nFINAL(scope.answer);',
+                ),
               },
             ],
           },
@@ -682,7 +684,9 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: fence('const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());'),
+                content: fence(
+                  'const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());',
+                ),
               },
             ],
           },
@@ -1324,7 +1328,9 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: fence('scope.answer = await llm_query("flat query");\nFINAL(scope.answer);'),
+                content: fence(
+                  'scope.answer = await llm_query("flat query");\nFINAL(scope.answer);',
+                ),
               },
             ],
           },
