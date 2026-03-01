@@ -111,9 +111,11 @@ curl -fsSL https://bun.sh/install | bash
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Persist Bun in PATH for subsequent commands
+# Persist Bun in PATH for all shells (including non-interactive)
 echo 'export BUN_INSTALL="$HOME/.bun"' >> ~/.bashrc
 echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> ~/.bashrc
+ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun
+ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx
 
 # Copy the project into the container installation directory
 if [[ -f /opt/llm-gateway/package.json && -f /opt/llm-gateway/evals/agents/run-rlm.ts ]]; then

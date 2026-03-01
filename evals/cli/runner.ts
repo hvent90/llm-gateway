@@ -1,5 +1,33 @@
 import { spawn } from "bun";
+import { existsSync } from "fs";
+import { resolve } from "path";
 import { startEventServer } from "./event-server";
+
+/** Load a .env file into process.env (KEY=VALUE lines, # comments). */
+function loadDotenv(path: string) {
+  if (!existsSync(path)) return;
+  const text = require("fs").readFileSync(path, "utf8") as string;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    // Strip surrounding quotes
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    // Don't override existing env vars
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+// Load .env from repo root so API keys are available to Harbor subprocesses.
+const repoRoot = resolve(import.meta.dir, "../..");
+loadDotenv(resolve(repoRoot, ".env"));
 
 export interface EvalConfig {
   harness: string;

@@ -15,9 +15,6 @@ from harbor.agents.installed.base import BaseInstalledAgent, ExecInput
 from harbor.models.agent.context import AgentContext
 
 
-RESULT_PATH = "/tmp/rlm-result.txt"
-
-
 class RlmAgent(BaseInstalledAgent):
     """Harbor adapter for the llm-gateway RLM harness."""
 
@@ -114,10 +111,20 @@ class RlmAgent(BaseInstalledAgent):
         return [
             ExecInput(
                 command=(
+                    "set -o pipefail; "
+                    'export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"; '
+                    'export PATH="$BUN_INSTALL/bin:$PATH"; '
+                    'BUN_BIN="$(command -v bun || true)"; '
+                    'if [[ -z "$BUN_BIN" && -x "$HOME/.bun/bin/bun" ]]; then BUN_BIN="$HOME/.bun/bin/bun"; fi; '
+                    'if [[ -z "$BUN_BIN" ]]; then '
+                    'echo "bun binary not found (expected on PATH or at $HOME/.bun/bin/bun)" >&2; '
+                    "exit 127; "
+                    "fi; "
                     f"cd /opt/llm-gateway && "
-                    f"bun run evals/agents/run-rlm.ts {escaped_instruction} "
+                    f'"$BUN_BIN" run evals/agents/run-rlm.ts {escaped_instruction} '
                     f"--model {shlex.quote(model)} "
-                    f"2>&1 | tee /logs/agent/rlm.txt"
+                    "2>&1 | tee /logs/agent/rlm.txt; "
+                    "cp /tmp/rlm-result.txt /logs/agent/rlm-result.txt 2>/dev/null || true"
                 ),
                 env=env,
             )
@@ -125,13 +132,13 @@ class RlmAgent(BaseInstalledAgent):
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         """
-        Read the RLM harness result from /tmp/rlm-result.txt and populate
-        the agent context.
+        Read the RLM harness result from the logs directory (synced from
+        /logs/agent/ inside the container) and populate the agent context.
         """
-        result_path = Path(RESULT_PATH)
+        result_path = self.logs_dir / "rlm-result.txt"
 
         if not result_path.exists():
-            print(f"RLM result file {RESULT_PATH} does not exist")
+            print(f"RLM result file not found at {result_path}")
             return
 
         try:
