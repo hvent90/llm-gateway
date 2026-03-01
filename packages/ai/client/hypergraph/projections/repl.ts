@@ -287,6 +287,9 @@ export function projectRepl(graph: ConversationGraph): ReplData {
       agent.turns.push(currentTurn);
     }
 
+    // Skip runs that never saw harness_start (e.g. user message runs)
+    if (!agent.agentId) continue;
+
     allAgents.set(runId, agent);
   }
 

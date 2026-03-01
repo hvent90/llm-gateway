@@ -1,0 +1,7 @@
+results/*
+!results/.gitkeep
+jobs/*
+!jobs/.gitkeep
+__pycache__/
+*.pyc
+.venv/

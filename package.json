@@ -8,7 +8,8 @@
     "dev:web": "bunx vite --config clients/web/vite.config.ts",
     "dev:cli": "cd clients/cli && bun --env-file=../../.env run index.tsx",
     "build:web": "bunx vite build --config clients/web/vite.config.ts",
-    "format": "bunx oxfmt src packages clients server"
+    "format": "bunx oxfmt src packages clients server",
+    "evals": "cd evals/cli && bun index.tsx"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",

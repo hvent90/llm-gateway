@@ -6,18 +6,20 @@
  * fine-grained reactivity for efficient updates during streaming.
  */
 
-import { render, useRenderer } from "@opentui/solid";
+import { render, useRenderer, useKeyboard } from "@opentui/solid";
 import { createTextAttributes } from "@opentui/core";
-import { createSignal, For, Show, onMount } from "solid-js";
+import { createSignal, createMemo, createEffect, on, For, Show, onMount } from "solid-js";
 import { createSSETransport, createHTTPTransport } from "../../packages/ai/client";
 import {
   createInitialConversation,
   reduceConversation,
   projectThread,
   projectMessages,
+  projectRepl,
 } from "../../packages/ai/client/hypergraph";
 import type { ConversationState, PendingRelay } from "../../packages/ai/client/hypergraph";
 import type { ViewNode, ViewContent } from "../../packages/ai/client/hypergraph";
+import { ReplView } from "../../packages/ui/cli/repl";
 
 // Configuration from environment
 const MODEL = process.env.DEFAULT_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
@@ -152,10 +154,29 @@ function ChatApp() {
   );
   const [inputValue, setInputValue] = createSignal("");
   const [statusText, setStatusText] = createSignal(`Connected to ${SERVER_URL}`);
+  const [mode, setMode] = createSignal<"agent" | "rlm">("agent");
+  const [lastUserMessage, setLastUserMessage] = createSignal<string | null>(null);
+  const [focusZone, setFocusZone] = createSignal<"input" | "repl">("input");
+
+  useKeyboard((key) => {
+    if (key.name === "tab") {
+      setMode((m) => (m === "agent" ? "rlm" : "agent"));
+    }
+  });
 
   const isStreaming = () => conversation().isConnected;
+
+  // Auto-switch focus: repl during streaming, input when done
+  createEffect(
+    on(isStreaming, (streaming) => {
+      if (mode() === "rlm") {
+        setFocusZone(streaming ? "repl" : "input");
+      }
+    }),
+  );
   const pendingRelay = () => conversation().pendingRelays[0] ?? null;
   const viewNodes = () => projectThread(conversation().graph);
+  const replData = createMemo(() => projectRepl(conversation().graph));
 
   // Resolve a pending relay request
   async function resolveRelay(approved: boolean) {
@@ -192,7 +213,11 @@ function ChatApp() {
     setConversation((s) => reduceConversation(s, { type: "stream_start" }));
 
     try {
-      for await (const event of sseTransport.stream({ model: MODEL, messages: userMessages })) {
+      for await (const event of sseTransport.stream({
+        model: MODEL,
+        messages: userMessages,
+        mode: mode(),
+      })) {
         setConversation((s) => reduceConversation(s, event));
       }
     } finally {
@@ -227,6 +252,7 @@ function ChatApp() {
     if (isStreaming()) return;
 
     // Add user message to conversation graph
+    setLastUserMessage(userInput);
     setConversation((s) =>
       reduceConversation(s, { type: "user", runId: nextUserId(), content: userInput }),
     );
@@ -249,6 +275,25 @@ function ChatApp() {
     }
   }
 
+  const replPermissions = {
+    onAllow: (relay: { relayId: string }) => {
+      const r = conversation().pendingRelays.find((p) => p.relayId === relay.relayId);
+      if (r) resolveRelay(true);
+    },
+    onDeny: (relay: { relayId: string }) => {
+      const r = conversation().pendingRelays.find((p) => p.relayId === relay.relayId);
+      if (r) resolveRelay(false);
+    },
+  };
+
+  const replPendingRelays = () =>
+    conversation().pendingRelays.map((r) => ({
+      relayId: r.relayId,
+      runId: r.runId,
+      tool: r.tool,
+      params: r.params as Record<string, unknown>,
+    }));
+
   return (
     <box flexDirection="column" width="100%" height="100%">
       {/* Header */}
@@ -259,46 +304,94 @@ function ChatApp() {
         borderColor="#3b82f6"
         paddingLeft={1}
         paddingRight={1}
+        flexDirection="row"
+        justifyContent="space-between"
       >
         <text>LLM Gateway CLI | Model: {MODEL}</text>
+        <text fg={mode() === "rlm" ? "#22c55e" : "#888"}>
+          [{mode() === "rlm" ? "RLM" : "Agent"}] Tab:toggle
+        </text>
       </box>
 
-      {/* Messages */}
-      <box flexGrow={1} border borderStyle="single" borderColor="#6b7280">
-        <scrollbox width="100%" height="100%" scrollY stickyScroll stickyStart="bottom">
-          <Show when={viewNodes().length === 0}>
-            <text wrapMode="word">Welcome! Type a message and press Enter to start chatting.</text>
-          </Show>
-          <ThreadView nodes={viewNodes()} pendingRelays={conversation().pendingRelays} />
-        </scrollbox>
-      </box>
+      <Show
+        when={mode() === "rlm"}
+        fallback={
+          <>
+            {/* Messages */}
+            <box flexGrow={1} border borderStyle="single" borderColor="#6b7280">
+              <scrollbox width="100%" height="100%" scrollY stickyScroll stickyStart="bottom">
+                <Show when={viewNodes().length === 0}>
+                  <text wrapMode="word">
+                    Welcome! Type a message and press Enter to start chatting.
+                  </text>
+                </Show>
+                <ThreadView nodes={viewNodes()} pendingRelays={conversation().pendingRelays} />
+              </scrollbox>
+            </box>
 
-      {/* Input */}
-      <box
-        height={3}
-        border
-        borderStyle="rounded"
-        borderColor="#22c55e"
-        flexDirection="row"
-        paddingLeft={1}
-        paddingRight={1}
-        gap={1}
+            {/* Input */}
+            <box
+              height={3}
+              border
+              borderStyle="rounded"
+              borderColor="#22c55e"
+              flexDirection="row"
+              paddingLeft={1}
+              paddingRight={1}
+              gap={1}
+            >
+              <text width={2}>{">"}</text>
+              <input
+                flexGrow={1}
+                value={inputValue()}
+                onInput={setInputValue}
+                onSubmit={handleSubmit}
+                placeholder="Type your message..."
+                focused
+                backgroundColor="transparent"
+                focusedBackgroundColor="transparent"
+              />
+            </box>
+
+            {/* Status bar */}
+            <text height={1}>{statusText()}</text>
+          </>
+        }
       >
-        <text width={2}>{">"}</text>
-        <input
-          flexGrow={1}
-          value={inputValue()}
-          onInput={setInputValue}
-          onSubmit={handleSubmit}
-          placeholder="Type your message..."
-          focused
-          backgroundColor="transparent"
-          focusedBackgroundColor="transparent"
-        />
-      </box>
-
-      {/* Status bar */}
-      <text height={1}>{statusText()}</text>
+        {/* RLM mode: input at top, then repl view fills the rest */}
+        <box
+          height={3}
+          border
+          borderStyle="rounded"
+          borderColor={focusZone() === "input" ? "#22c55e" : "#444"}
+          flexDirection="row"
+          paddingLeft={1}
+          paddingRight={1}
+          gap={1}
+          onMouseDown={() => setFocusZone("input")}
+        >
+          <text width={2}>{">"}</text>
+          <input
+            flexGrow={1}
+            value={inputValue()}
+            onInput={setInputValue}
+            onSubmit={handleSubmit}
+            placeholder="Describe your task..."
+            focused={focusZone() === "input"}
+            backgroundColor="transparent"
+            focusedBackgroundColor="transparent"
+          />
+        </box>
+        <box flexGrow={1} onMouseDown={() => setFocusZone("repl")}>
+          <ReplView
+            data={replData}
+            pendingRelays={replPendingRelays}
+            permissions={replPermissions}
+            focused={focusZone() === "repl"}
+            userMessage={lastUserMessage}
+          />
+        </box>
+      </Show>
     </box>
   );
 }

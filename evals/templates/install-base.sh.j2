@@ -1,0 +1,141 @@
+#!/bin/bash
+set -euo pipefail
+
+run_cmd() {
+  if command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+ensure_bun_prereqs() {
+  local need_install=0
+  command -v curl >/dev/null 2>&1 || need_install=1
+  command -v unzip >/dev/null 2>&1 || need_install=1
+
+  if [[ "$need_install" -eq 0 ]]; then
+    return 0
+  fi
+
+  if command -v apt-get >/dev/null 2>&1; then
+    run_cmd apt-get update
+    run_cmd env DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip ca-certificates
+    return 0
+  fi
+  if command -v apk >/dev/null 2>&1; then
+    run_cmd apk add --no-cache curl unzip ca-certificates
+    return 0
+  fi
+  if command -v dnf >/dev/null 2>&1; then
+    run_cmd dnf install -y curl unzip ca-certificates
+    return 0
+  fi
+  if command -v yum >/dev/null 2>&1; then
+    run_cmd yum install -y curl unzip ca-certificates
+    return 0
+  fi
+  if command -v microdnf >/dev/null 2>&1; then
+    run_cmd microdnf install -y curl unzip ca-certificates
+    return 0
+  fi
+  if command -v zypper >/dev/null 2>&1; then
+    run_cmd zypper --non-interactive install curl unzip ca-certificates
+    return 0
+  fi
+
+  echo "Missing curl/unzip and no supported package manager found" >&2
+  exit 1
+}
+
+locate_repo_root() {
+  looks_like_repo() {
+    local candidate="$1"
+    [[ -z "$candidate" ]] && return 1
+    [[ ! -d "$candidate" ]] && return 1
+    [[ -f "$candidate/package.json" ]] || return 1
+    if [[ -f "$candidate/evals/agents/run-rlm.ts" ]]; then
+      return 0
+    fi
+    if [[ -f "$candidate/packages/ai/rlm/harness.ts" ]]; then
+      return 0
+    fi
+    return 1
+  }
+
+  local script_dir
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local candidates=(
+    "${HARBOR_AGENT_SOURCE_DIR:-}"
+    "${AGENT_SOURCE_DIR:-}"
+    "$PWD"
+    "$script_dir"
+    "/installed-agent"
+    "/workspace"
+    "/repo"
+    "/project"
+    "/app"
+    "/src"
+    "/mnt/workspace"
+    "/mnt/project"
+  )
+
+  local dir
+  for dir in "${candidates[@]}"; do
+    if looks_like_repo "$dir"; then
+      echo "$dir"
+      return 0
+    fi
+  done
+
+  local hit
+  hit="$(find / -maxdepth 8 -type f -path '*/evals/agents/run-rlm.ts' 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$hit" ]]; then
+    echo "${hit%/evals/agents/run-rlm.ts}"
+    return 0
+  fi
+
+  hit="$(find / -maxdepth 8 -type f -path '*/packages/ai/rlm/harness.ts' 2>/dev/null | head -n 1 || true)"
+  if [[ -n "$hit" ]]; then
+    echo "${hit%/packages/ai/rlm/harness.ts}"
+    return 0
+  fi
+
+  return 1
+}
+
+ensure_bun_prereqs
+
+# Install Bun
+curl -fsSL https://bun.sh/install | bash
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
+# Persist Bun in PATH for subsequent commands
+echo 'export BUN_INSTALL="$HOME/.bun"' >> ~/.bashrc
+echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> ~/.bashrc
+
+# Copy the project into the container installation directory
+if [[ -f /opt/llm-gateway/package.json && -f /opt/llm-gateway/evals/agents/run-rlm.ts ]]; then
+  SOURCE_ROOT="/opt/llm-gateway"
+else
+  SOURCE_ROOT="$(locate_repo_root || true)"
+  if [[ -z "$SOURCE_ROOT" ]]; then
+    echo "Unable to locate llm-gateway source mount (expected evals/agents/run-rlm.ts)" >&2
+    echo "cwd=$(pwd)" >&2
+    echo "root entries:" >&2
+    ls -la / >&2 || true
+    exit 1
+  fi
+fi
+echo "Using source root: $SOURCE_ROOT"
+
+if [[ "$SOURCE_ROOT" != "/opt/llm-gateway" ]]; then
+  mkdir -p /opt/llm-gateway
+  cp -a "$SOURCE_ROOT"/. /opt/llm-gateway/
+fi
+
+cd /opt/llm-gateway
+
+# Install Node/Bun dependencies
+bun install --frozen-lockfile

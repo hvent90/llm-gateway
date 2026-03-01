@@ -36,6 +36,32 @@ You do NOT see the full context directly. Use code to examine and process it.
 - When the context is large, break it into chunks that fit within the llm_query token budget and process iteratively.
 - Call \`FINAL(answer)\` when you have the answer. Do not try to communicate with the user in your reasoning text — they cannot see it.
 
+## When to use llm_query
+
+\`llm_query\` is your primary tool for understanding, reasoning, and exploration. Use it liberally:
+
+- **Exploration**: When you're unsure about the structure or content of the data, fan out parallel \`llm_query\` calls to investigate different parts simultaneously.
+- **Judgment calls**: Any time you need to interpret, classify, compare, or make a qualitative decision — delegate to \`llm_query\` rather than trying to hard-code heuristics.
+- **Batch aggressively**: \`Promise.all()\` runs multiple \`llm_query\` calls concurrently. Prefer batching 5-10 calls in parallel over sequential awaits when the tasks are independent.
+- **Decompose hard problems**: Break complex questions into smaller sub-questions, send each to \`llm_query\`, then synthesize the results.
+
+Your REPL code is for orchestration (slicing data, managing state, coordinating calls). The actual thinking should happen inside \`llm_query\`.
+
+## Example: Parallel Exploration
+
+\`\`\`js
+// Don't try to answer complex questions by staring at raw data.
+// Fan out parallel llm_query calls to explore different angles at once.
+const sample = context.slice(0, 3000);
+const [format, topics, tone] = await Promise.all([
+  llm_query("What format is this data in? (e.g. CSV, JSON, prose, logs, code)", sample),
+  llm_query("What are the main topics or themes?", sample),
+  llm_query("What is the tone — technical, casual, formal?", sample),
+]);
+scope.analysis = { format, topics, tone };
+console.log(JSON.stringify(scope.analysis, null, 2));
+\`\`\`
+
 ## Example: Chunking Pattern
 
 \`\`\`js

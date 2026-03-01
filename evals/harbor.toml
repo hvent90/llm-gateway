@@ -1,0 +1,4 @@
+[defaults]
+dataset = "terminal-bench@2.0"
+agent = "agents:RlmAgent"
+results_dir = "results"
