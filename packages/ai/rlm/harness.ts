@@ -22,6 +22,8 @@ interface RlmHarnessOptions {
   subHarness?: GeneratorHarnessModule;
   /** RLM configuration */
   config: RlmConfig;
+  /** Internal: current recursion depth (set by child RLM spawning) */
+  _depth?: number;
 }
 
 /** Extract code from a model response. Looks for fenced JS blocks, falls back to entire text. */
@@ -34,7 +36,9 @@ function extractCode(text: string): string {
     );
   }
   if (matches.length === 1) return matches[0][1].trim();
-  return text.trim();
+  throw new Error(
+    "Response contained no code block. Expected exactly one ```js block per turn.",
+  );
 }
 
 /** Collect all text from a provider harness invocation. */
@@ -66,7 +70,19 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         return tagged;
       };
 
-      yield tag({ type: "harness_start", runId });
+      const currentDepth = options._depth ?? 0;
+      yield tag({
+        type: "harness_start",
+        runId,
+        ...(currentDepth > 0 ? { depth: currentDepth } : {}),
+        maxIterations: config.maxIterations,
+      });
+
+      // Aggregate usage tracking
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+      let iterationsRan = 0;
+      let completionReason: "final" | "max_iterations" = "max_iterations";
 
       // The context string is the data for the REPL to work with
       const ctx = params.context ?? "";
@@ -98,6 +114,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           const childRlm = createRlmHarness({
             rootHarness: subHarness,
             config: { ...config, maxDepth: depth - 1 },
+            _depth: currentDepth + 1,
           });
           let text = "";
           let collecting = false;
@@ -113,17 +130,45 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
             if (childEvent.type === "repl_output" && childEvent.done) collecting = true;
             else if (childEvent.type === "text" && collecting) text += childEvent.content;
           }
+          execEvents?.push({
+            type: "progress",
+            event: tag({
+              type: "repl_progress" as const,
+              runId,
+              id: uuidv7(),
+              chunk: `[llm_query] done result=${text.length} chars\n`,
+              stream: "stderr" as const,
+            }),
+          });
           return text;
         }
 
         // Flat: one-shot LLM call (base case)
         const message = ctx ? `${prompt}\n\n${ctx}` : prompt;
-        const { text } = await collectText(
+        const { text, events: flatEvents } = await collectText(
           subHarness.invoke({
             model: config.subModel ?? params.model,
             messages: [{ role: "user", content: message }],
           }),
         );
+        // Gap #7 — Forward flat call usage events
+        for (const e of flatEvents) {
+          if (e.type === "usage") {
+            execEvents?.push({ type: "progress", event: tag(e) });
+            totalInputTokens += e.inputTokens;
+            totalOutputTokens += e.outputTokens;
+          }
+        }
+        execEvents?.push({
+          type: "progress",
+          event: tag({
+            type: "repl_progress" as const,
+            runId,
+            id: uuidv7(),
+            chunk: `[llm_query] done result=${text.length} chars\n`,
+            stream: "stderr" as const,
+          }),
+        });
         return text;
       };
 
@@ -258,8 +303,18 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
                   }),
                 });
               }
-            } catch {
-              // Process may have exited — stop polling
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e);
+              execEvents?.push({
+                type: "progress",
+                event: tag({
+                  type: "repl_progress" as const,
+                  runId,
+                  id: uuidv7(),
+                  chunk: `[exec] metrics poll error: ${message}\n`,
+                  stream: "stderr" as const,
+                }),
+              });
               break;
             }
           }
@@ -310,7 +365,21 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         await metricsPromise.catch(() => {});
 
         if (raceResult.timedOut) {
-          return { exitCode: -1, stdout: "", stderr: "" };
+          execEvents?.push({
+            type: "progress",
+            event: tag({
+              type: "repl_progress" as const,
+              runId,
+              id: uuidv7(),
+              chunk: `[exec] TIMEOUT after ${effectiveTimeout}s — process killed\n`,
+              stream: "stderr" as const,
+            }),
+          });
+          return {
+            exitCode: -1,
+            stdout: "",
+            stderr: `exec timeout: killed after ${effectiveTimeout}s`,
+          };
         }
 
         return {
@@ -352,8 +421,11 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
       // RLM loop
       for (let i = 0; i < config.maxIterations; i++) {
+        iterationsRan++;
+
         // Call root LLM — stream text and usage events as they arrive
         let responseText = "";
+        let llmError: Error | null = null;
         for await (const event of rootHarness.invoke({
           model: params.model,
           messages,
@@ -361,9 +433,22 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           if (event.type === "text") {
             responseText += event.content;
             yield tag(event);
-          } else if (event.type === "reasoning" || event.type === "usage") {
+          } else if (event.type === "reasoning") {
+            yield tag(event);
+          } else if (event.type === "usage") {
+            // Gap #11 — accumulate usage from root LLM calls
+            totalInputTokens += event.inputTokens;
+            totalOutputTokens += event.outputTokens;
+            yield tag(event);
+          } else if (event.type === "error") {
+            llmError = event.error;
             yield tag(event);
           }
+        }
+
+        // If the LLM call failed, stop the loop
+        if (llmError) {
+          break;
         }
 
         // Extract code from model response
@@ -371,20 +456,26 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         try {
           code = extractCode(responseText);
         } catch (e) {
-          const error = e instanceof Error ? e.message : String(e);
+          // Gap #2 — yield error event for code extraction failures
+          const error = e instanceof Error ? e : new Error(String(e));
+          yield tag({ type: "error", runId, error });
           messages.push({ role: "assistant", content: responseText });
-          messages.push({ role: "user", content: `error: ${error}` });
+          messages.push({ role: "user", content: `error: ${error.message}` });
           continue;
         }
 
-        // Yield repl_input for the code about to execute
+        // Gap #1 — Yield repl_input with iteration index
         const callId = uuidv7();
         yield tag({
           type: "repl_input",
           runId,
           id: callId,
           code,
+          iteration: i,
         });
+
+        // Gap #3 — capture start time for REPL execution timing
+        const replStartTime = Date.now();
 
         // Execute in REPL with queue drain for relay events
         currentCallId = callId;
@@ -405,7 +496,9 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
         execEvents = undefined;
 
-        // Yield repl_output with the complete execution result
+        const durationMs = Date.now() - replStartTime;
+
+        // Gap #1, #3, #10 — Yield repl_output with iteration, timing, and truncation
         yield tag({
           type: "repl_output",
           runId,
@@ -413,6 +506,9 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           stdout: result.stdout,
           done: result.done,
           ...(result.error ? { error: result.error } : {}),
+          iteration: i,
+          durationMs,
+          ...(result.truncated ? { truncated: true } : {}),
         });
 
         // Append to internal message history
@@ -426,6 +522,8 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
         // Check if done
         if (result.done && result.finalValue !== undefined) {
+          // Gap #9 — set completion reason
+          completionReason = "final";
           yield tag({
             type: "text",
             runId,
@@ -436,7 +534,14 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         }
       }
 
-      yield tag({ type: "harness_end", runId });
+      // Gap #9, #11 — emit harness_end with reason, iterations, and aggregate usage
+      yield tag({
+        type: "harness_end",
+        runId,
+        reason: completionReason,
+        iterations: iterationsRan,
+        totalUsage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
+      });
     },
 
     supportedModels: () => rootHarness.supportedModels(),

@@ -24,12 +24,17 @@ agent: harness_end
 ## Event Types
 
 ### `harness_start`
-Marks the beginning of an agent harness run. Emitted once at the top of the agentic loop.
-- **Emitter:** agent harness (`harness/agent.ts:46`)
+Marks the beginning of a harness run. Emitted once at the top of the agentic/RLM loop.
+- `depth` — recursion depth for nested RLM sessions (omitted at depth 0) *(optional, RLM only)*
+- `maxIterations` — configured iteration limit *(optional, RLM only)*
+- **Emitter:** agent harness (`harness/agent.ts:46`), RLM harness (`rlm/harness.ts`)
 
 ### `harness_end`
-Marks the end of an agent harness run. Emitted on normal completion, error, or max iterations.
-- **Emitter:** agent harness
+Marks the end of a harness run. Emitted on normal completion, error, or max iterations.
+- `reason` — `"final"` when `FINAL()` was called, `"max_iterations"` when loop exhausted *(optional, RLM only)*
+- `iterations` — number of REPL iterations completed *(optional, RLM only)*
+- `totalUsage` — `{ inputTokens, outputTokens }` aggregate across all LLM calls *(optional, RLM only)*
+- **Emitter:** agent harness, RLM harness
 
 ### `text`
 A chunk of streamed text content from the model.
@@ -75,6 +80,7 @@ An error occurred (API failure, missing tool executor, tool execution error, etc
 Code extracted from the model's response, about to be executed in the REPL.
 - `code` — the JavaScript code to execute
 - `id` — unique ID for this execution span (shared with corresponding `repl_output`)
+- `iteration` — zero-based loop index *(optional)*
 - **Emitter:** RLM harness only (`rlm/harness.ts`)
 
 ### `repl_progress`
@@ -89,6 +95,9 @@ Complete result of a REPL execution. Contains accumulated stdout and completion 
 - `error` — error message if execution failed (optional)
 - `done` — whether `FINAL()` was called
 - `id` — matches the `repl_input` ID
+- `iteration` — zero-based loop index *(optional)*
+- `durationMs` — wall-clock time for the REPL execution in milliseconds *(optional)*
+- `truncated` — `true` when stdout was truncated to fit `maxStdoutLength` *(optional)*
 - **Emitter:** RLM harness only (`rlm/harness.ts`)
 
 ### `relay` (kind: `"permission"`)

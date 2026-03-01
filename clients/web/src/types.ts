@@ -7,6 +7,12 @@ export type {
 } from "../../../packages/ai/client/hypergraph";
 export type { ViewNode, ViewContent } from "../../../packages/ai/client/hypergraph";
 export type { DAGNode, DAGEdge, DAGGroup, DAGLayout } from "../../../packages/ai/client/hypergraph";
+export type {
+  ReplData,
+  ReplAgent,
+  ReplTurn,
+  ReplPhase,
+} from "../../../packages/ai/client/hypergraph";
 export type { Message } from "../../../packages/ai/types";
 
 export interface ToolPermission {

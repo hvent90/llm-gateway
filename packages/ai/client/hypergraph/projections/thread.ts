@@ -46,9 +46,14 @@ function eventId(event: ChunkEvent): string {
     case "tool_call":
     case "relay":
     case "tool_progress":
+    case "repl_input":
       return event.id;
     case "tool_result":
       return `${event.id}:result`;
+    case "repl_progress":
+      return `${event.id}:progress`;
+    case "repl_output":
+      return `${event.id}:output`;
     case "harness_start":
       return `${event.runId}:harness_start`;
     case "harness_end":
@@ -91,6 +96,9 @@ function eventToViewContent(event: ChunkEvent): ViewContent | null {
     case "usage":
     case "tool_result":
     case "tool_progress":
+    case "repl_input":
+    case "repl_progress":
+    case "repl_output":
       return null;
     default:
       return null;

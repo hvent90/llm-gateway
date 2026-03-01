@@ -36,9 +36,9 @@ export function createRepl(options: ReplOptions): Repl {
   let done = false;
   let finalValue: string | undefined;
 
-  function truncate(s: string): string {
-    if (s.length <= maxStdout) return s;
-    return s.slice(0, maxStdout) + "\n...[truncated]";
+  function truncate(s: string): { text: string; truncated: boolean } {
+    if (s.length <= maxStdout) return { text: s, truncated: false };
+    return { text: s.slice(0, maxStdout) + "\n...[truncated]", truncated: true };
   }
 
   async function execute(code: string): Promise<ReplExecutionResult> {
@@ -75,14 +75,16 @@ export function createRepl(options: ReplOptions): Repl {
       await fn(scope);
     } catch (e: unknown) {
       const error = e instanceof Error ? e.message : String(e);
-      return { stdout: truncate(logs.join("\n")), done: false, error };
+      const { text: stdout, truncated } = truncate(logs.join("\n"));
+      return { stdout, done: false, error, ...(truncated ? { truncated } : {}) };
     }
 
-    const stdout = truncate(logs.join("\n"));
+    const { text: stdout, truncated } = truncate(logs.join("\n"));
     return {
       stdout,
       done,
       ...(done && finalValue !== undefined ? { finalValue } : {}),
+      ...(truncated ? { truncated } : {}),
     };
   }
 

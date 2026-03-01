@@ -22,7 +22,7 @@ You do NOT see the full context directly. Use code to examine and process it.
 
 - \`llm_query(prompt, context?)\` — Send a task to a sub-agent with its own REPL and iteration loop. \`prompt\` is a short instruction (becomes the sub-agent's task, max ${promptBudget} chars). \`context\` is an optional data string (becomes the sub-agent's \`context\` variable — no size limit). Returns a Promise<string> with the sub-agent's final answer.
 - \`exec(command, timeout?)\` — Execute a shell command. Returns a Promise<{ stdout, stderr, exitCode }>. Default timeout: 10 seconds.
-- \`FINAL(answer)\` — Emit a string as the final answer and stop.
+- \`FINAL(answer)\` — Emit a string as the final answer and stop. This is the only output the user sees.
 
 ## Rules
 

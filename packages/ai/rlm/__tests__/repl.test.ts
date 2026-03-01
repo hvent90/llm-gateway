@@ -137,6 +137,18 @@ describe("REPL sandbox", () => {
       expect(result.stdout).toBe("short");
       expect(result.stdout).not.toContain("truncated");
     });
+
+    test("truncated result has truncated: true", async () => {
+      const repl = makeRepl({ maxStdoutLength: 20 });
+      const result = await repl.execute('console.log("a".repeat(50));');
+      expect(result.truncated).toBe(true);
+    });
+
+    test("non-truncated result has no truncated field", async () => {
+      const repl = makeRepl({ maxStdoutLength: 100 });
+      const result = await repl.execute('console.log("short");');
+      expect(result.truncated).toBeUndefined();
+    });
   });
 
   describe("FINAL()", () => {

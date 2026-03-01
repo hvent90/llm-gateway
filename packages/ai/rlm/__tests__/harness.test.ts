@@ -4,6 +4,11 @@ import { createRlmHarness } from "../harness";
 import type { HarnessEvent, RelayEvent } from "../../types";
 import type { RlmConfig } from "../types";
 
+/** Wrap code in a fenced ```js block, as extractCode now requires. */
+function fence(code: string): string {
+  return "```js\n" + code + "\n```";
+}
+
 function defaultConfig(overrides: Partial<RlmConfig> = {}): RlmConfig {
   return {
     maxIterations: 10,
@@ -33,7 +38,7 @@ describe("RLM harness", () => {
     test("model returns FINAL() in first turn — yields correct events", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
-        responses: [{ events: [{ type: "text", content: 'FINAL("hello world")' }] }],
+        responses: [{ events: [{ type: "text", content: fence('FINAL("hello world")') }] }],
       });
 
       const rlm = createRlmHarness({
@@ -108,8 +113,8 @@ describe("RLM harness", () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
-          { events: [{ type: "text", content: "console.log(context.length)" }] },
-          { events: [{ type: "text", content: 'FINAL("length is " + context.length)' }] },
+          { events: [{ type: "text", content: fence("console.log(context.length)") }] },
+          { events: [{ type: "text", content: fence('FINAL("length is " + context.length)') }] },
         ],
       });
 
@@ -151,9 +156,9 @@ describe("RLM harness", () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
-          { events: [{ type: "text", content: "console.log(1)" }] },
-          { events: [{ type: "text", content: "console.log(2)" }] },
-          { events: [{ type: "text", content: "console.log(3)" }] },
+          { events: [{ type: "text", content: fence("console.log(1)") }] },
+          { events: [{ type: "text", content: fence("console.log(2)") }] },
+          { events: [{ type: "text", content: fence("console.log(3)") }] },
         ],
       });
 
@@ -196,7 +201,7 @@ describe("RLM harness", () => {
               },
             ],
           },
-          { events: [{ type: "text", content: 'FINAL("recovered")' }] },
+          { events: [{ type: "text", content: fence('FINAL("recovered")') }] },
         ],
       });
 
@@ -226,8 +231,8 @@ describe("RLM harness", () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
-          { events: [{ type: "text", content: "undefinedVar.boom" }] },
-          { events: [{ type: "text", content: 'FINAL("recovered")' }] },
+          { events: [{ type: "text", content: fence("undefinedVar.boom") }] },
+          { events: [{ type: "text", content: fence('FINAL("recovered")') }] },
         ],
       });
 
@@ -267,7 +272,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'scope.answer = await llm_query("what is 2+2?");\nFINAL(scope.answer);',
+                content: fence('scope.answer = await llm_query("what is 2+2?");\nFINAL(scope.answer);'),
               },
             ],
           },
@@ -303,7 +308,7 @@ describe("RLM harness", () => {
     test("events follow harness_start → text(streamed) → repl_input → repl_output → text(FINAL) → harness_end", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
-        responses: [{ events: [{ type: "text", content: 'FINAL("done")' }] }],
+        responses: [{ events: [{ type: "text", content: fence('FINAL("done")') }] }],
       });
 
       const rlm = createRlmHarness({
@@ -341,7 +346,7 @@ describe("RLM harness", () => {
     test("all events share the same runId", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
-        responses: [{ events: [{ type: "text", content: 'FINAL("done")' }] }],
+        responses: [{ events: [{ type: "text", content: fence('FINAL("done")') }] }],
       });
 
       const rlm = createRlmHarness({
@@ -369,7 +374,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo hello");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo hello");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -399,7 +404,7 @@ describe("RLM harness", () => {
     test("context field is accessible as context in REPL", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
-        responses: [{ events: [{ type: "text", content: "FINAL(context)" }] }],
+        responses: [{ events: [{ type: "text", content: fence("FINAL(context)") }] }],
       });
 
       const rlm = createRlmHarness({
@@ -444,7 +449,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo hitl");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo hitl");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -489,7 +494,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("rm -rf /");\nFINAL(r.stdout);',
+                content: fence('const r = await exec("rm -rf /");\nFINAL(r.stdout);'),
               },
             ],
           },
@@ -497,7 +502,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'FINAL("recovered after denial")',
+                content: fence('FINAL("recovered after denial")'),
               },
             ],
           },
@@ -542,7 +547,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo allowed");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo allowed");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -585,7 +590,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo free");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo free");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -630,8 +635,9 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content:
+                content: fence(
                   'const r = await exec("echo hello && sleep 0.1 && echo world");\nFINAL(r.stdout.trim());',
+                ),
               },
             ],
           },
@@ -676,7 +682,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("sleep 2 && echo done");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -725,8 +731,9 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content:
+                content: fence(
                   'const r = await exec("echo err >&2 && echo out");\nFINAL(r.stdout.trim());',
+                ),
               },
             ],
           },
@@ -765,7 +772,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo ordering");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo ordering");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -813,7 +820,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo relayed");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo relayed");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -860,7 +867,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'const r = await exec("echo linked");\nFINAL(r.stdout.trim());',
+                content: fence('const r = await exec("echo linked");\nFINAL(r.stdout.trim());'),
               },
             ],
           },
@@ -891,6 +898,363 @@ describe("RLM harness", () => {
     });
   });
 
+  describe("observability", () => {
+    test("repl_input and repl_output carry iteration index", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: fence("console.log(1)") }] },
+          { events: [{ type: "text", content: fence('FINAL("done")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const replInputs = events.filter((e) => e.type === "repl_input");
+      const replOutputs = events.filter((e) => e.type === "repl_output");
+      expect(replInputs.length).toBe(2);
+      expect(replOutputs.length).toBe(2);
+
+      if (replInputs[0].type === "repl_input") expect(replInputs[0].iteration).toBe(0);
+      if (replInputs[1].type === "repl_input") expect(replInputs[1].iteration).toBe(1);
+      if (replOutputs[0].type === "repl_output") expect(replOutputs[0].iteration).toBe(0);
+      if (replOutputs[1].type === "repl_output") expect(replOutputs[1].iteration).toBe(1);
+    });
+
+    test("repl_output carries durationMs >= 0", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [{ events: [{ type: "text", content: fence('FINAL("done")') }] }],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const replOutput = events.find((e) => e.type === "repl_output");
+      expect(replOutput).toBeDefined();
+      if (replOutput?.type === "repl_output") {
+        expect(replOutput.durationMs).toBeGreaterThanOrEqual(0);
+      }
+    });
+
+    test("repl_output carries truncated: true when stdout is truncated", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: fence('console.log("x".repeat(5000))') }] },
+          { events: [{ type: "text", content: fence('FINAL("done")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig({ maxStdoutLength: 20 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const replOutputs = events.filter((e) => e.type === "repl_output");
+      expect(replOutputs.length).toBe(2);
+      if (replOutputs[0].type === "repl_output") {
+        expect(replOutputs[0].truncated).toBe(true);
+      }
+    });
+
+    test("code extraction failure yields an error event", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: '```js\nconsole.log("a")\n```\n```js\nconsole.log("b")\n```',
+              },
+            ],
+          },
+          { events: [{ type: "text", content: '```js\nFINAL("ok")\n```' }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const errorEvents = events.filter((e) => e.type === "error");
+      expect(errorEvents.length).toBe(1);
+      if (errorEvents[0].type === "error") {
+        expect(errorEvents[0].error.message).toContain("multiple code blocks");
+      }
+    });
+
+    test("response without code block yields an error event", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: "I think the answer is 42.",
+              },
+            ],
+          },
+          { events: [{ type: "text", content: '```js\nFINAL("recovered")\n```' }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      // Should yield an error event for the missing code block
+      const errorEvents = events.filter((e) => e.type === "error");
+      expect(errorEvents.length).toBe(1);
+      if (errorEvents[0].type === "error") {
+        expect(errorEvents[0].error.message).toContain("no code block");
+      }
+
+      // No repl_input for the rejected turn
+      const replInputs = events.filter((e) => e.type === "repl_input");
+      expect(replInputs.length).toBe(1);
+
+      // Should recover in second turn
+      const finalText = findFinalText(events);
+      expect(finalText).toBe("recovered");
+    });
+
+    test("harness_start carries maxIterations", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [{ events: [{ type: "text", content: fence('FINAL("done")') }] }],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig({ maxIterations: 5 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const start = events.find((e) => e.type === "harness_start");
+      expect(start).toBeDefined();
+      if (start?.type === "harness_start") {
+        expect(start.maxIterations).toBe(5);
+      }
+    });
+
+    test("harness_end has reason: 'final' when FINAL() called", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [{ events: [{ type: "text", content: fence('FINAL("done")') }] }],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const end = events.find((e) => e.type === "harness_end");
+      expect(end).toBeDefined();
+      if (end?.type === "harness_end") {
+        expect(end.reason).toBe("final");
+      }
+    });
+
+    test("harness_end has reason: 'max_iterations' when loop exhausted", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: fence("console.log(1)") }] },
+          { events: [{ type: "text", content: fence("console.log(2)") }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig({ maxIterations: 2 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const end = events.find((e) => e.type === "harness_end");
+      expect(end).toBeDefined();
+      if (end?.type === "harness_end") {
+        expect(end.reason).toBe("max_iterations");
+      }
+    });
+
+    test("harness_end carries iterations count", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: fence("console.log(1)") }] },
+          { events: [{ type: "text", content: fence('FINAL("done")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const end = events.find((e) => e.type === "harness_end");
+      expect(end).toBeDefined();
+      if (end?.type === "harness_end") {
+        expect(end.iterations).toBe(2);
+      }
+    });
+
+    test("harness_end carries totalUsage from root LLM calls", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              { type: "text", content: fence('FINAL("done")') },
+              { type: "usage", inputTokens: 100, outputTokens: 50 },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const end = events.find((e) => e.type === "harness_end");
+      expect(end).toBeDefined();
+      if (end?.type === "harness_end") {
+        expect(end.totalUsage).toEqual({ inputTokens: 100, outputTokens: 50 });
+      }
+    });
+
+    test("totalUsage accumulates across multiple iterations", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              { type: "text", content: fence("console.log(1)") },
+              { type: "usage", inputTokens: 100, outputTokens: 50 },
+            ],
+          },
+          {
+            events: [
+              { type: "text", content: fence('FINAL("done")') },
+              { type: "usage", inputTokens: 200, outputTokens: 80 },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const end = events.find((e) => e.type === "harness_end");
+      expect(end).toBeDefined();
+      if (end?.type === "harness_end") {
+        expect(end.totalUsage).toEqual({ inputTokens: 300, outputTokens: 130 });
+      }
+    });
+
+    test("usage events from flat llm_query are forwarded and accumulated", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: fence('scope.answer = await llm_query("q");\nFINAL(scope.answer);'),
+              },
+              { type: "usage", inputTokens: 100, outputTokens: 50 },
+            ],
+          },
+        ],
+      });
+
+      const subHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              { type: "text", content: "sub response" },
+              { type: "usage", inputTokens: 30, outputTokens: 20 },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        subHarness,
+        config: defaultConfig({ maxDepth: 0 }),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      // Sub-harness usage should be forwarded as a usage event
+      const usageEvents = events.filter((e) => e.type === "usage");
+      expect(usageEvents.length).toBe(2); // root + sub
+
+      const end = events.find((e) => e.type === "harness_end");
+      if (end?.type === "harness_end") {
+        expect(end.totalUsage).toEqual({ inputTokens: 130, outputTokens: 70 });
+      }
+    });
+  });
+
   describe("recursive llm_query", () => {
     test("llm_query at depth > 0 spawns child RLM that iterates and returns", async () => {
       // Parent RLM: model calls llm_query("child task", "child data") then FINALs the result
@@ -901,8 +1265,9 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content:
+                content: fence(
                   'scope.answer = await llm_query("child task", "child data");\nFINAL(scope.answer);',
+                ),
               },
             ],
           },
@@ -914,9 +1279,9 @@ describe("RLM harness", () => {
         model: "deterministic",
         responses: [
           // Child turn 1: examine context
-          { events: [{ type: "text", content: "console.log(context)" }] },
+          { events: [{ type: "text", content: fence("console.log(context)") }] },
           // Child turn 2: return final answer
-          { events: [{ type: "text", content: 'FINAL("child result: " + context)' }] },
+          { events: [{ type: "text", content: fence('FINAL("child result: " + context)') }] },
         ],
       });
 
@@ -959,7 +1324,7 @@ describe("RLM harness", () => {
             events: [
               {
                 type: "text",
-                content: 'scope.answer = await llm_query("flat query");\nFINAL(scope.answer);',
+                content: fence('scope.answer = await llm_query("flat query");\nFINAL(scope.answer);'),
               },
             ],
           },

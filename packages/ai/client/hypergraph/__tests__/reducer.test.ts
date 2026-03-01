@@ -160,6 +160,110 @@ describe("Hypergraph Reducer", () => {
     expect(blocks.length).toBe(1);
   });
 
+  test("repl_input creates chunk and block", () => {
+    const g = buildGraph([
+      {
+        type: "repl_input",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        code: "console.log(1)",
+        iteration: 1,
+      },
+    ]);
+    const chunks = [...g.nodes.values()].filter((n) => n.kind === "chunk");
+    const blocks = [...g.nodes.values()].filter((n) => n.kind === "block");
+    expect(chunks.length).toBe(1);
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]!.id).toBe("block:ri1");
+  });
+
+  test("repl_progress with same id accumulates into one block", () => {
+    const g = buildGraph([
+      {
+        type: "repl_progress",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        chunk: "hello ",
+        stream: "stdout",
+      },
+      {
+        type: "repl_progress",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        chunk: "world",
+        stream: "stdout",
+      },
+    ]);
+    const chunks = [...g.nodes.values()].filter((n) => n.kind === "chunk");
+    const blocks = [...g.nodes.values()].filter((n) => n.kind === "block");
+    expect(chunks.length).toBe(2);
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]!.id).toBe("block:ri1:progress");
+    const blockEdges = findEdges(g, { type: "block" });
+    expect(blockEdges[0]!.roles.part.length).toBe(2);
+  });
+
+  test("repl_output creates separate block from repl_input", () => {
+    const g = buildGraph([
+      {
+        type: "repl_input",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        code: "1+1",
+        iteration: 1,
+      },
+      {
+        type: "repl_output",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        stdout: "2",
+        done: false,
+        iteration: 1,
+      },
+    ]);
+    const blocks = [...g.nodes.values()].filter((n) => n.kind === "block");
+    expect(blocks.length).toBe(2);
+    expect(blocks.map((b) => b.id).sort()).toEqual(["block:ri1", "block:ri1:output"]);
+  });
+
+  test("repl_output triggers message boundary (like tool_result)", () => {
+    let g = createGraph();
+    let s = createReducerState();
+    const events: GraphEvent[] = [
+      { type: "harness_start", runId: "r1", agentId: "a1" },
+      { type: "text", id: "t1", runId: "r1", agentId: "a1", content: "thinking" },
+      {
+        type: "repl_input",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        code: "1+1",
+        iteration: 1,
+      },
+      {
+        type: "repl_output",
+        id: "ri1",
+        runId: "r1",
+        agentId: "a1",
+        stdout: "2",
+        done: false,
+        iteration: 1,
+      },
+      // text after repl_output should trigger a message boundary
+      { type: "text", id: "t2", runId: "r1", agentId: "a1", content: "got it" },
+      { type: "harness_end", runId: "r1", agentId: "a1" },
+    ];
+    for (const e of events) [g, s] = reduceEvent(g, s, e);
+    const messages = [...g.nodes.values()].filter((n) => n.kind === "message");
+    // Should have 2 messages: one flushed by text-after-repl_output, one by harness_end
+    expect(messages.length).toBe(2);
+  });
+
   test("graph is immutable", () => {
     const g1 = createGraph();
     const s1 = createReducerState();

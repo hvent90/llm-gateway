@@ -40,6 +40,8 @@ export interface ReplExecutionResult {
   finalValue?: string;
   /** Error message if execution failed */
   error?: string;
+  /** Whether stdout was truncated to fit maxStdoutLength */
+  truncated?: boolean;
 }
 
 /** Callback type for llm_query inside the REPL */

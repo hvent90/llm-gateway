@@ -8,6 +8,7 @@ export type ScriptedEvent =
   | { type: "text"; content: string }
   | { type: "reasoning"; content: string }
   | { type: "tool_call"; name: string; input: unknown }
+  | { type: "usage"; inputTokens: number; outputTokens: number }
   | { type: "error"; message: string };
 
 /**
@@ -80,6 +81,14 @@ export function createDeterministicHarness(
               id: uuidv7(),
               name: scripted.name,
               input: scripted.input,
+            });
+            break;
+          case "usage":
+            yield tag({
+              type: "usage",
+              runId,
+              inputTokens: scripted.inputTokens,
+              outputTokens: scripted.outputTokens,
             });
             break;
           case "error":

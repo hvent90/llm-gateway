@@ -25,14 +25,16 @@ Composition: `createRlmHarness({ rootHarness: createGeneratorHarness(), config }
 
 ## Event Mapping
 
-- `harness_start` / `harness_end` — lifecycle boundaries
+- `harness_start` — `{ depth?, maxIterations? }` — lifecycle start with optional recursion depth and iteration limit
+- `harness_end` — `{ reason?, iterations?, totalUsage? }` — lifecycle end with completion reason (`"final"` | `"max_iterations"`), iteration count, and aggregate token usage
 - `text` — streamed LLM response tokens (each turn) + final answer when `FINAL()` is called
 - `reasoning` — streamed reasoning tokens from the LLM (if model supports it)
-- `repl_input` — `{ code: string }` — the extracted code about to execute
-- `repl_progress` — `{ chunk: string, stream: "stdout" | "stderr" }` — live output during execution (console.log, exec streams, metrics)
-- `repl_output` — `{ stdout: string, error?: string, done: boolean }` — complete execution result
+- `repl_input` — `{ code, iteration? }` — the extracted code about to execute, with zero-based loop index
+- `repl_progress` — `{ chunk, stream: "stdout" | "stderr" }` — live output during execution (console.log, exec streams, metrics, llm_query completion, timeout notices)
+- `repl_output` — `{ stdout, error?, done, iteration?, durationMs?, truncated? }` — complete execution result with timing and truncation flag
+- `error` — yielded on code extraction failures (e.g. multiple code blocks)
 - `relay` (kind: `permission`) — HITL approval for exec() when permissions are provided
-- `usage` — passed through from provider calls
+- `usage` — passed through from root provider calls; also forwarded from flat llm_query sub-calls
 
 ## HITL Relay for exec()
 

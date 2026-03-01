@@ -10,8 +10,23 @@ import type { Message, Permissions } from "../types";
  */
 export type ServerEvent =
   | { type: "connected"; sessionId: string }
-  | { type: "harness_start"; runId: string; agentId: string; parentId?: string }
-  | { type: "harness_end"; runId: string; agentId: string; parentId?: string }
+  | {
+      type: "harness_start";
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      depth?: number;
+      maxIterations?: number;
+    }
+  | {
+      type: "harness_end";
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      reason?: "final" | "max_iterations";
+      iterations?: number;
+      totalUsage?: { inputTokens: number; outputTokens: number };
+    }
   | { type: "text"; id: string; runId: string; agentId: string; parentId?: string; content: string }
   | {
       type: "reasoning";
@@ -46,6 +61,7 @@ export type ServerEvent =
       agentId: string;
       parentId?: string;
       code: string;
+      iteration?: number;
     }
   | {
       type: "repl_progress";
@@ -65,6 +81,9 @@ export type ServerEvent =
       stdout: string;
       error?: string;
       done: boolean;
+      iteration?: number;
+      durationMs?: number;
+      truncated?: boolean;
     }
   | {
       type: "tool_progress";

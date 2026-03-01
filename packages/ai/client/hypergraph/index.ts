@@ -42,6 +42,9 @@ export type { ViewNode, ViewContent } from "./projections/thread";
 export { projectDAG } from "./projections/dag";
 export type { DAGNode, DAGEdge, DAGGroup, DAGLayout } from "./projections/dag";
 
+export { projectRepl } from "./projections/repl";
+export type { ReplData, ReplAgent, ReplTurn, ReplPhase } from "./projections/repl";
+
 export { projectMessages } from "./projections/messages";
 
 export { expand, collapse, append, summarize, branch, toggle } from "./operations";

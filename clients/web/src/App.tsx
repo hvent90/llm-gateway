@@ -3,6 +3,7 @@ import { InputArea } from "./components/InputArea";
 import { ConversationThread } from "./components/ConversationThread";
 import type { PermissionHandlers } from "./components/ConversationThread";
 import { GraphView } from "./components/GraphView";
+import { ReplView } from "./components/ReplView";
 import { createSSETransport, createHTTPTransport } from "../../../packages/ai/client";
 import {
   reduceConversation,
@@ -35,7 +36,7 @@ export default function App() {
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [mode, setMode] = useState<"agent" | "rlm">("agent");
-  const [view, setView] = useState<"chat" | "graph">("chat");
+  const [view, setView] = useState<"chat" | "graph" | "repl">("chat");
   const [isSummarizing, setIsSummarizing] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -54,6 +55,12 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  // Auto-switch to REPL view when mode is rlm
+  useEffect(() => {
+    if (mode === "rlm") setView("repl");
+    else if (view === "repl") setView("chat");
+  }, [mode]);
 
   const sendChat = useCallback(
     async (
@@ -284,6 +291,14 @@ export default function App() {
           >
             Graph
           </button>
+          <button
+            role="tab"
+            aria-selected={view === "repl"}
+            className={`rounded px-2 py-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${view === "repl" ? "bg-neutral-600 text-white" : "text-neutral-400"}`}
+            onClick={() => setView("repl")}
+          >
+            REPL
+          </button>
         </div>
       </header>
       <main
@@ -311,6 +326,12 @@ export default function App() {
               </div>
             )}
           </div>
+        ) : view === "repl" ? (
+          <ReplView
+            graph={state.graph}
+            pendingRelays={state.pendingRelays}
+            permissionHandlers={permissionHandlers}
+          />
         ) : (
           <GraphView
             graph={state.graph}

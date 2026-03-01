@@ -75,8 +75,21 @@ export type RelayEvent = {
 
 // Events that a harness can yield during invocation
 export type HarnessEvent =
-  | { type: "harness_start"; runId: string; parentId?: string }
-  | { type: "harness_end"; runId: string; parentId?: string }
+  | {
+      type: "harness_start";
+      runId: string;
+      parentId?: string;
+      depth?: number;
+      maxIterations?: number;
+    }
+  | {
+      type: "harness_end";
+      runId: string;
+      parentId?: string;
+      reason?: "final" | "max_iterations";
+      iterations?: number;
+      totalUsage?: { inputTokens: number; outputTokens: number };
+    }
   | { type: "reasoning"; runId: string; id: string; parentId?: string; content: string }
   | { type: "text"; runId: string; id: string; parentId?: string; content: string }
   | {
@@ -104,7 +117,14 @@ export type HarnessEvent =
       name: string;
       content: unknown;
     }
-  | { type: "repl_input"; runId: string; id: string; parentId?: string; code: string }
+  | {
+      type: "repl_input";
+      runId: string;
+      id: string;
+      parentId?: string;
+      code: string;
+      iteration?: number;
+    }
   | {
       type: "repl_progress";
       runId: string;
@@ -121,6 +141,9 @@ export type HarnessEvent =
       stdout: string;
       error?: string;
       done: boolean;
+      iteration?: number;
+      durationMs?: number;
+      truncated?: boolean;
     }
   | { type: "usage"; runId: string; parentId?: string; inputTokens: number; outputTokens: number }
   | { type: "error"; runId: string; parentId?: string; error: Error }
