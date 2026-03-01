@@ -40,6 +40,33 @@ export type ServerEvent =
       output: unknown;
     }
   | {
+      type: "repl_input";
+      id: string;
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      code: string;
+    }
+  | {
+      type: "repl_progress";
+      id: string;
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      chunk: string;
+      stream: "stdout" | "stderr";
+    }
+  | {
+      type: "repl_output";
+      id: string;
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      stdout: string;
+      error?: string;
+      done: boolean;
+    }
+  | {
       type: "tool_progress";
       id: string;
       runId: string;

@@ -65,7 +65,7 @@ execute: async ({ command, timeout }, ctx) => {
   context += `exit code: ${exitCode}`;
 
   return { context, result };
-}
+};
 ```
 
 ## 4. Permission Derivation (Optional)
@@ -83,7 +83,7 @@ derivePermission: (params): ToolPermission => {
   }
   // Extract command prefix + "**" glob
   return { tool: "bash", params: { command: command.slice(0, spaceIndex) + " **" } };
-}
+};
 ```
 
 This allows users to "always allow" patterns like `git **` or `npm **`.

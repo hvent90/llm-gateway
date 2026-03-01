@@ -11,7 +11,7 @@ Composition: `createRlmHarness({ rootHarness: createGeneratorHarness(), config }
 ## Key Files
 
 - `types.ts` — `RlmConfig`, `ReplState`, `ReplExecutionResult`, callback types (`LlmQueryFn`, `ExecFn`)
-- `repl.ts` — `createRepl()`: sandboxed async JS REPL with persistent scope, stdout capture, and `FINAL()`/`FINAL_VAR()` completion signals
+- `repl.ts` — `createRepl()`: sandboxed async JS REPL with persistent scope, stdout capture, and `FINAL()` completion signal
 - `system-prompt.ts` — `buildRlmSystemPrompt()`: instructs the model on REPL usage, available functions, and coding patterns
 - `harness.ts` — `createRlmHarness()`: the main inference loop. Implements `GeneratorHarnessModule` so it composes with the agent harness and orchestrator like any provider
 
@@ -19,17 +19,19 @@ Composition: `createRlmHarness({ rootHarness: createGeneratorHarness(), config }
 
 1. Extract user prompt from messages, create REPL with prompt as `context`
 2. Build system prompt with metadata only (length, prefix) — model never sees the full input
-3. Each iteration: call provider → extract code from fenced blocks → execute in REPL → yield `tool_call`/`tool_result` events → append stdout/error to message history
-4. If `FINAL()`/`FINAL_VAR()` called → yield final `text` event, break
+3. Each iteration: stream LLM response (yields `text`/`reasoning`/`usage`) → extract code from fenced block (exactly one per turn) → execute in REPL → yield `repl_input`/`repl_progress`/`repl_output` events → append stdout/error to message history
+4. If `FINAL()` called → yield final `text` event, break
 5. Yield `harness_end`
 
 ## Event Mapping
 
 - `harness_start` / `harness_end` — lifecycle boundaries
-- `tool_call` (name: `repl_execute`) — the code being executed
-- `tool_result` — stdout/error from REPL execution
+- `text` — streamed LLM response tokens (each turn) + final answer when `FINAL()` is called
+- `reasoning` — streamed reasoning tokens from the LLM (if model supports it)
+- `repl_input` — `{ code: string }` — the extracted code about to execute
+- `repl_progress` — `{ chunk: string, stream: "stdout" | "stderr" }` — live output during execution (console.log, exec streams, metrics)
+- `repl_output` — `{ stdout: string, error?: string, done: boolean }` — complete execution result
 - `relay` (kind: `permission`) — HITL approval for exec() when permissions are provided
-- `text` — final answer when `FINAL()` is called
 - `usage` — passed through from provider calls
 
 ## HITL Relay for exec()

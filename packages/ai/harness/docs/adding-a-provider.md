@@ -42,6 +42,7 @@ See zen.ts:82 for SSE parsing example.
 As you parse the response, yield these events:
 
 #### text
+
 Streamed text content from the assistant. Use a stable ID for all chunks in the same response so consumers can append.
 
 ```typescript
@@ -54,6 +55,7 @@ yield {
 ```
 
 #### reasoning (optional)
+
 If your provider supports reasoning/thinking content (like OpenAI o1/o3), yield it separately.
 
 ```typescript
@@ -66,6 +68,7 @@ yield {
 ```
 
 #### tool_call
+
 When the model requests a tool call, yield the raw request. The agent harness will handle execution and permissions.
 
 ```typescript
@@ -94,6 +97,7 @@ try {
 ```
 
 #### usage
+
 Token usage stats, typically sent once at the end.
 
 ```typescript
@@ -106,6 +110,7 @@ yield {
 ```
 
 #### error
+
 Any errors during processing. Yield this and return early.
 
 ```typescript

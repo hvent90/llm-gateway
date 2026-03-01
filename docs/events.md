@@ -71,6 +71,26 @@ An error occurred (API failure, missing tool executor, tool execution error, etc
 - `error` — an `Error` instance
 - **Emitter:** both layers. Provider harnesses yield on API/stream errors; agent harness yields on tool execution errors or missing executors
 
+### `repl_input`
+Code extracted from the model's response, about to be executed in the REPL.
+- `code` — the JavaScript code to execute
+- `id` — unique ID for this execution span (shared with corresponding `repl_output`)
+- **Emitter:** RLM harness only (`rlm/harness.ts`)
+
+### `repl_progress`
+Live output streamed during REPL execution (console output, exec streams, metrics).
+- `chunk` — the output fragment
+- `stream` — `"stdout"` or `"stderr"`
+- **Emitter:** RLM harness only (`rlm/harness.ts`)
+
+### `repl_output`
+Complete result of a REPL execution. Contains accumulated stdout and completion status.
+- `stdout` — full accumulated output
+- `error` — error message if execution failed (optional)
+- `done` — whether `FINAL()` was called
+- `id` — matches the `repl_input` ID
+- **Emitter:** RLM harness only (`rlm/harness.ts`)
+
 ### `relay` (kind: `"permission"`)
 A permission request that pauses the harness until resolved. The harness yields this event and suspends via a deferred promise until `respond()` is called.
 - `kind` — always `"permission"` (extensible to other relay kinds)

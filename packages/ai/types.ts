@@ -104,6 +104,24 @@ export type HarnessEvent =
       name: string;
       content: unknown;
     }
+  | { type: "repl_input"; runId: string; id: string; parentId?: string; code: string }
+  | {
+      type: "repl_progress";
+      runId: string;
+      id: string;
+      parentId?: string;
+      chunk: string;
+      stream: "stdout" | "stderr";
+    }
+  | {
+      type: "repl_output";
+      runId: string;
+      id: string;
+      parentId?: string;
+      stdout: string;
+      error?: string;
+      done: boolean;
+    }
   | { type: "usage"; runId: string; parentId?: string; inputTokens: number; outputTokens: number }
   | { type: "error"; runId: string; parentId?: string; error: Error }
   | RelayEvent;

@@ -23,7 +23,6 @@ You do NOT see the full context directly. Use code to examine and process it.
 - \`llm_query(prompt, context?)\` — Send a task to a sub-agent with its own REPL and iteration loop. \`prompt\` is a short instruction (becomes the sub-agent's task, max ${promptBudget} chars). \`context\` is an optional data string (becomes the sub-agent's \`context\` variable — no size limit). Returns a Promise<string> with the sub-agent's final answer.
 - \`exec(command, timeout?)\` — Execute a shell command. Returns a Promise<{ stdout, stderr, exitCode }>. Default timeout: 10 seconds.
 - \`FINAL(answer)\` — Emit a string as the final answer and stop.
-- \`FINAL_VAR(varName)\` — Emit the value of a REPL variable as the final answer and stop.
 
 ## Rules
 
@@ -35,7 +34,7 @@ You do NOT see the full context directly. Use code to examine and process it.
 - \`console.log()\` output is shown back to you but may be truncated. Rely on \`scope\` for state, not stdout.
 - Keep code simple and focused. One logical step per turn.
 - When the context is large, break it into chunks that fit within the llm_query token budget and process iteratively.
-- Call \`FINAL(answer)\` or \`FINAL_VAR(varName)\` when you have the answer.
+- Call \`FINAL(answer)\` when you have the answer.
 
 ## Example: Chunking Pattern
 
@@ -62,7 +61,7 @@ FINAL(answer);
 \`\`\`js
 // Turn 1: explore the data, persist what you need
 scope.lines = context.split("\\n");
-print(\`Total lines: \${scope.lines.length}\`);
+console.log(\`Total lines: \${scope.lines.length}\`);
 \`\`\`
 
 \`\`\`js
@@ -78,7 +77,7 @@ FINAL(results.join("\\n"));
 \`\`\`js
 // Run a shell command and use the output
 const result = await exec("ls -la /tmp");
-print(result.stdout);
+console.log(result.stdout);
 
 // Use exec output in further processing
 const answer = await llm_query("Describe these files.", result.stdout);

@@ -10,6 +10,7 @@ function makeRepl(
       timeout?: number,
     ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
     maxStdoutLength?: number;
+    onProgress?: (chunk: string, stream: "stdout" | "stderr") => void;
   } = {},
 ) {
   return createRepl({
@@ -17,6 +18,7 @@ function makeRepl(
     llmQuery: overrides.llmQuery ?? (async (p: string) => `echo: ${p}`),
     exec: overrides.exec,
     maxStdoutLength: overrides.maxStdoutLength,
+    onProgress: overrides.onProgress,
   });
 }
 
@@ -41,13 +43,13 @@ describe("REPL sandbox", () => {
     test("variables persist across execute() calls via scope", async () => {
       const repl = makeRepl();
       await repl.execute('scope.name = "alice";');
-      const result = await repl.execute("print(scope.name);");
+      const result = await repl.execute("console.log(scope.name);");
       expect(result.stdout).toBe("alice");
     });
 
     test("context is available as a convenience local", async () => {
       const repl = makeRepl({ context: "hello world" });
-      const result = await repl.execute("print(context);");
+      const result = await repl.execute("console.log(context);");
       expect(result.stdout).toBe("hello world");
     });
 
@@ -60,21 +62,15 @@ describe("REPL sandbox", () => {
   });
 
   describe("stdout capture", () => {
-    test("captures print() output", async () => {
+    test("captures console.log output", async () => {
       const repl = makeRepl();
-      const result = await repl.execute('print("hello"); print("world");');
+      const result = await repl.execute('console.log("hello"); console.log("world");');
       expect(result.stdout).toBe("hello\nworld");
     });
 
-    test("captures console.log output", async () => {
+    test("console.log joins multiple args with spaces", async () => {
       const repl = makeRepl();
-      const result = await repl.execute('console.log("one"); console.log("two");');
-      expect(result.stdout).toBe("one\ntwo");
-    });
-
-    test("print joins multiple args with spaces", async () => {
-      const repl = makeRepl();
-      const result = await repl.execute('print("a", "b", "c");');
+      const result = await repl.execute('console.log("a", "b", "c");');
       expect(result.stdout).toBe("a b c");
     });
 
@@ -85,23 +81,65 @@ describe("REPL sandbox", () => {
     });
   });
 
+  describe("onProgress streaming", () => {
+    test("console.log fires onProgress with stdout stream", async () => {
+      const chunks: { chunk: string; stream: string }[] = [];
+      const repl = makeRepl({
+        onProgress: (chunk, stream) => chunks.push({ chunk, stream }),
+      });
+      await repl.execute('console.log("hello");');
+      expect(chunks).toEqual([{ chunk: "hello\n", stream: "stdout" }]);
+    });
+
+    test("console.error fires onProgress with stderr stream", async () => {
+      const chunks: { chunk: string; stream: string }[] = [];
+      const repl = makeRepl({
+        onProgress: (chunk, stream) => chunks.push({ chunk, stream }),
+      });
+      await repl.execute('console.error("oops");');
+      expect(chunks).toEqual([{ chunk: "oops\n", stream: "stderr" }]);
+    });
+
+    test("console.warn fires onProgress with stderr stream", async () => {
+      const chunks: { chunk: string; stream: string }[] = [];
+      const repl = makeRepl({
+        onProgress: (chunk, stream) => chunks.push({ chunk, stream }),
+      });
+      await repl.execute('console.warn("warning");');
+      expect(chunks).toEqual([{ chunk: "warning\n", stream: "stderr" }]);
+    });
+
+    test("multiple console calls fire multiple onProgress events", async () => {
+      const chunks: { chunk: string; stream: string }[] = [];
+      const repl = makeRepl({
+        onProgress: (chunk, stream) => chunks.push({ chunk, stream }),
+      });
+      await repl.execute('console.log("a"); console.error("b"); console.log("c");');
+      expect(chunks).toEqual([
+        { chunk: "a\n", stream: "stdout" },
+        { chunk: "b\n", stream: "stderr" },
+        { chunk: "c\n", stream: "stdout" },
+      ]);
+    });
+  });
+
   describe("stdout truncation", () => {
     test("truncates stdout exceeding maxStdoutLength", async () => {
       const repl = makeRepl({ maxStdoutLength: 20 });
-      const result = await repl.execute('print("a".repeat(50));');
+      const result = await repl.execute('console.log("a".repeat(50));');
       expect(result.stdout.length).toBeLessThanOrEqual(20 + "\n...[truncated]".length);
       expect(result.stdout).toContain("...[truncated]");
     });
 
     test("does not truncate stdout within limit", async () => {
       const repl = makeRepl({ maxStdoutLength: 100 });
-      const result = await repl.execute('print("short");');
+      const result = await repl.execute('console.log("short");');
       expect(result.stdout).toBe("short");
       expect(result.stdout).not.toContain("truncated");
     });
   });
 
-  describe("FINAL() and FINAL_VAR()", () => {
+  describe("FINAL()", () => {
     test("FINAL() sets done and finalValue", async () => {
       const repl = makeRepl();
       const result = await repl.execute('FINAL("the answer");');
@@ -113,14 +151,6 @@ describe("REPL sandbox", () => {
       const repl = makeRepl();
       const result = await repl.execute("FINAL(42);");
       expect(result.finalValue).toBe("42");
-    });
-
-    test("FINAL_VAR() reads from scope and sets done", async () => {
-      const repl = makeRepl();
-      await repl.execute('scope.answer = "computed result";');
-      const result = await repl.execute('FINAL_VAR("answer");');
-      expect(result.done).toBe(true);
-      expect(result.finalValue).toBe("computed result");
     });
 
     test("getState() reflects done status after FINAL()", async () => {
@@ -143,7 +173,7 @@ describe("REPL sandbox", () => {
       });
       const result = await repl.execute(`
         const response = await llm_query("summarize", "some data here");
-        print(response);
+        console.log(response);
       `);
       expect(calls).toEqual([{ prompt: "summarize", context: "some data here" }]);
       expect(result.stdout).toBe("response to: summarize");
@@ -174,7 +204,7 @@ describe("REPL sandbox", () => {
       });
       const result = await repl.execute(`
         const r = await exec("echo hello");
-        print(r.stdout.trim());
+        console.log(r.stdout.trim());
       `);
       expect(calls).toEqual([{ command: "echo hello", timeout: undefined }]);
       expect(result.stdout).toBe("hello");
@@ -186,7 +216,7 @@ describe("REPL sandbox", () => {
       });
       const result = await repl.execute(`
         const r = await exec("failing command");
-        print(r.stdout, r.stderr, r.exitCode);
+        console.log(r.stdout, r.stderr, r.exitCode);
       `);
       expect(result.stdout).toBe("out err 1");
     });
@@ -228,7 +258,7 @@ describe("REPL sandbox", () => {
     test("error preserves stdout captured before the error", async () => {
       const repl = makeRepl();
       const result = await repl.execute(`
-        print("before error");
+        console.log("before error");
         throw new Error("boom");
       `);
       expect(result.stdout).toBe("before error");
@@ -238,7 +268,7 @@ describe("REPL sandbox", () => {
     test("error does not crash the REPL - subsequent calls work", async () => {
       const repl = makeRepl();
       await repl.execute("throw new Error('first error');");
-      const result = await repl.execute('print("recovered");');
+      const result = await repl.execute('console.log("recovered");');
       expect(result.error).toBeUndefined();
       expect(result.stdout).toBe("recovered");
     });
@@ -247,7 +277,7 @@ describe("REPL sandbox", () => {
   describe("sandboxing", () => {
     test("process is not accessible", async () => {
       const repl = makeRepl();
-      const result = await repl.execute("print(typeof process);");
+      const result = await repl.execute("console.log(typeof process);");
       // process may be 'object' in Bun's global scope, but we want to verify
       // the REPL scope doesn't explicitly provide it
       const state = repl.getState();

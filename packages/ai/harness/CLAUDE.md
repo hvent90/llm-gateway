@@ -11,6 +11,7 @@ Composition: `createAgentHarness({ harness: createGeneratorHarness() })`
 ## Key Files
 
 ### Agent Harness
+
 - `agent.ts` — createAgentHarness: wraps a GeneratorHarnessModule with agentic loop
 - Loops until no tool calls or maxIterations reached
 - Permission checking via relay events and deferred promises

@@ -24,7 +24,7 @@ export interface RlmConfig {
 export interface ReplState {
   /** Named variables in scope */
   variables: Map<string, unknown>;
-  /** Whether FINAL() or FINAL_VAR() has been called */
+  /** Whether FINAL() has been called */
   done: boolean;
   /** The final answer value, if done */
   finalValue?: string;
@@ -34,7 +34,7 @@ export interface ReplState {
 export interface ReplExecutionResult {
   /** Captured stdout output */
   stdout: string;
-  /** Whether FINAL()/FINAL_VAR() was called */
+  /** Whether FINAL() was called */
   done: boolean;
   /** The final answer, if done */
   finalValue?: string;

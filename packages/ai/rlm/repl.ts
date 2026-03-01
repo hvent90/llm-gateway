@@ -7,6 +7,7 @@ export interface ReplOptions {
   llmQuery: LlmQueryFn;
   exec?: ExecFn;
   maxStdoutLength?: number;
+  onProgress?: (chunk: string, stream: "stdout" | "stderr") => void;
 }
 
 export interface Repl {
@@ -44,27 +45,29 @@ export function createRepl(options: ReplOptions): Repl {
     const logs: string[] = [];
 
     // Inject per-execution helpers into scope
-    const print = (...args: unknown[]) => {
-      logs.push(args.map(String).join(" "));
+    const log = (...args: unknown[]) => {
+      const line = args.map(String).join(" ");
+      logs.push(line);
+      options.onProgress?.(line + "\n", "stdout");
     };
 
-    scope.print = print;
-    scope.console = { log: print, warn: print, error: print };
+    const warn = (...args: unknown[]) => {
+      const line = args.map(String).join(" ");
+      logs.push(line);
+      options.onProgress?.(line + "\n", "stderr");
+    };
+
+    scope.console = { log, warn, error: warn };
 
     scope.FINAL = (answer: unknown) => {
       done = true;
       finalValue = String(answer);
     };
 
-    scope.FINAL_VAR = (varName: string) => {
-      done = true;
-      finalValue = String(scope[varName]);
-    };
-
     try {
       // Build an async function with `scope` as the single parameter.
       // Destructure built-in names as convenience locals.
-      const builtins = ["context", "llm_query", "exec", "print", "console", "FINAL", "FINAL_VAR"];
+      const builtins = ["context", "llm_query", "exec", "console", "FINAL"];
       const destructure = builtins.map((name) => `  const ${name} = scope["${name}"];`).join("\n");
 
       const wrappedCode = `${destructure}\n${code}`;

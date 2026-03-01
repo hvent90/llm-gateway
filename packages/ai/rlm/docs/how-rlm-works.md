@@ -64,14 +64,13 @@ The REPL (`repl.ts`) provides a sandboxed async JavaScript execution environment
 
 ### Built-in variables and functions
 
-| Name | Type | Description |
-|------|------|-------------|
-| `context` | `string` | The user's input, available as a plain JS string |
-| `llm_query(prompt, context?)` | `(string, string?) => Promise<string>` | Send a task to a sub-agent with its own REPL and iteration loop. `prompt` is a short instruction (becomes the sub-agent's task). `context` is an optional data string (becomes the sub-agent's `context` variable). At depth 0, falls back to a flat one-shot call. |
-| `exec(command, timeout?)` | `(string, number?) => Promise<ShellResult>` | Execute a shell command. Returns `{ stdout, stderr, exitCode }`. Default timeout: 10s |
-| `FINAL(answer)` | `(unknown) => void` | Emit a value as the final answer and stop the loop |
-| `FINAL_VAR(varName)` | `(string) => void` | Emit a scope variable as the final answer and stop |
-| `print(...args)` / `console.log` | `(...unknown[]) => void` | Print to stdout (shown back to model) |
+| Name                          | Type                                        | Description                                                                                                                                                                                                                                                         |
+| ----------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context`                     | `string`                                    | The user's input, available as a plain JS string                                                                                                                                                                                                                    |
+| `llm_query(prompt, context?)` | `(string, string?) => Promise<string>`      | Send a task to a sub-agent with its own REPL and iteration loop. `prompt` is a short instruction (becomes the sub-agent's task). `context` is an optional data string (becomes the sub-agent's `context` variable). At depth 0, falls back to a flat one-shot call. |
+| `exec(command, timeout?)`     | `(string, number?) => Promise<ShellResult>` | Execute a shell command. Returns `{ stdout, stderr, exitCode }`. Default timeout: 10s                                                                                                                                                                               |
+| `FINAL(answer)`               | `(unknown) => void`                         | Emit a value as the final answer and stop the loop                                                                                                                                                                                                                  |
+| `console.log(...args)`        | `(...unknown[]) => void`                    | Print to stdout (shown back to model)                                                                                                                                                                                                                               |
 
 ### Persistence
 
@@ -79,7 +78,7 @@ Variables persist across REPL turns through a shared `scope` object. The model a
 
 ### Sandboxing
 
-Code runs via `AsyncFunction` (the async equivalent of `new Function()`). The REPL does not explicitly provide `process`, `require`, or other Node/Bun globals. Stdout is captured through a replaced `console` object and `print()` function, then truncated to `maxStdoutLength`.
+Code runs via `AsyncFunction` (the async equivalent of `new Function()`). The REPL does not explicitly provide `process`, `require`, or other Node/Bun globals. Stdout is captured through a replaced `console` object, then truncated to `maxStdoutLength`.
 
 ### Error handling
 
@@ -109,7 +108,7 @@ The RLM harness implements `GeneratorHarnessModule` — the same interface as pr
 
 - **RLM as provider**: The RLM harness slots in where a provider harness would go. It receives `invoke(params)` and yields `HarnessEvent`s.
 - **Two providers inside**: The RLM harness uses a `rootHarness` for the code-generating LLM calls (the model that writes REPL code) and an optional `subHarness` for `llm_query` calls inside the REPL (often a cheaper/faster model).
-- **Event compatibility**: The RLM harness yields the same event types as any provider — `harness_start`, `tool_call`, `tool_result`, `text`, `usage`, `harness_end`. Clients render RLM sessions identically to agent tool calls.
+- **Event primitives**: The RLM harness yields its own event types (`repl_input`, `repl_progress`, `repl_output`) rather than borrowing `tool_call`/`tool_result` from the agent harness. Text and reasoning stream live from the LLM.
 
 ## Event Flow
 
@@ -118,24 +117,30 @@ For a two-turn RLM session:
 ```
 harness_start (runId: "r1")
   ↓
+text (streamed: "console.log(context.length)")   ← LLM response streams live
+  ↓
 usage (from first LLM call)
   ↓
-tool_call (name: "repl_execute", input: { code: "print(context.length)" })
+repl_input (code: "console.log(context.length)")  ← extracted code
   ↓
-tool_result (output: { stdout: "512000" })
+repl_progress (chunk: "512000\n", stream: "stdout") ← live output
+  ↓
+repl_output (stdout: "512000", done: false)       ← complete result
+  ↓
+text (streamed: "FINAL('large document')")        ← LLM response streams live
   ↓
 usage (from second LLM call)
   ↓
-tool_call (name: "repl_execute", input: { code: "FINAL('large document')" })
+repl_input (code: "FINAL('large document')")
   ↓
-tool_result (output: { stdout: "" })
+repl_output (stdout: "", done: true)
   ↓
-text (content: "large document")    ← the final answer
+text (content: "large document")                  ← the final answer
   ↓
 harness_end (runId: "r1")
 ```
 
-All events share the same `runId`. The `tool_call`/`tool_result` pairs make each REPL turn visible to clients, so UIs can show the model's code and its output as the session progresses.
+All events share the same `runId`. The `repl_input`/`repl_progress`/`repl_output` events make each REPL turn visible to clients, while `text` events stream the model's reasoning in real-time.
 
 ## Design Decisions
 

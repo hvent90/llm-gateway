@@ -26,9 +26,14 @@ interface RlmHarnessOptions {
 
 /** Extract code from a model response. Looks for fenced JS blocks, falls back to entire text. */
 function extractCode(text: string): string {
-  const fenceRe = /```(?:js|javascript)\n([\s\S]*?)```/;
-  const match = fenceRe.exec(text);
-  if (match?.[1]) return match[1].trim();
+  const fenceRe = /```(?:js|javascript)\n([\s\S]*?)```/g;
+  const matches = [...text.matchAll(fenceRe)];
+  if (matches.length > 1) {
+    throw new Error(
+      "Response contained multiple code blocks. Expected exactly one ```js block per turn.",
+    );
+  }
+  if (matches.length === 1) return matches[0][1].trim();
   return text.trim();
 }
 
@@ -80,12 +85,11 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         execEvents?.push({
           type: "progress",
           event: tag({
-            type: "tool_progress" as const,
+            type: "repl_progress" as const,
             runId,
             id: uuidv7(),
-            toolCallId: currentCallId ?? uuidv7(),
-            name: "llm_query",
-            content: { promptLength: prompt.length, contextLength: ctx.length, depth },
+            chunk: `[llm_query] prompt=${prompt.length} context=${ctx.length} depth=${depth}\n`,
+            stream: "stderr" as const,
           }),
         });
 
@@ -96,6 +100,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
             config: { ...config, maxDepth: depth - 1 },
           });
           let text = "";
+          let collecting = false;
           for await (const childEvent of childRlm.invoke({
             model: config.subModel ?? params.model,
             context: ctx,
@@ -104,7 +109,9 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           })) {
             // Forward child events as progress
             execEvents?.push({ type: "progress", event: childEvent });
-            if (childEvent.type === "text") text += childEvent.content;
+            // Only collect FINAL answer text (after repl_output with done=true)
+            if (childEvent.type === "repl_output" && childEvent.done) collecting = true;
+            else if (childEvent.type === "text" && collecting) text += childEvent.content;
           }
           return text;
         }
@@ -120,7 +127,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         return text;
       };
 
-      // Queue for exec relay events that need to be yielded from the generator
+      // Queue for events that need to be yielded from the generator during REPL execution
       type ExecQueueItem =
         | { type: "relay"; event: RelayEvent }
         | { type: "progress"; event: HarnessEvent }
@@ -171,24 +178,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
         const startTime = Date.now();
 
-        const toolCallId = currentCallId ?? uuidv7();
-
-        // Helper to push a tool_progress event onto the queue
-        const pushProgress = (content: unknown) => {
-          execEvents?.push({
-            type: "progress",
-            event: tag({
-              type: "tool_progress" as const,
-              runId,
-              id: uuidv7(),
-              toolCallId,
-              name: "exec",
-              content,
-            }),
-          });
-        };
-
-        // Drain a readable stream, collecting into buffer and pushing progress events
+        // Drain a readable stream, collecting into buffer and pushing repl_progress events
         const drainStream = async (
           stream: ReadableStream<Uint8Array>,
           channel: "stdout" | "stderr",
@@ -202,7 +192,16 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
               if (done) break;
               const text = decoder.decode(value, { stream: true });
               chunks.push(text);
-              pushProgress({ channel, data: text });
+              execEvents?.push({
+                type: "progress",
+                event: tag({
+                  type: "repl_progress" as const,
+                  runId,
+                  id: uuidv7(),
+                  chunk: text,
+                  stream: channel,
+                }),
+              });
             }
           } catch {
             // Stream cancelled — return what we have
@@ -248,11 +247,15 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
                 totalRss += parseInt(rss, 10);
               }
               if (lines.length >= 2) {
-                pushProgress({
-                  pid: proc.pid,
-                  cpuPercent: totalCpu,
-                  rssKb: totalRss,
-                  wallMs: Date.now() - startTime,
+                execEvents?.push({
+                  type: "progress",
+                  event: tag({
+                    type: "repl_progress" as const,
+                    runId,
+                    id: uuidv7(),
+                    chunk: `[exec] pid=${proc.pid} cpu=${totalCpu}% rss=${totalRss}KB wall=${Date.now() - startTime}ms\n`,
+                    stream: "stderr" as const,
+                  }),
                 });
               }
             } catch {
@@ -317,12 +320,24 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         };
       };
 
-      // Create the REPL with context data
+      // Create the REPL with context data and progress streaming
       const repl = createRepl({
         context: ctx,
         llmQuery,
         exec,
         maxStdoutLength: config.maxStdoutLength,
+        onProgress: (chunk, stream) => {
+          execEvents?.push({
+            type: "progress",
+            event: tag({
+              type: "repl_progress" as const,
+              runId,
+              id: uuidv7(),
+              chunk,
+              stream,
+            }),
+          });
+        },
       });
 
       // Build system prompt with metadata only
@@ -337,30 +352,38 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
       // RLM loop
       for (let i = 0; i < config.maxIterations; i++) {
-        // Call root LLM
-        const { text: responseText, events } = await collectText(
-          rootHarness.invoke({
-            model: params.model,
-            messages,
-          }),
-        );
-
-        // Pass through usage events
-        for (const event of events) {
-          if (event.type === "usage") yield tag(event);
+        // Call root LLM — stream text and usage events as they arrive
+        let responseText = "";
+        for await (const event of rootHarness.invoke({
+          model: params.model,
+          messages,
+        })) {
+          if (event.type === "text") {
+            responseText += event.content;
+            yield tag(event);
+          } else if (event.type === "reasoning" || event.type === "usage") {
+            yield tag(event);
+          }
         }
 
         // Extract code from model response
-        const code = extractCode(responseText);
+        let code: string;
+        try {
+          code = extractCode(responseText);
+        } catch (e) {
+          const error = e instanceof Error ? e.message : String(e);
+          messages.push({ role: "assistant", content: responseText });
+          messages.push({ role: "user", content: `error: ${error}` });
+          continue;
+        }
 
-        // Yield tool_call for the REPL execution
+        // Yield repl_input for the code about to execute
         const callId = uuidv7();
         yield tag({
-          type: "tool_call",
+          type: "repl_input",
           runId,
           id: callId,
-          name: "repl_execute",
-          input: { code },
+          code,
         });
 
         // Execute in REPL with queue drain for relay events
@@ -382,17 +405,14 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
 
         execEvents = undefined;
 
-        // Build output for tool_result
-        const output = result.error
-          ? { error: result.error, stdout: result.stdout }
-          : { stdout: result.stdout };
-
+        // Yield repl_output with the complete execution result
         yield tag({
-          type: "tool_result",
+          type: "repl_output",
           runId,
           id: callId,
-          name: "repl_execute",
-          output,
+          stdout: result.stdout,
+          done: result.done,
+          ...(result.error ? { error: result.error } : {}),
         });
 
         // Append to internal message history

@@ -21,6 +21,13 @@ async function collectEvents(iterable: AsyncIterable<HarnessEvent>): Promise<Har
   return events;
 }
 
+/** Find the FINAL answer text — the last text event (emitted after repl_output with done=true). */
+function findFinalText(events: HarnessEvent[]): string | undefined {
+  const textEvents = events.filter((e) => e.type === "text");
+  const last = textEvents[textEvents.length - 1];
+  return last?.type === "text" ? last.content : undefined;
+}
+
 describe("RLM harness", () => {
   describe("simple flow", () => {
     test("model returns FINAL() in first turn — yields correct events", async () => {
@@ -42,16 +49,16 @@ describe("RLM harness", () => {
 
       const types = events.map((e) => e.type);
       expect(types[0]).toBe("harness_start");
-      expect(types).toContain("tool_call");
-      expect(types).toContain("tool_result");
+      expect(types).toContain("repl_input");
+      expect(types).toContain("repl_output");
       expect(types).toContain("text");
       expect(types[types.length - 1]).toBe("harness_end");
 
       // The final text event should contain the answer
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("hello world");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("hello world");
       }
     });
 
@@ -81,16 +88,16 @@ describe("RLM harness", () => {
         }),
       );
 
-      const toolCall = events.find((e) => e.type === "tool_call");
-      expect(toolCall).toBeDefined();
-      if (toolCall?.type === "tool_call") {
-        expect((toolCall.input as { code: string }).code).toBe('FINAL("computed")');
+      const replInput = events.find((e) => e.type === "repl_input");
+      expect(replInput).toBeDefined();
+      if (replInput?.type === "repl_input") {
+        expect(replInput.code).toBe('FINAL("computed")');
       }
 
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("computed");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("computed");
       }
     });
   });
@@ -101,7 +108,7 @@ describe("RLM harness", () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
-          { events: [{ type: "text", content: "print(context.length)" }] },
+          { events: [{ type: "text", content: "console.log(context.length)" }] },
           { events: [{ type: "text", content: 'FINAL("length is " + context.length)' }] },
         ],
       });
@@ -118,23 +125,22 @@ describe("RLM harness", () => {
         }),
       );
 
-      // Should have two tool_call/tool_result pairs
-      const toolCalls = events.filter((e) => e.type === "tool_call");
-      const toolResults = events.filter((e) => e.type === "tool_result");
+      // Should have two repl_input/repl_output pairs
+      const toolCalls = events.filter((e) => e.type === "repl_input");
+      const toolResults = events.filter((e) => e.type === "repl_output");
       expect(toolCalls.length).toBe(2);
       expect(toolResults.length).toBe(2);
 
-      // First tool_result should have stdout with the length
-      if (toolResults[0].type === "tool_result") {
-        const output = toolResults[0].output as { stdout: string };
-        expect(output.stdout).toBe("17"); // "how long is this?".length
+      // First repl_output should have stdout with the length
+      if (toolResults[0].type === "repl_output") {
+        expect(toolResults[0].stdout).toBe("17"); // "how long is this?".length
       }
 
       // Final text event
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("length is 17");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("length is 17");
       }
     });
   });
@@ -145,9 +151,9 @@ describe("RLM harness", () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
-          { events: [{ type: "text", content: "print(1)" }] },
-          { events: [{ type: "text", content: "print(2)" }] },
-          { events: [{ type: "text", content: "print(3)" }] },
+          { events: [{ type: "text", content: "console.log(1)" }] },
+          { events: [{ type: "text", content: "console.log(2)" }] },
+          { events: [{ type: "text", content: "console.log(3)" }] },
         ],
       });
 
@@ -162,21 +168,61 @@ describe("RLM harness", () => {
         }),
       );
 
-      // Should have exactly 2 tool_call/tool_result pairs (maxIterations = 2)
-      const toolCalls = events.filter((e) => e.type === "tool_call");
+      // Should have exactly 2 repl_input/repl_output pairs (maxIterations = 2)
+      const toolCalls = events.filter((e) => e.type === "repl_input");
       expect(toolCalls.length).toBe(2);
 
       // Should still end with harness_end
       expect(events[events.length - 1].type).toBe("harness_end");
 
-      // Should NOT have a text event (no FINAL was called)
-      const textEvents = events.filter((e) => e.type === "text");
-      expect(textEvents.length).toBe(0);
+      // Text events from LLM streaming are present, but no repl_output should have done=true
+      const replOutputs = events.filter((e) => e.type === "repl_output");
+      for (const o of replOutputs) {
+        if (o.type === "repl_output") expect(o.done).toBe(false);
+      }
+    });
+  });
+
+  describe("multiple code blocks", () => {
+    test("model returning multiple code blocks gets error feedback and can recover", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: '```js\nconsole.log("first")\n```\n```js\nconsole.log("second")\n```',
+              },
+            ],
+          },
+          { events: [{ type: "text", content: 'FINAL("recovered")' }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({
+          messages: [{ role: "user", content: "test" }],
+        }),
+      );
+
+      // No repl_input for the rejected turn
+      const replInputs = events.filter((e) => e.type === "repl_input");
+      expect(replInputs.length).toBe(1);
+
+      // Should recover with FINAL in second turn
+      const textEvents = events.filter((e) => e.type === "text" && e.content === "recovered");
+      expect(textEvents.length).toBe(1);
     });
   });
 
   describe("error handling", () => {
-    test("REPL error does not crash harness — yields error in tool_result", async () => {
+    test("REPL error does not crash harness — yields error in repl_output", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -196,19 +242,18 @@ describe("RLM harness", () => {
         }),
       );
 
-      // First tool_result should have an error
-      const toolResults = events.filter((e) => e.type === "tool_result");
-      expect(toolResults.length).toBe(2);
-      if (toolResults[0].type === "tool_result") {
-        const output = toolResults[0].output as { error: string };
-        expect(output.error).toBeDefined();
+      // First repl_output should have an error
+      const replOutputs = events.filter((e) => e.type === "repl_output");
+      expect(replOutputs.length).toBe(2);
+      if (replOutputs[0].type === "repl_output") {
+        expect(replOutputs[0].error).toBeDefined();
       }
 
       // Should still recover and get final answer
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("recovered");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("recovered");
       }
     });
   });
@@ -246,16 +291,16 @@ describe("RLM harness", () => {
         }),
       );
 
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("4");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("4");
       }
     });
   });
 
   describe("event ordering", () => {
-    test("events follow harness_start → tool_call/tool_result pairs → text → harness_end", async () => {
+    test("events follow harness_start → text(streamed) → repl_input → repl_output → text(FINAL) → harness_end", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [{ events: [{ type: "text", content: 'FINAL("done")' }] }],
@@ -277,15 +322,17 @@ describe("RLM harness", () => {
       // First event: harness_start
       expect(types[0]).toBe("harness_start");
 
-      // Then tool_call, tool_result pair
-      const toolCallIdx = types.indexOf("tool_call");
-      const toolResultIdx = types.indexOf("tool_result");
-      expect(toolCallIdx).toBeGreaterThan(0);
-      expect(toolResultIdx).toBeGreaterThan(toolCallIdx);
+      // Streamed text comes before repl_input
+      const firstTextIdx = types.indexOf("text");
+      const replInputIdx = types.indexOf("repl_input");
+      const replOutputIdx = types.indexOf("repl_output");
+      expect(firstTextIdx).toBeGreaterThan(0);
+      expect(replInputIdx).toBeGreaterThan(firstTextIdx);
+      expect(replOutputIdx).toBeGreaterThan(replInputIdx);
 
-      // Then text (final answer)
-      const textIdx = types.indexOf("text");
-      expect(textIdx).toBeGreaterThan(toolResultIdx);
+      // FINAL text comes after repl_output
+      const lastTextIdx = types.lastIndexOf("text");
+      expect(lastTextIdx).toBeGreaterThan(replOutputIdx);
 
       // Last event: harness_end
       expect(types[types.length - 1]).toBe("harness_end");
@@ -340,10 +387,10 @@ describe("RLM harness", () => {
         }),
       );
 
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("hello");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("hello");
       }
     });
   });
@@ -367,10 +414,10 @@ describe("RLM harness", () => {
         }),
       );
 
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("the secret message");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("the secret message");
       }
     });
   });
@@ -427,10 +474,10 @@ describe("RLM harness", () => {
       expect(relays[0].params).toEqual({ command: "echo hitl" });
 
       // Should still get final result after approval
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("hitl");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("hitl");
       }
     });
 
@@ -472,19 +519,18 @@ describe("RLM harness", () => {
         },
       );
 
-      // First tool_result should contain the denial error
-      const toolResults = events.filter((e) => e.type === "tool_result");
-      expect(toolResults.length).toBe(2);
-      if (toolResults[0].type === "tool_result") {
-        const output = toolResults[0].output as { error: string };
-        expect(output.error).toContain("exec denied");
+      // First repl_output should contain the denial error
+      const replOutputs = events.filter((e) => e.type === "repl_output");
+      expect(replOutputs.length).toBe(2);
+      if (replOutputs[0].type === "repl_output") {
+        expect(replOutputs[0].error).toContain("exec denied");
       }
 
       // Model recovers in second turn
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("recovered after denial");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("recovered after denial");
       }
     });
 
@@ -524,10 +570,10 @@ describe("RLM harness", () => {
       expect(relays.length).toBe(0);
 
       // Should get final result
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("allowed");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("allowed");
       }
     });
 
@@ -567,16 +613,16 @@ describe("RLM harness", () => {
       expect(relays.length).toBe(0);
 
       // Should get final result
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("free");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("free");
       }
     });
   });
 
   describe("exec streaming", () => {
-    test("exec produces tool_progress events with stdout chunks", async () => {
+    test("exec produces repl_progress events with stdout chunks", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -603,23 +649,22 @@ describe("RLM harness", () => {
         }),
       );
 
-      // Should have tool_progress events between tool_call and tool_result
-      const progressEvents = events.filter((e) => e.type === "tool_progress");
+      // Should have repl_progress events between repl_input and repl_output
+      const progressEvents = events.filter((e) => e.type === "repl_progress");
       expect(progressEvents.length).toBeGreaterThan(0);
 
-      // Progress events should have stdout content
+      // Progress events should have stdout chunks
       const stdoutProgress = progressEvents.filter(
-        (e) =>
-          e.type === "tool_progress" && (e.content as { channel?: string }).channel === "stdout",
+        (e) => e.type === "repl_progress" && e.stream === "stdout",
       );
       expect(stdoutProgress.length).toBeGreaterThan(0);
 
       // Final result should still work
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toContain("hello");
-        expect(textEvent.content).toContain("world");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toContain("hello");
+        expect(finalText).toContain("world");
       }
     });
 
@@ -651,33 +696,28 @@ describe("RLM harness", () => {
 
       // Should have at least 1 metrics event (1s poll, command takes ~2s)
       const metricsEvents = events.filter(
-        (e) =>
-          e.type === "tool_progress" && typeof (e.content as { pid?: number }).pid === "number",
+        (e) => e.type === "repl_progress" && e.stream === "stderr" && e.chunk.includes("[exec]"),
       );
       expect(metricsEvents.length).toBeGreaterThanOrEqual(1);
 
-      // Metrics should have expected shape
-      const m = metricsEvents[0] as { type: "tool_progress"; content: unknown };
-      const content = m.content as {
-        pid: number;
-        cpuPercent: number;
-        rssKb: number;
-        wallMs: number;
-      };
-      expect(content.pid).toBeGreaterThan(0);
-      expect(typeof content.cpuPercent).toBe("number");
-      expect(typeof content.rssKb).toBe("number");
-      expect(content.wallMs).toBeGreaterThanOrEqual(1000);
+      // Metrics should contain process info
+      const m = metricsEvents[0];
+      if (m.type === "repl_progress") {
+        expect(m.chunk).toMatch(/pid=\d+/);
+        expect(m.chunk).toMatch(/cpu=[\d.]+%/);
+        expect(m.chunk).toMatch(/rss=\d+KB/);
+        expect(m.chunk).toMatch(/wall=\d+ms/);
+      }
 
       // Final result should still work
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("done");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("done");
       }
     });
 
-    test("exec streams stderr via tool_progress", async () => {
+    test("exec streams stderr via repl_progress", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -704,21 +744,20 @@ describe("RLM harness", () => {
         }),
       );
 
-      const progressEvents = events.filter((e) => e.type === "tool_progress");
+      const progressEvents = events.filter((e) => e.type === "repl_progress");
 
       const stderrProgress = progressEvents.filter(
-        (e) =>
-          e.type === "tool_progress" && (e.content as { channel?: string }).channel === "stderr",
+        (e) => e.type === "repl_progress" && e.stream === "stderr",
       );
       expect(stderrProgress.length).toBeGreaterThan(0);
 
       const stderrContent = stderrProgress
-        .map((e) => (e as { content: { data: string } }).content.data)
+        .map((e) => (e.type === "repl_progress" ? e.chunk : ""))
         .join("");
       expect(stderrContent).toContain("err");
     });
 
-    test("tool_progress events appear between tool_call and tool_result", async () => {
+    test("repl_progress events appear between repl_input and repl_output", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -745,9 +784,9 @@ describe("RLM harness", () => {
       );
 
       const types = events.map((e) => e.type);
-      const toolCallIdx = types.indexOf("tool_call");
-      const toolResultIdx = types.indexOf("tool_result");
-      const progressIdx = types.indexOf("tool_progress");
+      const toolCallIdx = types.indexOf("repl_input");
+      const toolResultIdx = types.indexOf("repl_output");
+      const progressIdx = types.indexOf("repl_progress");
 
       expect(progressIdx).toBeGreaterThan(toolCallIdx);
       expect(progressIdx).toBeLessThan(toolResultIdx);
@@ -801,19 +840,19 @@ describe("RLM harness", () => {
       // Should have relay event
       expect(relays.length).toBe(1);
 
-      // Should also have tool_progress events
-      const progressEvents = events.filter((e) => e.type === "tool_progress");
+      // Should also have repl_progress events
+      const progressEvents = events.filter((e) => e.type === "repl_progress");
       expect(progressEvents.length).toBeGreaterThan(0);
 
       // Final result should work
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("relayed");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("relayed");
       }
     });
 
-    test("tool_progress toolCallId matches the tool_call id", async () => {
+    test("repl_progress events share runId with repl_input", async () => {
       const rootHarness = createDeterministicHarness({
         model: "deterministic",
         responses: [
@@ -839,17 +878,15 @@ describe("RLM harness", () => {
         }),
       );
 
-      const toolCall = events.find((e) => e.type === "tool_call");
-      const progressEvents = events.filter((e) => e.type === "tool_progress");
+      const replInput = events.find((e) => e.type === "repl_input");
+      const progressEvents = events.filter((e) => e.type === "repl_progress");
 
-      expect(toolCall).toBeDefined();
+      expect(replInput).toBeDefined();
       expect(progressEvents.length).toBeGreaterThan(0);
 
-      // Every tool_progress event's toolCallId must match the tool_call's id
+      // All events share the same runId
       for (const p of progressEvents) {
-        if (p.type === "tool_progress") {
-          expect(p.toolCallId).toBe(toolCall!.id);
-        }
+        expect(p.runId).toBe(replInput!.runId);
       }
     });
   });
@@ -877,7 +914,7 @@ describe("RLM harness", () => {
         model: "deterministic",
         responses: [
           // Child turn 1: examine context
-          { events: [{ type: "text", content: "print(context)" }] },
+          { events: [{ type: "text", content: "console.log(context)" }] },
           // Child turn 2: return final answer
           { events: [{ type: "text", content: 'FINAL("child result: " + context)' }] },
         ],
@@ -896,19 +933,22 @@ describe("RLM harness", () => {
       );
 
       // Parent should yield the child's final answer
-      const textEvent = events.find((e) => e.type === "text" && !("parentId" in e));
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("child result: child data");
+      const parentTextEvents = events.filter(
+        (e) => e.type === "text" && !("parentId" in e && e.parentId !== undefined),
+      );
+      const parentFinalText = parentTextEvents[parentTextEvents.length - 1];
+      expect(parentFinalText).toBeDefined();
+      if (parentFinalText?.type === "text") {
+        expect(parentFinalText.content).toBe("child result: child data");
       }
 
-      // Child events should bubble up as progress (harness_start, tool_call, tool_result, text, harness_end)
+      // Child events should bubble up as progress (harness_start, repl_input, repl_output, text, harness_end)
       const childEvents = events.filter((e) => "parentId" in e && e.parentId !== undefined);
       expect(childEvents.length).toBeGreaterThan(0);
 
-      // Child events should include tool_call events from the child REPL
-      const childToolCalls = childEvents.filter((e) => e.type === "tool_call");
-      expect(childToolCalls.length).toBe(2); // two child REPL turns
+      // Child events should include repl_input events from the child REPL
+      const childReplInputs = childEvents.filter((e) => e.type === "repl_input");
+      expect(childReplInputs.length).toBe(2); // two child REPL turns
     });
 
     test("llm_query at depth 0 falls back to flat one-shot call", async () => {
@@ -943,10 +983,10 @@ describe("RLM harness", () => {
         }),
       );
 
-      const textEvent = events.find((e) => e.type === "text");
-      expect(textEvent).toBeDefined();
-      if (textEvent?.type === "text") {
-        expect(textEvent.content).toBe("flat response");
+      const finalText = findFinalText(events);
+      expect(finalText).toBeDefined();
+      {
+        expect(finalText).toBe("flat response");
       }
 
       // No child RLM events should appear (no harness_start from child)

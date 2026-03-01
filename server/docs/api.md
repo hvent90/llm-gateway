@@ -5,10 +5,11 @@
 Returns available models from the configured harness.
 
 **Response:**
+
 ```json
 {
   "models": ["model-id-1", "model-id-2"],
-  "defaultModel": "model-id-1"  // optional, only if configured
+  "defaultModel": "model-id-1" // optional, only if configured
 }
 ```
 
@@ -19,12 +20,11 @@ Returns available models from the configured harness.
 Starts an agent session with SSE streaming.
 
 **Request Body:**
+
 ```json
 {
   "model": "model-id",
-  "messages": [
-    { "role": "user", "content": "Hello" }
-  ],
+  "messages": [{ "role": "user", "content": "Hello" }],
   "permissions": {
     "allowlist": ["bash", "read"],
     "allowOnce": ["patch"],
@@ -42,31 +42,41 @@ Starts an agent session with SSE streaming.
 Server-Sent Events (SSE) stream with the following event types:
 
 ### 1. `event: connected`
+
 First event, always sent. Contains session ID for relay resolution.
+
 ```json
 { "type": "connected", "sessionId": "uuid" }
 ```
 
 ### 2. `event: harness_start`
+
 Agent run started.
+
 ```json
 { "type": "harness_start", "runId": "uuid", "agentId": "uuid" }
 ```
 
 ### 3. `event: text`
+
 Streamed text content from agent.
+
 ```json
 { "type": "text", "id": "uuid", "runId": "uuid", "agentId": "uuid", "content": "..." }
 ```
 
 ### 4. `event: reasoning`
+
 Streamed reasoning content (internal agent thoughts).
+
 ```json
 { "type": "reasoning", "id": "uuid", "runId": "uuid", "agentId": "uuid", "content": "..." }
 ```
 
 ### 5. `event: tool_call`
+
 Tool invocation.
+
 ```json
 {
   "type": "tool_call",
@@ -79,7 +89,9 @@ Tool invocation.
 ```
 
 ### 6. `event: tool_result`
+
 Tool execution result.
+
 ```json
 {
   "type": "tool_result",
@@ -90,8 +102,54 @@ Tool execution result.
 }
 ```
 
-### 7. `event: relay`
+### 7. `event: repl_input`
+
+REPL code about to execute (RLM harness only).
+
+```json
+{
+  "type": "repl_input",
+  "id": "uuid",
+  "runId": "uuid",
+  "agentId": "uuid",
+  "code": "console.log(context.length)"
+}
+```
+
+### 8. `event: repl_progress`
+
+Live REPL output during execution (RLM harness only).
+
+```json
+{
+  "type": "repl_progress",
+  "id": "uuid",
+  "runId": "uuid",
+  "agentId": "uuid",
+  "chunk": "512000\n",
+  "stream": "stdout"
+}
+```
+
+### 9. `event: repl_output`
+
+Complete REPL execution result (RLM harness only).
+
+```json
+{
+  "type": "repl_output",
+  "id": "uuid",
+  "runId": "uuid",
+  "agentId": "uuid",
+  "stdout": "512000",
+  "done": false
+}
+```
+
+### 10. `event: relay`
+
 Permission request (agent paused until resolved via POST /chat/relay/:relayId).
+
 ```json
 {
   "type": "relay",
@@ -105,7 +163,9 @@ Permission request (agent paused until resolved via POST /chat/relay/:relayId).
 ```
 
 ### 8. `event: usage`
+
 Token usage statistics.
+
 ```json
 {
   "type": "usage",
@@ -117,7 +177,9 @@ Token usage statistics.
 ```
 
 ### 9. `event: error`
+
 Error occurred during execution.
+
 ```json
 {
   "type": "error",
@@ -128,7 +190,9 @@ Error occurred during execution.
 ```
 
 ### 10. `event: harness_end`
+
 Agent run completed.
+
 ```json
 { "type": "harness_end", "runId": "uuid", "agentId": "uuid" }
 ```
@@ -146,9 +210,11 @@ Agent run completed.
 Resolves a pending permission relay to unblock the agent.
 
 **Parameters:**
+
 - `relayId` (path) — relay identifier from the relay event
 
 **Request Body:**
+
 ```json
 {
   "sessionId": "uuid",
@@ -166,10 +232,12 @@ Resolves a pending permission relay to unblock the agent.
 - `response.reason` (string, optional) — reason for denial (ignored if approved)
 
 **Response:**
+
 ```json
 { "success": true }
 ```
 
 **Error Responses:**
+
 - `400` — Invalid request body
 - `404` — Session or relay not found

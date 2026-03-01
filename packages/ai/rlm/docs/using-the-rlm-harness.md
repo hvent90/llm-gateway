@@ -30,13 +30,13 @@ for await (const event of rlm.invoke({
 
 `RlmConfig` (types.ts:6-17) controls the inference loop:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `maxIterations` | `number` | Max REPL turns before forcing completion. Safety limit to prevent infinite loops. |
-| `maxStdoutLength` | `number` | Max characters of stdout fed back per turn. Prevents the model from flooding its own context. |
-| `metadataPrefixLength` | `number` | Length of the context prefix shown in the system prompt metadata. Gives the model a hint about the data. |
-| `subPromptBudget` | `number?` | Max chars for `llm_query` prompt arg (the instruction). Defaults to 10000. Data goes in the second `context` arg (no limit). |
-| `subModel` | `string?` | Model ID for `llm_query` calls inside the REPL. Defaults to the sub-harness's default model. Use a cheaper model here. |
+| Field                  | Type      | Description                                                                                                                  |
+| ---------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `maxIterations`        | `number`  | Max REPL turns before forcing completion. Safety limit to prevent infinite loops.                                            |
+| `maxStdoutLength`      | `number`  | Max characters of stdout fed back per turn. Prevents the model from flooding its own context.                                |
+| `metadataPrefixLength` | `number`  | Length of the context prefix shown in the system prompt metadata. Gives the model a hint about the data.                     |
+| `subPromptBudget`      | `number?` | Max chars for `llm_query` prompt arg (the instruction). Defaults to 10000. Data goes in the second `context` arg (no limit). |
+| `subModel`             | `string?` | Model ID for `llm_query` calls inside the REPL. Defaults to the sub-harness's default model. Use a cheaper model here.       |
 
 ### Choosing values
 
@@ -94,14 +94,20 @@ for await (const event of events) {
     case "harness_start":
       // Session started
       break;
-    case "tool_call":
-      // Model wrote code: event.input.code
-      break;
-    case "tool_result":
-      // REPL output: event.output.stdout, event.output.error
-      break;
     case "text":
-      // Final answer: event.content
+      // Streamed LLM text (each turn) or final answer (after FINAL())
+      break;
+    case "reasoning":
+      // Streamed reasoning tokens (if model supports it)
+      break;
+    case "repl_input":
+      // Code about to execute: event.code
+      break;
+    case "repl_progress":
+      // Live output: event.chunk, event.stream ("stdout" | "stderr")
+      break;
+    case "repl_output":
+      // Complete result: event.stdout, event.error, event.done
       break;
     case "usage":
       // Token usage from an LLM call
@@ -127,11 +133,13 @@ import { createRlmHarness } from "@/packages/ai/rlm/harness";
 
 const rlm = createRlmHarness({
   rootHarness: provider,
-  config: { /* ... */ },
+  config: {
+    /* ... */
+  },
 });
 
 const agent = createAgentHarness({
-  harness: rlm,  // RLM harness as the provider
+  harness: rlm, // RLM harness as the provider
   tools: [bashTool, readTool],
 });
 ```
@@ -148,9 +156,7 @@ import { createRlmHarness } from "@/packages/ai/rlm/harness";
 
 const rootHarness = createDeterministicHarness({
   model: "deterministic",
-  responses: [
-    { events: [{ type: "text", content: 'FINAL("hello world")' }] },
-  ],
+  responses: [{ events: [{ type: "text", content: 'FINAL("hello world")' }] }],
 });
 
 const rlm = createRlmHarness({
@@ -169,7 +175,7 @@ for await (const event of rlm.invoke({
   events.push(event);
 }
 
-// events: harness_start → tool_call → tool_result → text("hello world") → harness_end
+// events: harness_start → text(streamed) → repl_input → repl_output → text("hello world") → harness_end
 ```
 
 For multi-turn tests, provide multiple responses. The deterministic harness serves them in order:
@@ -198,7 +204,7 @@ const repl = createRepl({
 });
 
 // Execute code
-const result = await repl.execute('print(context.slice(0, 100));');
+const result = await repl.execute("console.log(context.slice(0, 100));");
 console.log(result.stdout); // first 100 chars
 
 // Variables persist
@@ -207,8 +213,8 @@ const state = repl.getState();
 console.log(state.variables.get("summary"));
 
 // Finish
-const final = await repl.execute('FINAL_VAR("summary");');
-console.log(final.done);       // true
+const final = await repl.execute("FINAL(scope.summary);");
+console.log(final.done); // true
 console.log(final.finalValue); // the summary
 ```
 
@@ -219,7 +225,7 @@ The REPL includes an `exec()` builtin that runs shell commands, making RLM a gen
 ```typescript
 // Inside the REPL, the model can write:
 const result = await exec("ls -la /tmp");
-print(result.stdout);
+console.log(result.stdout);
 // result: { stdout: string, stderr: string, exitCode: number }
 
 // With a custom timeout (seconds):
@@ -235,11 +241,11 @@ When `permissions` is passed to `invoke()`, exec calls are checked against the a
 ```typescript
 for await (const event of rlm.invoke({
   messages: [{ role: "user", content: userInput }],
-  permissions: { allowlist: [] },  // require approval for all exec calls
+  permissions: { allowlist: [] }, // require approval for all exec calls
 })) {
   if (event.type === "relay" && event.kind === "permission") {
     // event.tool === "exec", event.params === { command: "..." }
-    event.respond({ approved: true });  // or { approved: false, reason: "..." }
+    event.respond({ approved: true }); // or { approved: false, reason: "..." }
   }
 }
 ```
@@ -254,7 +260,7 @@ Permission semantics:
 
 ### REPL errors don't crash the harness
 
-If the model writes code that throws, the error is captured and returned as part of the `tool_result` event. The harness feeds the error back to the model as a user message, giving it a chance to correct its approach:
+If the model writes code that throws, the error is captured and returned as part of the `repl_output` event. The harness feeds the error back to the model as a user message, giving it a chance to correct its approach:
 
 ```
 Model: undefinedVar.boom
