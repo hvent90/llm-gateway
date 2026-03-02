@@ -90,7 +90,7 @@ export async function* parseNDJSON(
   }
 }
 
-export interface MapContext {
+interface MapContext {
   runId: string;
   textId: string;
   reasoningId: string;
@@ -136,17 +136,16 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
 
   return {
     async *invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const runId = v7();
       const model = params.model ?? defaultModel;
       if (!model) {
         yield {
           type: "error" as const,
-          runId: "no-model",
+          runId,
           error: new Error("No model specified: provide model at harness creation or invoke time"),
         };
         return;
       }
-
-      const runId = v7();
       const parentId = params.env?.parentId;
       const textId = v7();
       const reasoningId = v7();
@@ -208,7 +207,7 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
       const streamStart = Date.now();
       log("I", runId, "stream_start");
 
-      let gotText = false;
+      let gotResponse = false;
       let usageYielded = false;
       const mapCtx: MapContext = { runId, textId, reasoningId, parentId };
 
@@ -220,7 +219,7 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
           if (line.type === "stream_event" && line.event) {
             const mapped = mapStreamEvent(line.event, mapCtx);
             if (mapped) {
-              if (mapped.type === "text") gotText = true;
+              gotResponse = true;
               yield mapped;
             }
 
@@ -280,7 +279,7 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
         return;
       }
 
-      if (!gotText) {
+      if (!gotResponse) {
         yield tag({
           type: "error" as const,
           runId,

@@ -207,5 +207,7 @@ describe("Claude Code Generator Harness", () => {
     }
     const errors = events.filter((e) => e.type === "error");
     expect(errors.length).toBe(1);
+    // runId should be a valid UUID, not a placeholder
+    expect(errors[0]!.runId).toMatch(/^[0-9a-f-]+$/);
   });
 });
