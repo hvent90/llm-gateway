@@ -7,8 +7,6 @@ inside Docker containers for Terminal-Bench evaluation.
 
 import os
 import shlex
-import shutil
-import tempfile
 from pathlib import Path
 
 from harbor.agents.installed.base import BaseInstalledAgent, ExecInput
@@ -27,57 +25,11 @@ class RlmAgent(BaseInstalledAgent):
 
     @property
     def _install_agent_template_path(self) -> Path:
-        """Jinja template that installs Bun + RLM harness in the container."""
+        """Jinja template that verifies pre-built image contents."""
         return Path(__file__).parent / ".." / "templates" / "install-rlm.sh.j2"
 
     async def setup(self, environment) -> None:
-        """
-        Upload the llm-gateway source needed by the RLM harness into the
-        container before running the install script.
-        """
-        repo_root = Path(__file__).resolve().parents[2]
-        staging_dir = Path(tempfile.mkdtemp(prefix="rlm-agent-src-"))
-
-        def copy_path(rel_path: str) -> None:
-            src = repo_root / rel_path
-            dst = staging_dir / rel_path
-            if not src.exists():
-                return
-            if src.is_file():
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
-                return
-            ignore = shutil.ignore_patterns(
-                ".git",
-                "node_modules",
-                "dist",
-                "build",
-                ".DS_Store",
-                "jobs",
-                "results",
-                "logs",
-                "runs",
-                ".idea",
-                ".claude",
-                ".agent",
-                ".agents",
-                ".cursor",
-                ".gemini",
-                ".windsurf",
-                ".opencode",
-            )
-            shutil.copytree(src, dst, dirs_exist_ok=True, ignore=ignore)
-
-        try:
-            # Keep upload lean but sufficient for run-rlm.ts + harness imports.
-            for rel_path in ("package.json", "bun.lock", "tsconfig.json", "evals", "packages"):
-                copy_path(rel_path)
-
-            await environment.exec("mkdir -p /opt/llm-gateway")
-            await environment.upload_dir(staging_dir, "/opt/llm-gateway")
-            await super().setup(environment)
-        finally:
-            shutil.rmtree(staging_dir, ignore_errors=True)
+        await super().setup(environment)
 
     def create_run_agent_commands(self, instruction: str) -> list[ExecInput]:
         """
@@ -103,6 +55,7 @@ class RlmAgent(BaseInstalledAgent):
             "OPENAI_API_KEY",
             "OPENROUTER_API_KEY",
             "ZEN_API_KEY",
+            "CLAUDE_CODE_OAUTH_TOKEN",
             "EVAL_EVENT_PORT",
         ):
             if key in os.environ:
@@ -124,7 +77,8 @@ class RlmAgent(BaseInstalledAgent):
                     f'"$BUN_BIN" run evals/agents/run-rlm.ts {escaped_instruction} '
                     f"--model {shlex.quote(model)} "
                     "2>&1 | tee /logs/agent/rlm.txt; "
-                    "cp /tmp/rlm-result.txt /logs/agent/rlm-result.txt 2>/dev/null || true"
+                    "cp /tmp/rlm-result.txt /logs/agent/rlm-result.txt 2>/dev/null || true; "
+                    "cp /tmp/rlm-metrics.json /logs/agent/rlm-metrics.json 2>/dev/null || true"
                 ),
                 env=env,
             )
@@ -132,9 +86,26 @@ class RlmAgent(BaseInstalledAgent):
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         """
-        Read the RLM harness result from the logs directory (synced from
-        /logs/agent/ inside the container) and populate the agent context.
+        Read the RLM harness result and metrics from the logs directory (synced
+        from /logs/agent/ inside the container) and populate the agent context.
         """
+        import json
+
+        # --- token metrics ---
+        metrics_path = self.logs_dir / "rlm-metrics.json"
+        if metrics_path.exists():
+            try:
+                metrics = json.loads(metrics_path.read_text())
+                context.n_input_tokens = metrics.get("inputTokens") or None
+                context.n_output_tokens = metrics.get("outputTokens") or None
+                cache_read = metrics.get("cacheReadTokens", 0)
+                cache_creation = metrics.get("cacheCreationTokens", 0)
+                total_cache = (cache_read or 0) + (cache_creation or 0)
+                context.n_cache_tokens = total_cache or None
+            except Exception as e:
+                print(f"Failed to read RLM metrics: {e}")
+
+        # --- submission text ---
         result_path = self.logs_dir / "rlm-result.txt"
 
         if not result_path.exists():
@@ -151,5 +122,7 @@ class RlmAgent(BaseInstalledAgent):
             print("RLM result file is empty (harness may have hit max_iterations without FINAL())")
             return
 
-        # Populate context with the result
-        context.submission = result_text
+        context.metadata = {
+            **(context.metadata or {}),
+            "submission": result_text,
+        }
