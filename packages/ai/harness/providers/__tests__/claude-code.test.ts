@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { serializeMessages } from "../claude-code";
+import { serializeMessages, parseNDJSON } from "../claude-code";
 import type { Message } from "../../../types";
 
 describe("serializeMessages", () => {
@@ -44,5 +44,80 @@ describe("serializeMessages", () => {
     ];
     const { systemPrompt, prompt } = serializeMessages(messages);
     expect(prompt).toContain("<assistant>\n\n</assistant>");
+  });
+});
+
+describe("parseNDJSON", () => {
+  test("parses complete lines from ReadableStream", async () => {
+    const lines = ['{"type":"a","data":1}', '{"type":"b","data":2}'];
+    const input = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(lines.join("\n") + "\n"));
+        controller.close();
+      },
+    });
+
+    const parsed: unknown[] = [];
+    for await (const obj of parseNDJSON(input)) {
+      parsed.push(obj);
+    }
+
+    expect(parsed).toEqual([
+      { type: "a", data: 1 },
+      { type: "b", data: 2 },
+    ]);
+  });
+
+  test("handles chunked delivery across line boundaries", async () => {
+    const input = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const enc = new TextEncoder();
+        controller.enqueue(enc.encode('{"typ'));
+        controller.enqueue(enc.encode('e":"x"}\n{"ty'));
+        controller.enqueue(enc.encode('pe":"y"}\n'));
+        controller.close();
+      },
+    });
+
+    const parsed: unknown[] = [];
+    for await (const obj of parseNDJSON(input)) {
+      parsed.push(obj);
+    }
+
+    expect(parsed).toEqual([{ type: "x" }, { type: "y" }]);
+  });
+
+  test("skips malformed JSON lines", async () => {
+    const input = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode('{"type":"a"}\nnot-json\n{"type":"b"}\n'),
+        );
+        controller.close();
+      },
+    });
+
+    const parsed: unknown[] = [];
+    for await (const obj of parseNDJSON(input)) {
+      parsed.push(obj);
+    }
+
+    expect(parsed).toEqual([{ type: "a" }, { type: "b" }]);
+  });
+
+  test("skips empty lines", async () => {
+    const input = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('\n{"type":"a"}\n\n'));
+        controller.close();
+      },
+    });
+
+    const parsed: unknown[] = [];
+    for await (const obj of parseNDJSON(input)) {
+      parsed.push(obj);
+    }
+
+    expect(parsed).toEqual([{ type: "a" }]);
   });
 });

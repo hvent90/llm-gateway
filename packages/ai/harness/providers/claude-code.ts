@@ -42,3 +42,48 @@ export function serializeMessages(messages: Message[]): {
 
   return { systemPrompt, prompt: parts.join("\n\n") };
 }
+
+/**
+ * Parse newline-delimited JSON from a ReadableStream.
+ * Skips empty lines and malformed JSON (same resilience as Zen's SSE parser).
+ */
+export async function* parseNDJSON(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<unknown> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop()!; // keep incomplete line in buffer
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          yield JSON.parse(trimmed);
+        } catch {
+          continue; // skip malformed lines
+        }
+      }
+    }
+
+    // Handle any remaining content in buffer
+    const trimmed = buffer.trim();
+    if (trimmed) {
+      try {
+        yield JSON.parse(trimmed);
+      } catch {
+        // skip
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
