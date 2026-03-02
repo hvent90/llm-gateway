@@ -1,5 +1,10 @@
-import { describe, test, expect } from "bun:test";
-import { serializeMessages, parseNDJSON, mapStreamEvent, createGeneratorHarness } from "../claude-code";
+import { describe, test, expect, beforeAll } from "bun:test";
+import {
+  serializeMessages,
+  parseNDJSON,
+  mapStreamEvent,
+  createGeneratorHarness,
+} from "../claude-code";
 import type { HarnessEvent, Message } from "../../../types";
 
 describe("serializeMessages", () => {
@@ -28,9 +33,7 @@ describe("serializeMessages", () => {
   });
 
   test("handles no system message", () => {
-    const messages: Message[] = [
-      { role: "user", content: "Hello" },
-    ];
+    const messages: Message[] = [{ role: "user", content: "Hello" }];
     const { systemPrompt, prompt } = serializeMessages(messages);
     expect(systemPrompt).toBeUndefined();
     expect(prompt).toBe("Hello");
@@ -90,9 +93,7 @@ describe("parseNDJSON", () => {
   test("skips malformed JSON lines", async () => {
     const input = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(
-          new TextEncoder().encode('{"type":"a"}\nnot-json\n{"type":"b"}\n'),
-        );
+        controller.enqueue(new TextEncoder().encode('{"type":"a"}\nnot-json\n{"type":"b"}\n'));
         controller.close();
       },
     });
@@ -210,4 +211,108 @@ describe("Claude Code Generator Harness", () => {
     // runId should be a valid UUID, not a placeholder
     expect(errors[0]!.runId).toMatch(/^[0-9a-f-]+$/);
   });
+});
+
+describe("integration", () => {
+  beforeAll(() => {
+    // When running inside a Claude Code session, the CLAUDE_CODE_OAUTH_TOKEN
+    // from .env may be stale. Remove it so the CLI falls back to its own
+    // stored credentials (Max subscription auth).
+    if (process.env.CLAUDECODE) {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    } else if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+      throw new Error(
+        "CLAUDE_CODE_OAUTH_TOKEN required for integration tests (or run inside Claude Code)",
+      );
+    }
+  });
+
+  test(
+    "invoke yields text events from claude -p",
+    async () => {
+      const harness = createGeneratorHarness();
+      const events: HarnessEvent[] = [];
+      for await (const e of harness.invoke({
+        model: "claude-sonnet-4-6",
+        messages: [{ role: "user", content: 'Say only the word "test"' }],
+      })) {
+        events.push(e);
+      }
+
+      const textEvents = events.filter((e) => e.type === "text");
+      expect(textEvents.length).toBeGreaterThan(0);
+
+      const fullText = textEvents.map((e) => (e as any).content).join("");
+      expect(fullText.toLowerCase()).toContain("test");
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "invoke handles multi-turn conversation",
+    async () => {
+      const harness = createGeneratorHarness();
+      const events: HarnessEvent[] = [];
+      for await (const e of harness.invoke({
+        model: "claude-sonnet-4-6",
+        messages: [
+          { role: "system", content: "You are a helpful assistant. Be very brief." },
+          { role: "user", content: "Remember the number 42." },
+          { role: "assistant", content: "I will remember the number 42." },
+          { role: "user", content: "What number did I ask you to remember?" },
+        ],
+      })) {
+        events.push(e);
+      }
+
+      const textEvents = events.filter((e) => e.type === "text");
+      expect(textEvents.length).toBeGreaterThan(0);
+
+      const fullText = textEvents.map((e) => (e as any).content).join("");
+      expect(fullText).toContain("42");
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "invoke yields usage event",
+    async () => {
+      const harness = createGeneratorHarness();
+      const events: HarnessEvent[] = [];
+      for await (const e of harness.invoke({
+        model: "claude-sonnet-4-6",
+        messages: [{ role: "user", content: 'Say only "hi"' }],
+      })) {
+        events.push(e);
+      }
+
+      const usageEvents = events.filter((e) => e.type === "usage");
+      expect(usageEvents.length).toBeGreaterThanOrEqual(1);
+
+      const usage = usageEvents[0]!;
+      expect(typeof (usage as any).inputTokens).toBe("number");
+      expect(typeof (usage as any).outputTokens).toBe("number");
+    },
+    { timeout: 60000 },
+  );
+
+  test(
+    "parentId tagging works",
+    async () => {
+      const harness = createGeneratorHarness();
+      const events: HarnessEvent[] = [];
+      for await (const e of harness.invoke({
+        model: "claude-sonnet-4-6",
+        messages: [{ role: "user", content: 'Say only "hi"' }],
+        env: { parentId: "test-parent-123" },
+      })) {
+        events.push(e);
+      }
+
+      const textEvents = events.filter((e) => e.type === "text");
+      expect(textEvents.length).toBeGreaterThan(0);
+      expect((textEvents[0] as any).parentId).toBe("test-parent-123");
+    },
+    { timeout: 60000 },
+  );
 });

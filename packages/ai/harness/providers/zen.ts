@@ -126,7 +126,13 @@ interface ChatCompletionChunk {
     delta: ChatCompletionChunkDelta;
     finish_reason: string | null;
   }>;
-  usage?: { prompt_tokens: number; completion_tokens: number };
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
   error?: { message: string };
 }
 
@@ -221,7 +227,7 @@ function createGeneratorHarness(
 
       // Accumulate tool calls by index as they stream in
       const toolCallsMap: Record<number, { id: string; name: string; arguments: string }> = {};
-      let usageData: { prompt_tokens: number; completion_tokens: number } | undefined;
+      let usageData: ChatCompletionChunk["usage"] | undefined;
 
       const streamStart = Date.now();
       log("I", runId, "stream_start");
@@ -321,6 +327,9 @@ function createGeneratorHarness(
           runId,
           inputTokens: usageData.prompt_tokens,
           outputTokens: usageData.completion_tokens,
+          cacheReadTokens:
+            usageData.prompt_tokens_details?.cached_tokens ?? usageData.cache_read_input_tokens,
+          cacheCreationTokens: usageData.cache_creation_input_tokens,
         });
       }
     },

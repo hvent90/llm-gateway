@@ -1,5 +1,10 @@
 import { v7 } from "uuid";
-import type { GeneratorHarnessModule, GeneratorInvokeParams, HarnessEvent, Message } from "../../types";
+import type {
+  GeneratorHarnessModule,
+  GeneratorInvokeParams,
+  HarnessEvent,
+  Message,
+} from "../../types";
 import { log } from "../../logger";
 
 /**
@@ -49,9 +54,7 @@ export function serializeMessages(messages: Message[]): {
  * Parse newline-delimited JSON from a ReadableStream.
  * Skips empty lines and malformed JSON (same resilience as Zen's SSE parser).
  */
-export async function* parseNDJSON(
-  stream: ReadableStream<Uint8Array>,
-): AsyncGenerator<unknown> {
+export async function* parseNDJSON(stream: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -158,9 +161,12 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
       const args = [
         cliPath,
         "-p",
-        "--output-format", "stream-json",
+        "--output-format",
+        "stream-json",
         "--verbose",
-        "--model", model,
+        "--include-partial-messages",
+        "--model",
+        model,
       ];
 
       if (systemPrompt) {
@@ -174,10 +180,14 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
 
       let proc: ReturnType<typeof Bun.spawn>;
       try {
+        // Unset CLAUDECODE to allow spawning claude inside a Claude Code session
+        const env = { ...process.env };
+        delete env.CLAUDECODE;
         proc = Bun.spawn(args, {
           stdin: "pipe",
           stdout: "pipe",
           stderr: "pipe",
+          env,
         });
       } catch (error) {
         log("E", runId, "api_err", `spawn failed: ${error}`);
@@ -226,6 +236,34 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
             // Extract usage from message_delta
             if (line.event.type === "message_delta" && line.event.usage) {
               const u = line.event.usage;
+              if (u.output_tokens) {
+                yield tag({
+                  type: "usage" as const,
+                  runId,
+                  inputTokens: u.input_tokens ?? 0,
+                  outputTokens: u.output_tokens ?? 0,
+                });
+                usageYielded = true;
+              }
+            }
+          }
+
+          // CLI v2.x emits "assistant" events with the full message
+          if (line.type === "assistant" && line.message?.content) {
+            for (const block of line.message.content) {
+              if (block.type === "text" && block.text) {
+                gotResponse = true;
+                yield tag({
+                  type: "text" as const,
+                  runId,
+                  id: textId,
+                  content: block.text,
+                });
+              }
+            }
+            // Extract usage from assistant message
+            if (line.message.usage && !usageYielded) {
+              const u = line.message.usage;
               if (u.output_tokens) {
                 yield tag({
                   type: "usage" as const,

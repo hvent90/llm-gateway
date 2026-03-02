@@ -145,7 +145,15 @@ export type HarnessEvent =
       durationMs?: number;
       truncated?: boolean;
     }
-  | { type: "usage"; runId: string; parentId?: string; inputTokens: number; outputTokens: number }
+  | {
+      type: "usage";
+      runId: string;
+      parentId?: string;
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+    }
   | { type: "error"; runId: string; parentId?: string; error: Error }
   | RelayEvent;
 
