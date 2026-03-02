@@ -1,4 +1,6 @@
-import type { HarnessEvent, Message } from "../../types";
+import { v7 } from "uuid";
+import type { GeneratorHarnessModule, GeneratorInvokeParams, HarnessEvent, Message } from "../../types";
+import { log } from "../../logger";
 
 /**
  * Separate system message from conversation and serialize remaining
@@ -122,3 +124,175 @@ export function mapStreamEvent(event: Record<string, any>, ctx: MapContext): Har
 
   return null;
 }
+
+interface ClaudeCodeHarnessOptions {
+  model?: string;
+  cliPath?: string;
+}
+
+function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHarnessModule {
+  const defaultModel = options?.model;
+  const cliPath = options?.cliPath ?? "claude";
+
+  return {
+    async *invoke(params: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      const model = params.model ?? defaultModel;
+      if (!model) {
+        yield {
+          type: "error" as const,
+          runId: "no-model",
+          error: new Error("No model specified: provide model at harness creation or invoke time"),
+        };
+        return;
+      }
+
+      const runId = v7();
+      const parentId = params.env?.parentId;
+      const textId = v7();
+      const reasoningId = v7();
+
+      const tag = <T extends object>(event: T): T & { parentId?: string } =>
+        parentId ? { ...event, parentId } : event;
+
+      const { systemPrompt, prompt } = serializeMessages(params.messages);
+
+      const args = [
+        cliPath,
+        "-p",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--model", model,
+      ];
+
+      if (systemPrompt) {
+        args.push("--system-prompt", systemPrompt);
+      }
+
+      // Disable all built-in tools
+      args.push("--allowedTools", "");
+
+      log("I", runId, "api_req", `model=${model} provider=claude-code`);
+
+      let proc: ReturnType<typeof Bun.spawn>;
+      try {
+        proc = Bun.spawn(args, {
+          stdin: "pipe",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+      } catch (error) {
+        log("E", runId, "api_err", `spawn failed: ${error}`);
+        yield tag({
+          type: "error" as const,
+          runId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+        return;
+      }
+
+      // Write prompt to stdin and close
+      const stdin = proc.stdin as import("bun").FileSink;
+      try {
+        stdin.write(prompt);
+        stdin.end();
+      } catch (error) {
+        log("E", runId, "api_err", `stdin write failed: ${error}`);
+        yield tag({
+          type: "error" as const,
+          runId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+        return;
+      }
+
+      const streamStart = Date.now();
+      log("I", runId, "stream_start");
+
+      let gotText = false;
+      let usageYielded = false;
+      const mapCtx: MapContext = { runId, textId, reasoningId, parentId };
+
+      try {
+        for await (const obj of parseNDJSON(proc.stdout as ReadableStream<Uint8Array>)) {
+          const line = obj as Record<string, any>;
+
+          // Stream events contain raw Claude API events
+          if (line.type === "stream_event" && line.event) {
+            const mapped = mapStreamEvent(line.event, mapCtx);
+            if (mapped) {
+              if (mapped.type === "text") gotText = true;
+              yield mapped;
+            }
+
+            // Extract usage from message_delta
+            if (line.event.type === "message_delta" && line.event.usage) {
+              const u = line.event.usage;
+              if (u.output_tokens) {
+                yield tag({
+                  type: "usage" as const,
+                  runId,
+                  inputTokens: u.input_tokens ?? 0,
+                  outputTokens: u.output_tokens ?? 0,
+                });
+                usageYielded = true;
+              }
+            }
+          }
+
+          // ResultMessage — fallback usage source
+          if (line.type === "result" && !usageYielded) {
+            const u = line.usage;
+            if (u) {
+              yield tag({
+                type: "usage" as const,
+                runId,
+                inputTokens: u.input_tokens ?? 0,
+                outputTokens: u.output_tokens ?? 0,
+              });
+              usageYielded = true;
+            }
+          }
+        }
+      } catch (error) {
+        log("E", runId, "api_err", `stream error: ${error}`);
+        yield tag({
+          type: "error" as const,
+          runId,
+          error: error instanceof Error ? error : new Error(String(error)),
+        });
+        return;
+      }
+
+      log("I", runId, "stream_end", `dur=${Date.now() - streamStart}ms`);
+
+      // Wait for process to finish
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        let stderr = "";
+        try {
+          stderr = await new Response(proc.stderr as ReadableStream).text();
+        } catch {}
+        yield tag({
+          type: "error" as const,
+          runId,
+          error: new Error(`claude process exited with code ${exitCode}: ${stderr}`.trim()),
+        });
+        return;
+      }
+
+      if (!gotText) {
+        yield tag({
+          type: "error" as const,
+          runId,
+          error: new Error("No response from Claude Code CLI"),
+        });
+      }
+    },
+
+    async supportedModels(): Promise<string[]> {
+      return ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"];
+    },
+  };
+}
+
+export { createGeneratorHarness };

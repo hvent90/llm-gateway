@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { serializeMessages, parseNDJSON, mapStreamEvent } from "../claude-code";
-import type { Message } from "../../../types";
+import { serializeMessages, parseNDJSON, mapStreamEvent, createGeneratorHarness } from "../claude-code";
+import type { HarnessEvent, Message } from "../../../types";
 
 describe("serializeMessages", () => {
   test("extracts system message and returns single user message as-is", () => {
@@ -181,5 +181,31 @@ describe("mapStreamEvent", () => {
       content: "hi",
       parentId: "parent-1",
     });
+  });
+});
+
+describe("Claude Code Generator Harness", () => {
+  test("implements GeneratorHarnessModule interface", () => {
+    const harness = createGeneratorHarness();
+    expect(typeof harness.invoke).toBe("function");
+    expect(typeof harness.supportedModels).toBe("function");
+  });
+
+  test("supportedModels returns known Claude models", async () => {
+    const harness = createGeneratorHarness();
+    const models = await harness.supportedModels();
+    expect(models).toContain("claude-sonnet-4-6");
+    expect(models).toContain("claude-opus-4-6");
+    expect(models).toContain("claude-haiku-4-5");
+  });
+
+  test("invoke yields error when no model specified", async () => {
+    const harness = createGeneratorHarness();
+    const events: HarnessEvent[] = [];
+    for await (const e of harness.invoke({ messages: [{ role: "user", content: "hi" }] })) {
+      events.push(e);
+    }
+    const errors = events.filter((e) => e.type === "error");
+    expect(errors.length).toBe(1);
   });
 });
