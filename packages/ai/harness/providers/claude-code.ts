@@ -1,4 +1,4 @@
-import type { Message } from "../../types";
+import type { HarnessEvent, Message } from "../../types";
 
 /**
  * Separate system message from conversation and serialize remaining
@@ -86,4 +86,39 @@ export async function* parseNDJSON(
   } finally {
     reader.releaseLock();
   }
+}
+
+export interface MapContext {
+  runId: string;
+  textId: string;
+  reasoningId: string;
+  parentId?: string;
+}
+
+/**
+ * Map a raw Claude API stream event to a HarnessEvent, or null if ignored.
+ */
+export function mapStreamEvent(event: Record<string, any>, ctx: MapContext): HarnessEvent | null {
+  if (event.type !== "content_block_delta") return null;
+
+  const delta = event.delta;
+  if (!delta) return null;
+
+  const tag = <T extends object>(e: T): T & { parentId?: string } =>
+    ctx.parentId ? { ...e, parentId: ctx.parentId } : e;
+
+  if (delta.type === "text_delta" && delta.text) {
+    return tag({ type: "text" as const, runId: ctx.runId, id: ctx.textId, content: delta.text });
+  }
+
+  if (delta.type === "thinking_delta" && delta.thinking) {
+    return tag({
+      type: "reasoning" as const,
+      runId: ctx.runId,
+      id: ctx.reasoningId,
+      content: delta.thinking,
+    });
+  }
+
+  return null;
 }
