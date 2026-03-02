@@ -214,6 +214,9 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
         return;
       }
 
+      // Consume stderr in parallel so it's available for error reporting
+      const stderrPromise = new Response(proc.stderr as ReadableStream).text().catch(() => "");
+
       const streamStart = Date.now();
       log("I", runId, "stream_start");
 
@@ -305,10 +308,7 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
       // Wait for process to finish
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
-        let stderr = "";
-        try {
-          stderr = await new Response(proc.stderr as ReadableStream).text();
-        } catch {}
+        const stderr = await stderrPromise;
         yield tag({
           type: "error" as const,
           runId,

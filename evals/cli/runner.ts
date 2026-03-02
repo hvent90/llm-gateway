@@ -147,7 +147,8 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV BUN_INSTALL="/root/.bun"
 ENV PATH="/root/.bun/bin:$PATH"
 
-RUN bun add -g @anthropic-ai/claude-code
+RUN curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1
+RUN npm install -g @anthropic-ai/claude-code
 
 COPY llm-gateway/ /opt/llm-gateway/
 WORKDIR /opt/llm-gateway
