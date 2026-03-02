@@ -11,7 +11,7 @@ import {
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { type EvalConfig, runEval } from "./runner";
 import { CompareView } from "./compare";
-import { createGeneratorHarness } from "../../packages/ai/harness/providers/zen.ts";
+import { createGeneratorHarness } from "../../packages/ai/harness/providers/claude-code.ts";
 import { spawnSync } from "node:child_process";
 import { TaskSelectScreen, fetchTasks } from "./task-select";
 import { ModelSelectScreen } from "./model-select";
@@ -250,6 +250,7 @@ function RunningScreen(props: {
   output: string[];
   exitCode: number | null;
   replData: Accessor<ReplData>;
+  userMessage: Accessor<string | null>;
   onBack: () => void;
 }) {
   const dimensions = useTerminalDimensions();
@@ -288,7 +289,7 @@ function RunningScreen(props: {
       <Show
         when={view() === "repl"}
         fallback={
-          <scrollbox height={scrollboxHeight()} focused={view() === "log"}>
+          <scrollbox height={scrollboxHeight()} focused={view() === "log"} stickyScroll stickyStart="bottom">
             <Show when={props.output.length === 0 && props.exitCode === null}>
               <text fg="#888">Waiting for output...</text>
             </Show>
@@ -296,7 +297,7 @@ function RunningScreen(props: {
           </scrollbox>
         }
       >
-        <ReplView data={props.replData} focused={view() === "repl"} />
+        <ReplView data={props.replData} focused={view() === "repl"} userMessage={props.userMessage} />
       </Show>
       <Show when={props.exitCode !== null}>
         <box marginTop={1}>
@@ -344,6 +345,7 @@ export function App() {
     createInitialConversation(),
   );
   const replData = createMemo(() => projectRepl(conversation().graph));
+  const [userMessage, setUserMessage] = createSignal<string | null>(null);
   const [compareCount, setCompareCount] = createSignal(0);
   const quickRunConfig = createMemo<EvalConfig | null>(() => lastRunConfig() ?? storedLastConfig() ?? null);
 
@@ -385,6 +387,7 @@ export function App() {
     setOutput([]);
     setExitCode(null);
     setLastRunConfig({ ...config, taskNames: [...config.taskNames] });
+    setUserMessage(null);
     setConversation(createInitialConversation());
     setConversation((s) => reduceConversation(s, { type: "stream_start" }));
 
@@ -394,6 +397,14 @@ export function App() {
         setOutput((prev) => [...prev, line]);
       },
       (event) => {
+        const ev = event as Record<string, unknown>;
+        if (ev.type === "user_prompt" && typeof ev.content === "string") {
+          setUserMessage(ev.content);
+          // Reset conversation for each new task (concurrent task isolation)
+          setConversation(createInitialConversation());
+          setConversation((s) => reduceConversation(s, { type: "stream_start" }));
+          return;
+        }
         setConversation((s) => reduceConversation(s, event as ConversationEvent));
       },
     )
@@ -522,6 +533,7 @@ export function App() {
               output={output()}
               exitCode={exitCode()}
               replData={replData}
+              userMessage={userMessage}
               onBack={() => setScreen("main")}
             />
           </Match>
