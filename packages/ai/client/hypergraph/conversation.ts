@@ -3,8 +3,6 @@ import type { ServerEvent } from "../server-event";
 import type { ConversationGraph, NodeId } from "./types";
 import { createGraph } from "./primitives";
 import { reduceEvent, createReducerState, type GraphEvent, type ReducerState } from "./reducer";
-import { defaultActive } from "./walk";
-
 export interface PendingRelay {
   relayId: string;
   runId: string;
@@ -48,6 +46,33 @@ export function createInitialConversation(): ConversationState {
   };
 }
 
+/**
+ * Incrementally update the active set based on new message nodes added
+ * by the reducer. This avoids the O(N) full-graph scan of defaultActive.
+ *
+ * New messages are identified by comparing messageCounter before/after.
+ * Summary edges (which remove sources from active) are not created during
+ * normal streaming, so we only handle them if detected.
+ */
+function updateActive(
+  active: Set<NodeId>,
+  oldMessageCounter: number,
+  newMessageCounter: number,
+): Set<NodeId> {
+  for (let i = oldMessageCounter + 1; i <= newMessageCounter; i++) {
+    active.add(`msg:${i}`);
+  }
+  return active;
+}
+
+function reduceAndUpdate(state: ConversationState, event: GraphEvent): ConversationState {
+  const oldMsgCounter = state.reducerState.messageCounter;
+  const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
+  updateActive(state.active, oldMsgCounter, reducerState.messageCounter);
+  // Return new object reference for Solid.js reactivity while sharing internals
+  return { ...state, graph, reducerState };
+}
+
 export function reduceConversation(
   state: ConversationState,
   event: ConversationEvent,
@@ -56,14 +81,8 @@ export function reduceConversation(
     case "connected":
       return { ...state, sessionId: event.sessionId };
 
-    case "user": {
-      const [graph, reducerState] = reduceEvent(
-        state.graph,
-        state.reducerState,
-        event as GraphEvent,
-      );
-      return { ...state, graph, reducerState, active: defaultActive(graph) };
-    }
+    case "user":
+      return reduceAndUpdate(state, event as GraphEvent);
 
     case "relay": {
       const relay: PendingRelay = {
@@ -73,44 +92,30 @@ export function reduceConversation(
         tool: event.tool,
         params: event.params,
       };
-      const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
-      return {
-        ...state,
-        pendingRelays: [...state.pendingRelays, relay],
-        graph,
-        reducerState,
-        active: defaultActive(graph),
-      };
+      state.pendingRelays = [...state.pendingRelays, relay];
+      return reduceAndUpdate(state, event);
     }
 
     case "relay_resolved": {
-      const pendingRelays = state.pendingRelays.filter((r) => r.relayId !== event.relayId);
-      return { ...state, pendingRelays };
+      state.pendingRelays = state.pendingRelays.filter((r) => r.relayId !== event.relayId);
+      return state;
     }
 
     case "stream_start":
-      return { ...state, isConnected: true };
+      state.isConnected = true;
+      return state;
 
     case "stream_end":
-      return { ...state, isConnected: false };
+      state.isConnected = false;
+      return state;
 
-    case "harness_start": {
-      const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
-      return { ...state, graph, reducerState, active: defaultActive(graph) };
-    }
+    case "harness_start":
+      return reduceAndUpdate(state, event);
 
-    case "harness_end": {
-      const [graph, reducerState] = reduceEvent(state.graph, state.reducerState, event);
-      return { ...state, graph, reducerState, active: defaultActive(graph) };
-    }
+    case "harness_end":
+      return reduceAndUpdate(state, event);
 
-    default: {
-      const [graph, reducerState] = reduceEvent(
-        state.graph,
-        state.reducerState,
-        event as ServerEvent,
-      );
-      return { ...state, graph, reducerState, active: defaultActive(graph) };
-    }
+    default:
+      return reduceAndUpdate(state, event as ServerEvent);
   }
 }
