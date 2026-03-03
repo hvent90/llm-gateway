@@ -26,16 +26,11 @@ interface RlmHarnessOptions {
   _depth?: number;
 }
 
-/** Extract code from a model response. Looks for fenced JS blocks, falls back to entire text. */
+/** Extract code from a model response. Looks for fenced JS blocks, concatenates if multiple. */
 function extractCode(text: string): string {
   const fenceRe = /```(?:js|javascript)\n([\s\S]*?)```/g;
   const matches = [...text.matchAll(fenceRe)];
-  if (matches.length > 1) {
-    throw new Error(
-      "Response contained multiple code blocks. Expected exactly one ```js block per turn.",
-    );
-  }
-  if (matches.length === 1) return matches[0][1].trim();
+  if (matches.length >= 1) return matches.map((m) => m[1].trim()).join("\n");
   throw new Error("Response contained no code block. Expected exactly one ```js block per turn.");
 }
 
@@ -214,6 +209,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         const effectiveTimeout = timeout ?? config.execTimeout ?? 10;
         const proc = spawn({
           cmd: ["sh", "-c", command],
+          cwd: config.execCwd,
           stdout: "pipe",
           stderr: "pipe",
           detached: true,

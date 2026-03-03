@@ -1,4 +1,5 @@
 import { spawn } from "bun";
+import { spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, mkdtempSync, cpSync, rmSync, writeFileSync } from "fs";
 import { resolve, join, relative } from "path";
 import { tmpdir } from "os";
@@ -146,9 +147,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl unzip ca-c
 RUN curl -fsSL https://bun.sh/install | bash
 ENV BUN_INSTALL="/root/.bun"
 ENV PATH="/root/.bun/bin:$PATH"
-
-RUN curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.gz | tar -xz -C /usr/local --strip-components=1
-RUN npm install -g @anthropic-ai/claude-code
 
 COPY llm-gateway/ /opt/llm-gateway/
 WORKDIR /opt/llm-gateway
@@ -372,6 +370,38 @@ export async function runEval(
     },
   });
 
+  // --- Cleanup on interrupt ---
+  // When the user Ctrl+C's out of the TUI, the Harbor process (and its
+  // Docker containers) would otherwise keep running in the background.
+  // Kill Harbor, stop any Docker containers it spawned, and tear down
+  // the event server.
+  let cleaned = false;
+  function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    try { proc.kill("SIGTERM"); } catch {}
+    try { eventServer?.server.stop(); } catch {}
+    // Stop Docker containers spawned from rlm/* images (Harbor uses
+    // docker-compose under the hood but doesn't clean up on SIGTERM).
+    try {
+      const ps = spawnSync("docker", [
+        "ps", "--format", "{{.ID}} {{.Image}}",
+      ], { encoding: "utf8", timeout: 5_000 });
+      const ids = (ps.stdout ?? "").split("\n")
+        .filter((l) => / rlm\//.test(l))
+        .map((l) => l.split(" ")[0]!)
+        .filter(Boolean);
+      if (ids.length > 0) {
+        spawnSync("docker", ["stop", ...ids], { timeout: 30_000 });
+      }
+    } catch {}
+  }
+
+  const onSignal = () => { cleanup(); process.exit(1); };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  process.on("exit", cleanup);
+
   async function readStream(stream: ReadableStream<Uint8Array>) {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -402,9 +432,12 @@ export async function runEval(
 
   const exitCode = await proc.exited;
 
-  if (eventServer) {
-    eventServer.server.stop();
-  }
+  // Normal exit — clean up and remove signal handlers so they don't
+  // leak if runEval is called multiple times in the same process.
+  cleanup();
+  process.off("SIGINT", onSignal);
+  process.off("SIGTERM", onSignal);
+  process.off("exit", cleanup);
 
   return exitCode;
 }

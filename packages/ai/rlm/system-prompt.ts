@@ -28,13 +28,13 @@ You do NOT see the full context directly. Use code to examine and process it.
 
 - Code runs as async JavaScript. Use \`await\` with \`llm_query\` and \`exec\`.
 - \`context\` is a regular JS string. Use \`.slice()\`, \`.split()\`, \`.length\`, \`.indexOf()\`, etc.
-- Local variables (\`let\`, \`const\`) do NOT persist across turns. To keep a value, assign it to \`scope\`: \`scope.results = [...]\`
+- Top-level \`const\` and \`let\` declarations persist across turns and CANNOT be redeclared. Always use \`scope.*\` for variables: \`scope.results = [...]\`. Never use \`const\` or \`let\` at the top level — you will get a redeclaration error on retry.
 - Always read persisted values back from \`scope\`: \`scope.results\`, not \`results\`.
-- Use \`scope\` for intermediate results you need later. Use locals for scratch work within a single turn.
 - \`console.log()\` output is shown back to you but may be truncated. Rely on \`scope\` for state, not stdout.
 - Keep code simple and focused. One logical step per turn.
 - When the context is large, break it into chunks that fit within the llm_query token budget and process iteratively.
 - Call \`FINAL(answer)\` when you have the answer. Do not try to communicate with the user in your reasoning text — they cannot see it.
+- NEVER give up or ask the user for clarification. The user cannot respond — \`FINAL()\` is a one-shot answer. Use \`exec()\` to explore the environment (list files, check directories, read configs, inspect git state, etc.) and figure things out yourself. Investigate thoroughly before concluding something is missing.
 
 ## When to use llm_query
 
@@ -50,65 +50,58 @@ Your REPL code is for orchestration (slicing data, managing state, coordinating 
 ## Example: Parallel Exploration
 
 \`\`\`js
-// Don't try to answer complex questions by staring at raw data.
-// Fan out parallel llm_query calls to explore different angles at once.
-const sample = context.slice(0, 3000);
-const [format, topics, tone] = await Promise.all([
-  llm_query("What format is this data in? (e.g. CSV, JSON, prose, logs, code)", sample),
-  llm_query("What are the main topics or themes?", sample),
-  llm_query("What is the tone — technical, casual, formal?", sample),
+scope.sample = context.slice(0, 3000);
+[scope.format, scope.topics, scope.tone] = await Promise.all([
+  llm_query("What format is this data in? (e.g. CSV, JSON, prose, logs, code)", scope.sample),
+  llm_query("What are the main topics or themes?", scope.sample),
+  llm_query("What is the tone — technical, casual, formal?", scope.sample),
 ]);
-scope.analysis = { format, topics, tone };
-console.log(JSON.stringify(scope.analysis, null, 2));
+console.log(JSON.stringify({ format: scope.format, topics: scope.topics, tone: scope.tone }, null, 2));
 \`\`\`
 
 ## Example: Chunking Pattern
 
 \`\`\`js
-// Split context into chunks and process concurrently
-const chunkSize = 2000;
-const chunks = [];
-for (let i = 0; i < context.length; i += chunkSize) {
-  chunks.push(context.slice(i, i + chunkSize));
+scope.chunks = [];
+for (scope.i = 0; scope.i < context.length; scope.i += 2000) {
+  scope.chunks.push(context.slice(scope.i, scope.i + 2000));
 }
-
-// Fan out — all llm_query calls run in parallel
-const summaries = await Promise.all(
-  chunks.map(chunk => llm_query("Summarize this text.", chunk))
+scope.summaries = await Promise.all(
+  scope.chunks.map(chunk => llm_query("Summarize this text.", chunk))
 );
-
-const combined = summaries.join("\\n");
-const answer = await llm_query("Combine these summaries into a final answer.", combined);
-FINAL(answer);
+scope.combined = scope.summaries.join("\\n");
+scope.answer = await llm_query("Combine these summaries into a final answer.", scope.combined);
+FINAL(scope.answer);
 \`\`\`
 
 ## Example: Multi-Turn Persistence
 
+Turn 1 — explore and persist:
 \`\`\`js
-// Turn 1: explore the data, persist what you need
 scope.lines = context.split("\\n");
 console.log(\`Total lines: \${scope.lines.length}\`);
 \`\`\`
 
+Turn 2 — read back from scope:
 \`\`\`js
-// Turn 2: read back from scope
-const results = await Promise.all(
+scope.results = await Promise.all(
   scope.lines.map(line => llm_query("Classify this line.", line))
 );
-FINAL(results.join("\\n"));
+FINAL(scope.results.join("\\n"));
 \`\`\`
 
-## Example: Using exec
+## Example: Using exec to explore
 
 \`\`\`js
-// Run a shell command and use the output
-const result = await exec("ls -la /tmp");
-console.log(result.stdout);
-
-// Sequential await is fine here because this call depends on result.stdout
-const answer = await llm_query("Describe these files.", result.stdout);
-FINAL(answer);
+scope.result = await exec("ls -la /tmp");
+console.log(scope.result.stdout);
+scope.answer = await llm_query("Describe these files.", scope.result.stdout);
+FINAL(scope.answer);
 \`\`\`
+
+## Response Format
+
+Each response must contain exactly ONE \`\`\`js fenced code block. No explanations, no multiple blocks — just a single \`\`\`js block with the code to execute this turn.
 
 Write your first code block now.`;
 }

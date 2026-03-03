@@ -13,7 +13,7 @@
  */
 
 import { createRlmHarness } from "../../packages/ai/rlm/harness.ts";
-import { createGeneratorHarness } from "../../packages/ai/harness/providers/claude-code.ts";
+import { createGeneratorHarness } from "../../packages/ai/harness/providers/zen.ts";
 import type { HarnessEvent } from "../../packages/ai/types.ts";
 
 const RESULT_PATH = "/tmp/rlm-result.txt";
@@ -76,6 +76,7 @@ function parseArgs(argv: string[]): {
   model: string;
   maxIterations: number;
   depth: number;
+  cwd: string | undefined;
 } {
   // argv: [bun, script, instruction, ...flags]
   const args = argv.slice(2);
@@ -83,6 +84,7 @@ function parseArgs(argv: string[]): {
   let model = "claude-sonnet-4-6";
   let maxIterations = 1000;
   let depth = 4;
+  let cwd: string | undefined;
 
   let i = 0;
   while (i < args.length) {
@@ -95,6 +97,9 @@ function parseArgs(argv: string[]): {
     } else if (args[i] === "--depth" && i + 1 < args.length) {
       depth = parseInt(args[i + 1]!, 10);
       i += 2;
+    } else if (args[i] === "--cwd" && i + 1 < args.length) {
+      cwd = args[i + 1]!;
+      i += 2;
     } else if (!instruction) {
       instruction = args[i]!;
       i += 1;
@@ -105,16 +110,18 @@ function parseArgs(argv: string[]): {
 
   if (!instruction) {
     console.error(
-      "Usage: bun run run-rlm.ts <instruction> [--model <model>] [--max-iterations <n>] [--depth <n>]",
+      "Usage: bun run run-rlm.ts <instruction> [--model <model>] [--max-iterations <n>] [--depth <n>] [--cwd <dir>]",
     );
     process.exit(1);
   }
 
-  return { instruction, model, maxIterations, depth };
+  return { instruction, model, maxIterations, depth, cwd };
 }
 
 async function main() {
-  const { instruction, model, maxIterations, depth } = parseArgs(process.argv);
+  const { instruction, model, maxIterations, depth, cwd } = parseArgs(process.argv);
+
+  if (cwd) process.chdir(cwd);
 
   if (EVENT_URLS.length > 0) {
     console.error(`[run-rlm] event relay candidates: ${EVENT_URLS.join(", ")}`);

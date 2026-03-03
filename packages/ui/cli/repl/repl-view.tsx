@@ -43,6 +43,7 @@ export function ReplView(props: ReplViewProps) {
   const [selectedUser, setSelectedUser] = createSignal(false);
   const [activeTab, setActiveTab] = createSignal<TabId>("reasoning");
   const [userOverrodeTab, setUserOverrodeTab] = createSignal(false);
+  const [userOverrideTurn, setUserOverrideTurn] = createSignal(false);
   const [cursorIndex, setCursorIndex] = createSignal(0);
   const [showHelp, setShowHelp] = createSignal(false);
 
@@ -182,7 +183,7 @@ export function ReplView(props: ReplViewProps) {
         return;
       }
 
-      if (count > prevTurnCount && prevTurnCount > 0) {
+      if (count > prevTurnCount && prevTurnCount > 0 && !userOverrideTurn()) {
         setSelectedTurnIndex(count - 1);
         setUserOverrodeTab(false);
         // Also advance cursor to match
@@ -274,6 +275,7 @@ export function ReplView(props: ReplViewProps) {
         const idx = selectedTurnIndex();
         if (idx > 0) {
           setSelectedTurnIndex(idx - 1);
+          setUserOverrideTurn(true);
           setUserOverrodeTab(false);
         }
         break;
@@ -282,13 +284,16 @@ export function ReplView(props: ReplViewProps) {
         if (selectedUser()) break;
         const idx = selectedTurnIndex();
         if (idx < totalTurns() - 1) {
-          setSelectedTurnIndex(idx + 1);
+          const next = idx + 1;
+          setSelectedTurnIndex(next);
+          if (next === totalTurns() - 1) setUserOverrideTurn(false);
           setUserOverrodeTab(false);
         }
         break;
       }
       case "a":
         setUserOverrodeTab(false);
+        setUserOverrideTurn(false);
         break;
       case "y": {
         const relays = pendingRelays();

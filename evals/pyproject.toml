@@ -2,8 +2,11 @@
 name = "llm-gateway-evals"
 version = "0.1.0"
 description = "Terminal-Bench evaluation infrastructure for llm-gateway harnesses"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = ["harbor"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents"]
 
 [build-system]
 requires = ["hatchling"]

@@ -223,13 +223,16 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
       let gotResponse = false;
       let usageYielded = false;
       const mapCtx: MapContext = { runId, textId, reasoningId, parentId };
+      const unhandledLines: string[] = [];
 
       try {
         for await (const obj of parseNDJSON(proc.stdout as ReadableStream<Uint8Array>)) {
           const line = obj as Record<string, any>;
+          let handled = false;
 
           // Stream events contain raw Claude API events
           if (line.type === "stream_event" && line.event) {
+            handled = true;
             const mapped = mapStreamEvent(line.event, mapCtx);
             if (mapped) {
               gotResponse = true;
@@ -253,6 +256,7 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
 
           // CLI v2.x emits "assistant" events with the full message
           if (line.type === "assistant" && line.message?.content) {
+            handled = true;
             for (const block of line.message.content) {
               if (block.type === "text" && block.text) {
                 gotResponse = true;
@@ -280,17 +284,24 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
           }
 
           // ResultMessage — fallback usage source
-          if (line.type === "result" && !usageYielded) {
-            const u = line.usage;
-            if (u) {
-              yield tag({
-                type: "usage" as const,
-                runId,
-                inputTokens: u.input_tokens ?? 0,
-                outputTokens: u.output_tokens ?? 0,
-              });
-              usageYielded = true;
+          if (line.type === "result") {
+            handled = true;
+            if (!usageYielded) {
+              const u = line.usage;
+              if (u) {
+                yield tag({
+                  type: "usage" as const,
+                  runId,
+                  inputTokens: u.input_tokens ?? 0,
+                  outputTokens: u.output_tokens ?? 0,
+                });
+                usageYielded = true;
+              }
             }
+          }
+
+          if (!handled) {
+            unhandledLines.push(JSON.stringify(line));
           }
         }
       } catch (error) {
@@ -309,10 +320,11 @@ function createGeneratorHarness(options?: ClaudeCodeHarnessOptions): GeneratorHa
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
         const stderr = await stderrPromise;
+        const details = stderr || unhandledLines.join("\n") || "(no output)";
         yield tag({
           type: "error" as const,
           runId,
-          error: new Error(`claude process exited with code ${exitCode}: ${stderr}`.trim()),
+          error: new Error(`claude process exited with code ${exitCode}: ${details}`.trim()),
         });
         return;
       }

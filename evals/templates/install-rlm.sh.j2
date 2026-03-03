@@ -8,12 +8,8 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun 2>/dev/null || true
 ln -sf "$BUN_INSTALL/bin/bunx" /usr/local/bin/bunx 2>/dev/null || true
 
-# Ensure claude CLI is on PATH for all shells
-ln -sf "$BUN_INSTALL/bin/claude" /usr/local/bin/claude 2>/dev/null || true
-
 # Verify pre-built image contents
 command -v bun >/dev/null 2>&1 || { echo "FATAL: bun not found" >&2; exit 1; }
-command -v claude >/dev/null 2>&1 || { echo "FATAL: claude CLI not found" >&2; exit 1; }
 [[ -d /opt/llm-gateway/node_modules ]] || { echo "FATAL: node_modules missing" >&2; exit 1; }
 
 cd /opt/llm-gateway

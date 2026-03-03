@@ -18,6 +18,8 @@ export interface RlmConfig {
   maxDepth?: number;
   /** Default timeout in seconds for exec() calls (default: 10) */
   execTimeout?: number;
+  /** Working directory for exec() calls. Defaults to the current process cwd. */
+  execCwd?: string;
 }
 
 /** State of the REPL environment */

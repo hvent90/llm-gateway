@@ -27,16 +27,30 @@ function parseDifficulty(val: unknown): TaskInfo["difficulty"] {
 }
 
 export async function fetchTasks(): Promise<TaskInfo[]> {
-  const download = Bun.spawn({
-    cmd: ["harbor", "datasets", "download", "terminal-bench@2.0"],
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  await download.exited;
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+
+  // Prefer the venv-local harbor so the TUI works without activating the venv.
+  // Falls back to whatever `harbor` is on PATH.
+  const venvHarbor = join(import.meta.dir, "../.venv/bin/harbor");
+  const harborBin = existsSync(venvHarbor) ? venvHarbor : "harbor";
+
+  try {
+    const download = Bun.spawn({
+      cmd: [harborBin, "datasets", "download", "terminal-bench@2.0"],
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    // 30-second timeout so a missing/slow harbor doesn't hang the TUI forever
+    await Promise.race([download.exited, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 30_000))]);
+  } catch {
+    // harbor not installed or download failed — fall through to read cache
+  }
 
   const cacheDir = `${process.env.HOME}/.cache/harbor/tasks`;
   const { readdirSync, readFileSync } = await import("node:fs");
-  const { join } = await import("node:path");
+
+  if (!existsSync(cacheDir)) return [];
 
   const hashDirs = readdirSync(cacheDir, { withFileTypes: true }).filter((d) => d.isDirectory());
 
@@ -342,7 +356,11 @@ export function TaskSelectScreen(props: {
       {/* Task list */}
       <box flexDirection="column" flexGrow={1}>
         <Show when={filteredTasks().length === 0}>
-          <text fg="#555">No tasks match the current filters</text>
+          <text fg="#555">
+            {props.tasks.length === 0
+              ? "No tasks loaded — run `cd evals && uv sync` then restart"
+              : "No tasks match the current filters"}
+          </text>
         </Show>
         <For each={visibleTasks()}>
           {(task) => {

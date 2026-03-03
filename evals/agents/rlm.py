@@ -5,6 +5,7 @@ Implements BaseInstalledAgent so Harbor can install and run the RLM harness
 inside Docker containers for Terminal-Bench evaluation.
 """
 
+import json
 import os
 import shlex
 from pathlib import Path
@@ -55,13 +56,15 @@ class RlmAgent(BaseInstalledAgent):
             "OPENAI_API_KEY",
             "OPENROUTER_API_KEY",
             "ZEN_API_KEY",
-            "CLAUDE_CODE_OAUTH_TOKEN",
             "EVAL_EVENT_PORT",
         ):
             if key in os.environ:
                 env[key] = os.environ[key]
 
+        setup_command = "true"
+
         return [
+            ExecInput(command=setup_command, env=env),
             ExecInput(
                 command=(
                     "set -o pipefail; "
@@ -73,15 +76,17 @@ class RlmAgent(BaseInstalledAgent):
                     'echo "bun binary not found (expected on PATH or at $HOME/.bun/bin/bun)" >&2; '
                     "exit 127; "
                     "fi; "
-                    f"cd /opt/llm-gateway && "
+                    'TASK_CWD="$(pwd)"; '
+                    "cd /opt/llm-gateway && "
                     f'"$BUN_BIN" run evals/agents/run-rlm.ts {escaped_instruction} '
                     f"--model {shlex.quote(model)} "
+                    '--cwd "$TASK_CWD" '
                     "2>&1 | tee /logs/agent/rlm.txt; "
                     "cp /tmp/rlm-result.txt /logs/agent/rlm-result.txt 2>/dev/null || true; "
                     "cp /tmp/rlm-metrics.json /logs/agent/rlm-metrics.json 2>/dev/null || true"
                 ),
                 env=env,
-            )
+            ),
         ]
 
     def populate_context_post_run(self, context: AgentContext) -> None:

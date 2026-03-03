@@ -2,6 +2,7 @@ import {
   createSignal,
   createMemo,
   createResource,
+  onMount,
   For,
   Match,
   Show,
@@ -11,7 +12,7 @@ import {
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/solid";
 import { type EvalConfig, runEval } from "./runner";
 import { CompareView } from "./compare";
-import { createGeneratorHarness } from "../../packages/ai/harness/providers/claude-code.ts";
+import { createGeneratorHarness } from "../../packages/ai/harness/providers/zen.ts";
 import { spawnSync } from "node:child_process";
 import { TaskSelectScreen, fetchTasks } from "./task-select";
 import { ModelSelectScreen } from "./model-select";
@@ -149,6 +150,12 @@ function SelectScreen(props: {
   const options = () => props.options.map((o) => ({ name: o, description: o, value: o }));
   const selectedIndex = () => props.options.indexOf(props.selected);
 
+  // Defer activation by one tick so the Enter keypress that navigated here
+  // (e.g. from ModelSelectScreen's custom useKeyboard) doesn't immediately
+  // trigger onSelect and skip this screen.
+  const [active, setActive] = createSignal(false);
+  onMount(() => setTimeout(() => setActive(true), 0));
+
   return (
     <box flexDirection="column" padding={2} flexGrow={1}>
       <text fg="#00ffff">
@@ -158,7 +165,7 @@ function SelectScreen(props: {
       <select
         options={options()}
         selectedIndex={selectedIndex()}
-        onSelect={(_, opt) => opt && props.onSelect(opt.name)}
+        onSelect={(_, opt) => opt && active() && props.onSelect(opt.name)}
         focused
         flexGrow={1}
         {...SELECT_STYLE}
