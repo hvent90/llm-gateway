@@ -29,6 +29,7 @@ export interface ReplViewProps {
   permissions?: PermissionHandlers;
   focused?: boolean;
   userMessage?: Accessor<string | null>;
+  onSave?: () => Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,7 @@ export function ReplView(props: ReplViewProps) {
   const [userOverrideTurn, setUserOverrideTurn] = createSignal(false);
   const [cursorIndex, setCursorIndex] = createSignal(0);
   const [showHelp, setShowHelp] = createSignal(false);
+  const [saveStatus, setSaveStatus] = createSignal<string | null>(null);
 
   const dimensions = useTerminalDimensions();
   const sidebarWidth = () => (dimensions().width < 60 ? 0 : 24);
@@ -311,8 +313,7 @@ export function ReplView(props: ReplViewProps) {
         if (count > 0 && !selectedUser()) {
           setSelectedTurnIndex(count - 1);
           const sIdx = entries.findIndex(
-            (e) =>
-              e.type === "turn" && e.runId === selectedRunId() && e.turnIndex === count - 1,
+            (e) => e.type === "turn" && e.runId === selectedRunId() && e.turnIndex === count - 1,
           );
           if (sIdx >= 0) setCursorIndex(sIdx);
           // Sync tab to current phase
@@ -345,6 +346,22 @@ export function ReplView(props: ReplViewProps) {
         }
         break;
       }
+      case "s": {
+        if (props.onSave) {
+          setSaveStatus("Saving...");
+          props
+            .onSave()
+            .then((path) => {
+              setSaveStatus(`Saved: ${path}`);
+              setTimeout(() => setSaveStatus(null), 3000);
+            })
+            .catch((err) => {
+              setSaveStatus(`Save failed: ${err}`);
+              setTimeout(() => setSaveStatus(null), 3000);
+            });
+        }
+        break;
+      }
       case "?":
         setShowHelp((v) => !v);
         break;
@@ -370,13 +387,21 @@ export function ReplView(props: ReplViewProps) {
         />
       </box>
 
-      {showHelp() ? (
+      {saveStatus() ? (
         <box paddingLeft={1} flexShrink={0}>
-          <text fg={colors.textDim}>j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm p:permit-all ?:close</text>
+          <text fg="#22c55e">{saveStatus()}</text>
+        </box>
+      ) : showHelp() ? (
+        <box paddingLeft={1} flexShrink={0}>
+          <text fg={colors.textDim}>
+            j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm p:permit-all s:save ?:close
+          </text>
         </box>
       ) : (
         <box paddingLeft={1} flexShrink={0}>
-          <text fg={colors.textMuted}>j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm p:permit-all ?:help</text>
+          <text fg={colors.textMuted}>
+            j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm p:permit-all s:save ?:help
+          </text>
         </box>
       )}
     </box>

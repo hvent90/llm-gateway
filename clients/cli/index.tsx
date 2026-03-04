@@ -20,6 +20,7 @@ import {
 import type { ConversationState, PendingRelay } from "../../packages/ai/client/hypergraph";
 import type { ViewNode, ViewContent } from "../../packages/ai/client/hypergraph";
 import { ReplView } from "../../packages/ui/cli/repl";
+import { TrajectoryRecorder } from "../../packages/ai/client/trajectory";
 
 // Configuration from environment
 const MODEL = process.env.DEFAULT_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
@@ -160,6 +161,12 @@ function ChatApp() {
   const [lastUserMessage, setLastUserMessage] = createSignal<string | null>(null);
   const [focusZone, setFocusZone] = createSignal<"input" | "repl">("input");
 
+  const recorder = new TrajectoryRecorder({
+    model: MODEL,
+    mode: "rlm",
+    serverUrl: SERVER_URL,
+  });
+
   useKeyboard((key) => {
     if (key.name === "tab") {
       setMode((m) => (m === "agent" ? "rlm" : "agent"));
@@ -198,6 +205,12 @@ function ChatApp() {
           : { approved: false, reason: "User denied" },
       );
 
+      recorder.recordRelayResolution({
+        relayId: relay.relayId,
+        approved,
+        always: always ?? false,
+      });
+
       setConversation((s) =>
         reduceConversation(s, {
           type: "relay_resolved",
@@ -224,6 +237,7 @@ function ChatApp() {
         mode: mode(),
         ...(mode() === "rlm" && { maxIterations: RLM_MAX_ITERATIONS, maxDepth: RLM_MAX_DEPTH }),
       })) {
+        recorder.record(event);
         setConversation((s) => reduceConversation(s, event));
       }
     } finally {
@@ -258,6 +272,7 @@ function ChatApp() {
     if (isStreaming()) return;
 
     // Add user message to conversation graph
+    recorder.recordUserMessage(userInput);
     setLastUserMessage(userInput);
     setConversation((s) =>
       reduceConversation(s, { type: "user", runId: nextUserId(), content: userInput }),
@@ -279,6 +294,13 @@ function ChatApp() {
         setStatusText(`Connected to ${SERVER_URL}`);
       }
     }
+  }
+
+  async function handleSaveTrajectory(): Promise<string> {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const path = `trajectories/trajectory-${timestamp}.json`;
+    await recorder.flush(path);
+    return path;
   }
 
   const replPermissions = {
@@ -398,6 +420,7 @@ function ChatApp() {
             permissions={replPermissions}
             focused={focusZone() === "repl"}
             userMessage={lastUserMessage}
+            onSave={handleSaveTrajectory}
           />
         </box>
       </Show>
