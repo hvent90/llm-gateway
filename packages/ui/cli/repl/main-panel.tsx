@@ -23,7 +23,7 @@ function StatusBar(props: {
   totalTurns: number;
 }) {
   return (
-    <box flexDirection="row" gap={2} paddingLeft={1} paddingRight={1}>
+    <box flexDirection="row" gap={2} paddingLeft={1} paddingRight={1} flexShrink={0}>
       <Show
         when={props.agent && props.turn}
         fallback={<text fg={colors.textMuted}>Select a turn</text>}
@@ -37,6 +37,13 @@ function StatusBar(props: {
         </text>
         <Show when={props.turn!.output?.durationMs !== undefined}>
           <text fg={colors.textDim}>{(props.turn!.output!.durationMs! / 1000).toFixed(2)}s</text>
+        </Show>
+        <Show when={props.turn!.usage}>
+          {(() => {
+            const u = props.turn!.usage!;
+            const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
+            return <text fg={colors.textDim}>tokens: {fmt(u.inputTokens)} in, {fmt(u.cacheReadTokens ?? 0)} cached, {fmt(u.outputTokens)} out</text>;
+          })()}
         </Show>
         <Show when={props.agent!.finalAnswer}>
           <text fg="#22c55e">FINAL</text>
@@ -55,7 +62,7 @@ function TabBar(props: { activeTab: TabId; hasFinalAnswer: boolean }) {
   ];
 
   return (
-    <box flexDirection="row" gap={1} paddingLeft={1} borderColor={colors.border}>
+    <box flexDirection="row" gap={1} paddingLeft={1} borderColor={colors.border} flexShrink={0}>
       {tabs()
         .filter((t) => t.show)
         .map((tab) => (

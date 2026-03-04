@@ -78,12 +78,16 @@ class RlmAgent(BaseInstalledAgent):
                     "fi; "
                     'TASK_CWD="$(pwd)"; '
                     "cd /opt/llm-gateway && "
-                    f'"$BUN_BIN" run evals/agents/run-rlm.ts {escaped_instruction} '
+                    f'"$BUN_BIN" run --smol evals/agents/run-rlm.ts {escaped_instruction} '
                     f"--model {shlex.quote(model)} "
                     '--cwd "$TASK_CWD" '
                     "2>&1 | tee /logs/agent/rlm.txt; "
+                    "RLM_EXIT=$?; "
+                    'echo "[run-rlm] bun exit code: $RLM_EXIT" >> /logs/agent/rlm.txt; '
                     "cp /tmp/rlm-result.txt /logs/agent/rlm-result.txt 2>/dev/null || true; "
-                    "cp /tmp/rlm-metrics.json /logs/agent/rlm-metrics.json 2>/dev/null || true"
+                    "cp /tmp/rlm-metrics.json /logs/agent/rlm-metrics.json 2>/dev/null || true; "
+                    "cp /tmp/rlm-diagnostics.json /logs/agent/rlm-diagnostics.json 2>/dev/null || true; "
+                    "cp /tmp/cores/core.* /logs/agent/ 2>/dev/null || true"
                 ),
                 env=env,
             ),
@@ -131,3 +135,22 @@ class RlmAgent(BaseInstalledAgent):
             **(context.metadata or {}),
             "submission": result_text,
         }
+
+        # --- diagnostics (crash debugging) ---
+        diag_path = self.logs_dir / "rlm-diagnostics.json"
+        if diag_path.exists():
+            try:
+                diag = json.loads(diag_path.read_text())
+                context.metadata["diagnostics"] = diag
+                snapshots = diag.get("snapshots", [])
+                if snapshots:
+                    last = snapshots[-1]
+                    print(
+                        f"RLM diagnostics: {len(snapshots)} snapshots, "
+                        f"last iter={last.get('iteration')} "
+                        f"rss={last.get('rssKB')}KB "
+                        f"heap={last.get('heapUsedMB')}/{last.get('heapTotalMB')}MB "
+                        f"events={last.get('eventCount')}"
+                    )
+            except Exception as e:
+                print(f"Failed to read RLM diagnostics: {e}")

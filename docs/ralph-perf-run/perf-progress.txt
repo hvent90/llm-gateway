@@ -1,0 +1,85 @@
+## Codebase Patterns
+
+- **Event stream structure**: harness_start → [text, repl_input, repl_progress*M, repl_output]*N → harness_end
+- **Graph copying is the bottleneck**: `addNode`, `addEdge`, `extendEdge` all create new Map copies via `new Map(existing)`. `reduceEvent` copies 11 Maps in ReducerState per event.
+- **defaultActive iterates all nodes+edges**: Called after every event in `reduceConversation`, iterates all nodes to find messages, then all edges for summaries.
+- **projectRepl does full graph re-walk**: `collectRunChunks` iterates ALL nodes to find start chunk for each runId. `collectRunIds` also iterates all nodes.
+- **Import paths**: From `__tests__/perf/`, server-event is at `../../../server-event`, types/primitives/reducer at `../../<name>`, sidebar at `../../../../../../packages/ui/cli/repl/sidebar`
+
+---
+
+## 2026-03-03 - P0
+- Created event stream generators (`generators.ts`) parameterizable by (turns, progressChunksPerTurn, numRuns)
+- Created timing harness (`timing.ts`) with benchReduceEvent, benchReduceConversation, benchProjectRepl, benchFullPipeline
+- Created 13 benchmark tests covering generator correctness, timing harness validation, and baseline measurements
+- Files: `packages/ai/client/hypergraph/__tests__/perf/{generators,timing,benchmark.test}.ts`
+- Results: All 13 tests pass, all 208 existing tests pass
+- **Learnings for future iterations:**
+  - The immutable Map copying pattern in primitives.ts (addNode/addEdge/extendEdge) is the core cost driver — each creates new Maps
+  - reduceEvent copies 11 Maps per event (ReducerState) even when most don't change
+  - defaultActive in walk.ts iterates all nodes to find messages — linear with graph size
+  - projectRepl's collectRunChunks iterates ALL graph nodes per runId to find start chunk — O(nodes * runs)
+  - flattenAgents is a simple recursive tree walk — unlikely to be the bottleneck compared to reduce/project
+- **Mutable primitives pattern**: `addNodeMut`/`addEdgeMut`/`extendEdgeMut` mutate in place for O(1) per call. Use in hot paths where caller owns the graph. Keep immutable variants for operations.ts and tests.
+- **Incremental active set**: Track `messageCounter` before/after `reduceEvent`, add only new `msg:N` IDs. Avoids O(N) `defaultActive` scan.
+- **Spawn edge check**: Must capture `isFirstEventForRun = !state.lastChunkByRunId.has(runId)` BEFORE any state mutations, since `lastChunkByRunId.set()` happens early in the function.
+
+---
+
+## 2026-03-03 - P1
+- Eliminated O(N^2) scaling in reduceEvent by mutating graph in place instead of copying Maps
+- Added mutable primitive variants: addNodeMut, addEdgeMut, extendEdgeMut
+- Replaced defaultActive (O(N) per call) with incremental updateActive (O(1))
+- Files: `primitives.ts`, `reducer.ts`, `conversation.ts`, `reducer.test.ts`, `p1-sublinear.test.ts`
+- Benchmark results:
+  - reduceEvent @5300 events: degradation 9x → 0.35x
+  - reduceConversation @5300 events: degradation 12x → 0.46x
+  - reduceEvent @20600 events: degradation 31x → 0.33x
+  - reduceConversation @20600 events: degradation 23x → 0.54x
+  - Total time @20600 events: ~10s → 15ms
+- **Learnings for future iterations:**
+  - Mutating in place is safe when all callers immediately reassign: `[g, s] = reduceEvent(g, s, e)`
+  - Must capture pre-mutation state values before any writes for later checks (spawn edge condition)
+  - Need new object reference for Solid.js reactivity: `{ ...state, graph, reducerState }`
+  - The bottleneck was Map copying, not algorithm complexity — reducing from N copies to 0 per event was the key
+---
+
+## 2026-03-03 - P2
+- projectRepl already meets 16ms budget thanks to P1 optimizations (nodeIndex, in-place mutation)
+- Created 3 benchmark tests for different graph sizes (5K, 20K, 30K nodes)
+- Files: `p2-projection.test.ts`
+- Benchmark results:
+  - @5804 nodes: median=1.6ms
+  - @21604 nodes: median=6.1ms
+  - @31237 nodes (3 runs): median=11.0ms
+- **Learnings:** nodeIndex makes findEdges O(degree) instead of O(edges), which is the key enabler
+---
+
+## 2026-03-03 - P3
+- Multi-run scaling already meets requirements thanks to P1 nodeIndex optimization
+- Created 2 benchmark tests verifying linear scaling with number of runs
+- Files: `p3-multirun.test.ts`
+- Benchmark results:
+  - 1 run: median=0.49ms, 2 runs: median=0.93ms, 4 runs: median=1.59ms, 5 runs: median=2.11ms
+  - Scaling is roughly linear with runs (not quadratic)
+- **Learnings:** nodeIndex from P1 was the universal fix — it makes both per-event and per-projection costs bounded by local graph structure, not global graph size
+---
+
+## 2026-03-03 - P4
+- Full pipeline (reduce→project→flatten) now stays under 50ms per event even at end of large sessions
+- Created 4 integration benchmarks including a 20K-event end-of-session test
+- For large streams, bulk-reduce first then pipeline the last batch (simulates real freeze scenario)
+- Files: `p4-sustained.test.ts`
+- **Learnings:**
+  - Running projectRepl on EVERY event is expensive at scale (20K * 6ms = 120s total)
+  - The real fix for the eval CLI should include throttling projectRepl to ~60fps
+  - Per-event cost remains constant (O(1) reduce + O(N) project) but total cost is O(N^2) if projection is called per event
+---
+
+## 2026-03-03 - P5
+- All 195 pre-existing tests pass (plus 26 new perf tests = 221 total)
+- No changes needed — P1 optimizations preserved all projection output semantics
+- One test updated: reducer "graph is immutable" → "graph is mutated in place for performance"
+  (documents intentional design change, not a behavioral regression)
+---
+

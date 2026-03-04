@@ -18,6 +18,7 @@ import type { HarnessEvent } from "../../packages/ai/types.ts";
 
 const RESULT_PATH = "/tmp/rlm-result.txt";
 const METRICS_PATH = "/tmp/rlm-metrics.json";
+const DIAGNOSTICS_PATH = "/tmp/rlm-diagnostics.json";
 
 const EVENT_PORT = process.env.EVAL_EVENT_PORT;
 const RELAY_HOST_CANDIDATES = ["host.docker.internal", "host.containers.internal", "172.17.0.1"];
@@ -33,16 +34,16 @@ let relayUrlIndex = 0;
  * non-serializable fields (Error objects, respond callbacks).
  */
 function serializeEvent(event: HarnessEvent): string {
-  const agentId = "rlm";
+  const base = { agentId: "rlm" };
   if (event.type === "error") {
     const { error, ...rest } = event;
-    return JSON.stringify({ ...rest, agentId, message: error.message });
+    return JSON.stringify({ ...base, ...rest, message: error.message });
   }
   if (event.type === "relay") {
     const { respond, ...rest } = event;
-    return JSON.stringify({ ...rest, agentId });
+    return JSON.stringify({ ...base, ...rest });
   }
-  return JSON.stringify({ ...event, agentId });
+  return JSON.stringify({ ...base, ...event });
 }
 
 /** POST event to the eval TUI's event server, awaited for ordering. */
@@ -118,10 +119,81 @@ function parseArgs(argv: string[]): {
   return { instruction, model, maxIterations, depth, cwd };
 }
 
+/** Diagnostics: periodic memory/state snapshots written to disk so we have data after a crash. */
+interface DiagSnapshot {
+  iteration: number;
+  timestamp: string;
+  rssKB: number;
+  heapUsedMB: number;
+  heapTotalMB: number;
+  eventCount: number;
+  messageHistorySize: number;
+  lastEventType: string;
+}
+
+const diagnostics: DiagSnapshot[] = [];
+let diagEventCount = 0;
+let diagLastEventType = "";
+
+function takeDiagSnapshot(iteration: number, messageHistorySize: number): DiagSnapshot {
+  // Bun.gc returns heap stats when called with true
+  if (typeof Bun.gc === "function") Bun.gc(false);
+
+  const mem = process.memoryUsage();
+  const snap: DiagSnapshot = {
+    iteration,
+    timestamp: new Date().toISOString(),
+    rssKB: Math.round(mem.rss / 1024),
+    heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+    heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+    eventCount: diagEventCount,
+    messageHistorySize,
+    lastEventType: diagLastEventType,
+  };
+  diagnostics.push(snap);
+  return snap;
+}
+
+/** Flush diagnostics to disk — called periodically and on crash signal. */
+async function flushDiagnostics() {
+  try {
+    await Bun.write(DIAGNOSTICS_PATH, JSON.stringify({ pid: process.pid, bun: Bun.version, snapshots: diagnostics }, null, 2));
+  } catch {}
+}
+
+/** Register signal handlers to capture state before crash death. */
+function registerCrashHandlers() {
+  const handler = async (signal: string) => {
+    console.error(`[run-rlm] received ${signal} — flushing diagnostics`);
+    await flushDiagnostics();
+    process.exit(128);
+  };
+  // SIGSEGV can't be caught, but SIGABRT/SIGBUS/SIGTERM can
+  for (const sig of ["SIGABRT", "SIGBUS", "SIGTERM", "SIGINT"] as const) {
+    process.on(sig, () => handler(sig));
+  }
+  process.on("uncaughtException", async (err) => {
+    console.error(`[run-rlm] uncaughtException: ${err.message}`);
+    diagnostics.push({ iteration: -1, timestamp: new Date().toISOString(), rssKB: 0, heapUsedMB: 0, heapTotalMB: 0, eventCount: diagEventCount, messageHistorySize: 0, lastEventType: `CRASH:${err.message}` });
+    await flushDiagnostics();
+    process.exit(1);
+  });
+  process.on("unhandledRejection", async (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    console.error(`[run-rlm] unhandledRejection: ${msg}`);
+    diagnostics.push({ iteration: -1, timestamp: new Date().toISOString(), rssKB: 0, heapUsedMB: 0, heapTotalMB: 0, eventCount: diagEventCount, messageHistorySize: 0, lastEventType: `REJECTION:${msg}` });
+    await flushDiagnostics();
+  });
+}
+
 async function main() {
   const { instruction, model, maxIterations, depth, cwd } = parseArgs(process.argv);
 
   if (cwd) process.chdir(cwd);
+
+  registerCrashHandlers();
+
+  console.error(`[run-rlm] pid=${process.pid} bun=${Bun.version} rss=${Math.round(process.memoryUsage().rss / 1024)}KB`);
 
   if (EVENT_URLS.length > 0) {
     console.error(`[run-rlm] event relay candidates: ${EVENT_URLS.join(", ")}`);
@@ -144,13 +216,27 @@ async function main() {
   let finalText = "";
   let collecting = false;
   let rootRunId: string | undefined;
+  let currentIteration = 0;
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const usageSteps: Array<{
+    iteration: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
+  }> = [];
+
+  // Take initial snapshot
+  takeDiagSnapshot(0, 0);
 
   for await (const event of rlm.invoke({
     model,
     messages: [{ role: "user", content: instruction }],
     context: instruction,
   })) {
+    diagEventCount++;
+    diagLastEventType = event.type;
+
     // Track root harness runId from the first harness_start
     if (event.type === "harness_start" && !rootRunId) {
       rootRunId = event.runId;
@@ -174,9 +260,16 @@ async function main() {
       usage.outputTokens += event.outputTokens;
       usage.cacheReadTokens += event.cacheReadTokens ?? 0;
       usage.cacheCreationTokens += event.cacheCreationTokens ?? 0;
+      usageSteps.push({
+        iteration: currentIteration,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheReadTokens: event.cacheReadTokens ?? 0,
+        cacheCreationTokens: event.cacheCreationTokens ?? 0,
+      });
     }
 
-    // Human-readable stderr logs
+    // Human-readable stderr logs + diagnostics
     if (event.type === "error") {
       console.error(`[rlm error] ${event.error}`);
     }
@@ -184,8 +277,18 @@ async function main() {
       console.error(`[repl error] iteration ${event.iteration}: ${event.error}`);
     }
     if (event.type === "repl_input") {
+      currentIteration = event.iteration ?? currentIteration;
       console.error(`[iteration ${event.iteration}] executing code (${event.code.length} chars)`);
     }
+
+    // Snapshot every 5 iterations on repl_output (after exec completes)
+    if (event.type === "repl_output" && currentIteration % 5 === 0) {
+      const snap = takeDiagSnapshot(currentIteration, 0);
+      console.error(`[diag] iter=${snap.iteration} rss=${snap.rssKB}KB heap=${snap.heapUsedMB}/${snap.heapTotalMB}MB events=${snap.eventCount}`);
+      // Flush to disk every snapshot so we have data after crash
+      await flushDiagnostics();
+    }
+
     // Only break on the root harness's end — child harness_end events flow through
     if (event.type === "harness_end" && event.runId === rootRunId) {
       console.error(`[harness_end] reason=${event.reason} iterations=${event.iterations}`);
@@ -193,8 +296,12 @@ async function main() {
     }
   }
 
+  // Final snapshot
+  takeDiagSnapshot(currentIteration, 0);
+  await flushDiagnostics();
+
   await Bun.write(RESULT_PATH, finalText);
-  await Bun.write(METRICS_PATH, JSON.stringify(usage));
+  await Bun.write(METRICS_PATH, JSON.stringify({ ...usage, steps: usageSteps }));
   console.log(`Result written to ${RESULT_PATH} (${finalText.length} chars)`);
   console.log(`Metrics: input=${usage.inputTokens} output=${usage.outputTokens} cacheRead=${usage.cacheReadTokens} cacheCreation=${usage.cacheCreationTokens}`);
 }

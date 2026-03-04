@@ -113,6 +113,8 @@ export type ServerEvent =
       parentId?: string;
       inputTokens: number;
       outputTokens: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
     }
   | { type: "error"; runId: string; agentId: string; parentId?: string; message: string };
 

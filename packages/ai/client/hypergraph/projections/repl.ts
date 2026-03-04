@@ -15,6 +15,13 @@ export type ReplPhase =
   | "error"
   | "permission";
 
+export interface TurnUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
 export interface ReplTurn {
   iteration: number;
   phase: ReplPhase;
@@ -31,6 +38,7 @@ export interface ReplTurn {
   } | null;
   errorMessage: string | null;
   childAgents: ReplAgent[];
+  usage: TurnUsage | null;
 }
 
 export interface ReplAgent {
@@ -65,6 +73,7 @@ function createTurn(iteration: number): ReplTurn {
     output: null,
     errorMessage: null,
     childAgents: [],
+    usage: null,
   };
 }
 
@@ -271,6 +280,15 @@ export function projectRepl(graph: ConversationGraph): ReplData {
           agent.status = "error";
           currentTurn.phase = "error";
           currentTurn.errorMessage = event.message;
+          break;
+        }
+        case "usage": {
+          currentTurn.usage = {
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            cacheReadTokens: event.cacheReadTokens,
+            cacheCreationTokens: event.cacheCreationTokens,
+          };
           break;
         }
         case "relay": {

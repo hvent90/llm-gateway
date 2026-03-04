@@ -24,6 +24,8 @@ import { ReplView } from "../../packages/ui/cli/repl";
 // Configuration from environment
 const MODEL = process.env.DEFAULT_MODEL ?? "nvidia/nemotron-nano-9b-v2:free";
 const SERVER_URL = process.env.LLM_GATEWAY_URL ?? "http://localhost:4000";
+const RLM_MAX_ITERATIONS = parseInt(process.env.RLM_MAX_ITERATIONS ?? "100", 10);
+const RLM_MAX_DEPTH = parseInt(process.env.RLM_MAX_DEPTH ?? "4", 10);
 
 const sseTransport = createSSETransport({ baseUrl: SERVER_URL });
 const httpTransport = createHTTPTransport({ baseUrl: SERVER_URL });
@@ -179,7 +181,7 @@ function ChatApp() {
   const replData = createMemo(() => projectRepl(conversation().graph));
 
   // Resolve a pending relay request
-  async function resolveRelay(approved: boolean) {
+  async function resolveRelay(approved: boolean, always?: boolean) {
     const relay = pendingRelay();
     const session = conversation().sessionId;
     if (!relay || !session) {
@@ -188,10 +190,13 @@ function ChatApp() {
     }
 
     try {
-      await httpTransport.resolveRelay(session, relay.relayId, {
-        approved,
-        reason: approved ? undefined : "User denied",
-      });
+      await httpTransport.resolveRelay(
+        session,
+        relay.relayId,
+        approved
+          ? { approved: true, always: always ?? false }
+          : { approved: false, reason: "User denied" },
+      );
 
       setConversation((s) =>
         reduceConversation(s, {
@@ -217,6 +222,7 @@ function ChatApp() {
         model: MODEL,
         messages: userMessages,
         mode: mode(),
+        ...(mode() === "rlm" && { maxIterations: RLM_MAX_ITERATIONS, maxDepth: RLM_MAX_DEPTH }),
       })) {
         setConversation((s) => reduceConversation(s, event));
       }
@@ -283,6 +289,9 @@ function ChatApp() {
     onDeny: (relay: { relayId: string }) => {
       const r = conversation().pendingRelays.find((p) => p.relayId === relay.relayId);
       if (r) resolveRelay(false);
+    },
+    onPermitAll: () => {
+      resolveRelay(true, true);
     },
   };
 

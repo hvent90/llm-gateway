@@ -102,10 +102,10 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
         const rlm = createRlmHarness({
           rootHarness: createGeneratorHarness(),
           config: {
-            maxIterations: body.maxIterations ?? 10,
+            maxIterations: body.maxIterations ?? 100,
             maxStdoutLength: 4000,
             metadataPrefixLength: 200,
-            maxDepth: body.maxDepth ?? 2,
+            maxDepth: body.maxDepth ?? 4,
           },
         });
         const orchestrator = new AgentOrchestrator(rlm);

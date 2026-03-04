@@ -20,6 +20,7 @@ export interface PendingRelay {
 export interface PermissionHandlers {
   onAllow: (relay: PendingRelay) => void;
   onDeny: (relay: PendingRelay) => void;
+  onPermitAll: () => void;
 }
 
 export interface ReplViewProps {
@@ -238,6 +239,7 @@ export function ReplView(props: ReplViewProps) {
         const next = Math.min(entries.length - 1, cursorIndex() + 1);
         setCursorIndex(next);
         if (entries[next]) selectEntry(entries[next]!);
+        setUserOverrideTurn(true);
         break;
       }
       case "k":
@@ -245,6 +247,7 @@ export function ReplView(props: ReplViewProps) {
         const prev = Math.max(0, cursorIndex() - 1);
         setCursorIndex(prev);
         if (entries[prev]) selectEntry(entries[prev]!);
+        setUserOverrideTurn(true);
         break;
       }
       case "return": {
@@ -274,9 +277,14 @@ export function ReplView(props: ReplViewProps) {
         if (selectedUser()) break;
         const idx = selectedTurnIndex();
         if (idx > 0) {
-          setSelectedTurnIndex(idx - 1);
+          const newIdx = idx - 1;
+          setSelectedTurnIndex(newIdx);
           setUserOverrideTurn(true);
           setUserOverrodeTab(false);
+          const sIdx = entries.findIndex(
+            (e) => e.type === "turn" && e.runId === selectedRunId() && e.turnIndex === newIdx,
+          );
+          if (sIdx >= 0) setCursorIndex(sIdx);
         }
         break;
       }
@@ -284,21 +292,49 @@ export function ReplView(props: ReplViewProps) {
         if (selectedUser()) break;
         const idx = selectedTurnIndex();
         if (idx < totalTurns() - 1) {
-          const next = idx + 1;
-          setSelectedTurnIndex(next);
-          if (next === totalTurns() - 1) setUserOverrideTurn(false);
+          const newIdx = idx + 1;
+          setSelectedTurnIndex(newIdx);
+          if (newIdx === totalTurns() - 1) setUserOverrideTurn(false);
           setUserOverrodeTab(false);
+          const sIdx = entries.findIndex(
+            (e) => e.type === "turn" && e.runId === selectedRunId() && e.turnIndex === newIdx,
+          );
+          if (sIdx >= 0) setCursorIndex(sIdx);
         }
         break;
       }
-      case "a":
+      case "a": {
         setUserOverrodeTab(false);
         setUserOverrideTurn(false);
+        // Immediately jump to latest turn
+        const count = totalTurns();
+        if (count > 0 && !selectedUser()) {
+          setSelectedTurnIndex(count - 1);
+          const sIdx = entries.findIndex(
+            (e) =>
+              e.type === "turn" && e.runId === selectedRunId() && e.turnIndex === count - 1,
+          );
+          if (sIdx >= 0) setCursorIndex(sIdx);
+          // Sync tab to current phase
+          const t = agent()?.turns[count - 1];
+          if (t?.phase) {
+            const newTab = phaseToTab[t.phase];
+            if (newTab) setActiveTab(newTab);
+          }
+        }
         break;
+      }
       case "y": {
         const relays = pendingRelays();
         if (relays.length > 0 && props.permissions) {
           props.permissions.onAllow(relays[0]!);
+        }
+        break;
+      }
+      case "p": {
+        const allRelays = props.pendingRelays?.() ?? [];
+        if (allRelays.length > 0 && props.permissions) {
+          props.permissions.onPermitAll();
         }
         break;
       }
@@ -335,12 +371,12 @@ export function ReplView(props: ReplViewProps) {
       </box>
 
       {showHelp() ? (
-        <box paddingLeft={1}>
-          <text fg={colors.textDim}>j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm ?:close</text>
+        <box paddingLeft={1} flexShrink={0}>
+          <text fg={colors.textDim}>j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm p:permit-all ?:close</text>
         </box>
       ) : (
-        <box paddingLeft={1}>
-          <text fg={colors.textMuted}>j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm ?:help</text>
+        <box paddingLeft={1} flexShrink={0}>
+          <text fg={colors.textMuted}>j/k:nav 1-4:tab [:prev ]:next a:auto y/n:perm p:permit-all ?:help</text>
         </box>
       )}
     </box>

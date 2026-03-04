@@ -1,0 +1,48 @@
+{
+  "name": "Reducer & ReplView Performance Optimization",
+  "branchName": "perf/reducer-repl-optimization",
+  "properties": [
+    {
+      "id": "P0",
+      "name": "Benchmark infrastructure",
+      "description": "Create event stream generators and timing harness. Generators must produce realistic eval sessions: harness_start, [text, repl_input, (repl_progress * M), repl_output] * N, harness_end. Parameterizable by (turns, progressChunksPerTurn, numRuns). Timing harness measures per-event cost at different points in a stream. All benchmarks go in packages/ai/client/hypergraph/__tests__/perf/. Must be runnable via bun test.",
+      "passes": true,
+      "priority": 1
+    },
+    {
+      "id": "P1",
+      "name": "Sublinear degradation",
+      "description": "The cost of processing the Nth event must not scale linearly with N. Specifically: the per-event cost of the last 10% of a long stream should not be dramatically more expensive than the first 10%. This covers reduceEvent and reduceConversation (which includes defaultActive). Optimize as needed to make this property hold.",
+      "passes": true,
+      "priority": 2
+    },
+    {
+      "id": "P2",
+      "name": "Projection cost bounded",
+      "description": "projectRepl on a large graph must stay under a budget that makes terminal updates viable (~16ms). The implementer decides what 'large' means but it should represent a realistic long-running eval session (hundreds of turns, thousands of progress chunks).",
+      "passes": true,
+      "priority": 3
+    },
+    {
+      "id": "P3",
+      "name": "Multi-run cost scales with runs not graph size",
+      "description": "Adding more runIds (subagents) should scale with the number of runs, not with total graph size times number of runs. This targets the collectRunChunks inner loop which currently iterates ALL nodes to find the start chunk for each runId.",
+      "passes": true,
+      "priority": 4
+    },
+    {
+      "id": "P4",
+      "name": "Sustained session viability",
+      "description": "Simulate the full reduce -> project -> flatten pipeline for a realistic eval session's worth of events. The per-event cost at the end of the session must remain usable. This is the integration benchmark that reproduces the freeze and proves the fix works. No single event should take > 50ms through the full pipeline.",
+      "passes": true,
+      "priority": 5
+    },
+    {
+      "id": "P5",
+      "name": "Projection correctness preserved",
+      "description": "All existing tests in packages/ai/client/hypergraph/__tests__/ must continue to pass after optimizations. projectRepl output for existing test event streams must not change. If you add caching or incremental computation, verify equivalence with full recompute.",
+      "passes": true,
+      "priority": 6
+    }
+  ]
+}

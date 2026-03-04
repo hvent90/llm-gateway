@@ -151,6 +151,10 @@ ENV PATH="/root/.bun/bin:$PATH"
 COPY llm-gateway/ /opt/llm-gateway/
 WORKDIR /opt/llm-gateway
 RUN bun install --frozen-lockfile
+
+# Enable core dumps for crash debugging
+RUN mkdir -p /tmp/cores && chmod 777 /tmp/cores
+RUN echo '/tmp/cores/core.%e.%p.%t' > /proc/sys/kernel/core_pattern 2>/dev/null || true
 `;
   writeFileSync(join(stagingDir, "Dockerfile"), dockerfile);
 }
