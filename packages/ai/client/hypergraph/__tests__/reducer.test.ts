@@ -264,7 +264,7 @@ describe("Hypergraph Reducer", () => {
     expect(messages.length).toBe(2);
   });
 
-  test("graph is immutable", () => {
+  test("graph is mutated in place for performance", () => {
     const g1 = createGraph();
     const s1 = createReducerState();
     const [g2] = reduceEvent(g1, s1, {
@@ -274,7 +274,8 @@ describe("Hypergraph Reducer", () => {
       agentId: "a1",
       content: "Hi",
     });
-    expect(g1.nodes.size).toBe(0);
+    // reduceEvent mutates in place — g1 and g2 share the same Maps
+    expect(g1).toBe(g2);
     expect(g2.nodes.size).toBeGreaterThan(0);
   });
 });

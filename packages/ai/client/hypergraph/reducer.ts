@@ -1,5 +1,5 @@
 import type { ConversationGraph, NodeId, EdgeId, UserEvent, ChunkEvent } from "./types";
-import { addNode, addEdge, extendEdge } from "./primitives";
+import { addNodeMut, addEdgeMut, extendEdgeMut } from "./primitives";
 import type { ServerEvent } from "../server-event";
 
 export type GraphEvent = ServerEvent | UserEvent;
@@ -90,65 +90,54 @@ export function reduceEvent(
 ): [ConversationGraph, ReducerState] {
   const blockKey = deriveBlockKey(event);
   if (blockKey === null) return [graph, state];
-  const newState: ReducerState = {
-    lastChunkByRunId: new Map(state.lastChunkByRunId),
-    lastBlockByRunId: new Map(state.lastBlockByRunId),
-    currentBlockIdByRunId: new Map(state.currentBlockIdByRunId),
-    currentBlockEdgeByRunId: new Map(state.currentBlockEdgeByRunId),
-    chunkCounter: state.chunkCounter + 1,
-    pendingBlocksByRunId: new Map([...state.pendingBlocksByRunId].map(([k, v]) => [k, [...v]])),
-    lastMessageId: state.lastMessageId,
-    hadToolResultSinceLastText: new Map(state.hadToolResultSinceLastText),
-    messageCounter: state.messageCounter,
-    eventIdToBlockNodeId: new Map(state.eventIdToBlockNodeId),
-    eventIdToRunId: new Map(state.eventIdToRunId),
-    childRunsByParent: new Map([...state.childRunsByParent].map(([k, v]) => [k, new Set(v)])),
-  };
 
   const runId = getRunId(event);
   const parentId = getParentId(event);
-  const chunkId = `chunk:${newState.chunkCounter}`;
-  let g = graph;
 
-  // 1. Create chunk node (connected events are already filtered by deriveBlockKey)
-  g = addNode(g, { id: chunkId, kind: "chunk", content: event as ChunkEvent });
+  // Capture pre-mutation values needed later
+  const isFirstEventForRun = !state.lastChunkByRunId.has(runId);
+  const currentBlockKey = state.currentBlockIdByRunId.get(runId);
+
+  // Mutate graph in place — all callers immediately reassign: [g, s] = reduceEvent(...)
+  const g = graph;
+
+  state.chunkCounter = state.chunkCounter + 1;
+  const chunkId = `chunk:${state.chunkCounter}`;
+
+  // 1. Create chunk node
+  addNodeMut(g, { id: chunkId, kind: "chunk", content: event as ChunkEvent });
 
   // 2. Chunk-level sequence edge
   const prevChunk = state.lastChunkByRunId.get(runId);
   if (prevChunk) {
-    g = addEdge(g, {
+    addEdgeMut(g, {
       id: `seq:chunk:${prevChunk}:${chunkId}`,
       type: "sequence",
       roles: { predecessor: [prevChunk], successor: [chunkId] },
       properties: {},
     });
   }
-  newState.lastChunkByRunId.set(runId, chunkId);
+  state.lastChunkByRunId.set(runId, chunkId);
 
   // 3. Block logic — same blockKey = extend, new blockKey = new block
-  const currentBlockKey = state.currentBlockIdByRunId.get(runId);
   if (currentBlockKey === blockKey) {
-    // Extend existing block edge
     const blockEdgeId = state.currentBlockEdgeByRunId.get(runId)!;
-    g = extendEdge(g, blockEdgeId, "part", [chunkId]);
+    extendEdgeMut(g, blockEdgeId, "part", [chunkId]);
   } else {
-    // New block
     const blockNodeId = `block:${blockKey}`;
-    g = addNode(g, { id: blockNodeId, kind: "block" });
+    addNodeMut(g, { id: blockNodeId, kind: "block" });
 
-    // Block edge
     const blockEdgeId = `be:${blockKey}`;
-    g = addEdge(g, {
+    addEdgeMut(g, {
       id: blockEdgeId,
       type: "block",
       roles: { part: [chunkId], whole: [blockNodeId] },
       properties: {},
     });
 
-    // Block-level sequence edge
     const prevBlock = state.lastBlockByRunId.get(runId);
     if (prevBlock) {
-      g = addEdge(g, {
+      addEdgeMut(g, {
         id: `seq:block:${prevBlock}:${blockNodeId}`,
         type: "sequence",
         roles: { predecessor: [prevBlock], successor: [blockNodeId] },
@@ -156,14 +145,12 @@ export function reduceEvent(
       });
     }
 
-    // Sequence after child runs: when a parent run creates a new block,
-    // it must come after all child run activity up to this point.
     const childRuns = state.childRunsByParent.get(runId);
     if (childRuns) {
       for (const childRunId of childRuns) {
         const childLastBlock = state.lastBlockByRunId.get(childRunId);
         if (childLastBlock && childLastBlock !== blockNodeId && childLastBlock !== prevBlock) {
-          g = addEdge(g, {
+          addEdgeMut(g, {
             id: `seq:cross:${childLastBlock}:${blockNodeId}`,
             type: "sequence",
             roles: { predecessor: [childLastBlock], successor: [blockNodeId] },
@@ -173,46 +160,40 @@ export function reduceEvent(
       }
     }
 
-    newState.lastBlockByRunId.set(runId, blockNodeId);
-    newState.currentBlockIdByRunId.set(runId, blockKey);
-    newState.currentBlockEdgeByRunId.set(runId, blockEdgeId);
+    state.lastBlockByRunId.set(runId, blockNodeId);
+    state.currentBlockIdByRunId.set(runId, blockKey);
+    state.currentBlockEdgeByRunId.set(runId, blockEdgeId);
 
-    // Track raw event ID → block node ID and runId for spawn resolution
     if ("id" in event) {
-      newState.eventIdToBlockNodeId.set(event.id as string, blockNodeId);
-      newState.eventIdToRunId.set(event.id as string, runId);
+      state.eventIdToBlockNodeId.set(event.id as string, blockNodeId);
+      state.eventIdToRunId.set(event.id as string, runId);
     }
-    // Register runId → harness_start block so child runs can resolve their parentId
     if (event.type === "harness_start") {
-      newState.eventIdToBlockNodeId.set(runId, blockNodeId);
-      newState.eventIdToRunId.set(runId, runId);
+      state.eventIdToBlockNodeId.set(runId, blockNodeId);
+      state.eventIdToRunId.set(runId, runId);
     }
   }
 
   // 4. Spawn edge + cross-run sequence edge for parentId
-  if (parentId && !state.lastChunkByRunId.has(runId)) {
-    const parentBlockNodeId = newState.eventIdToBlockNodeId.get(parentId) ?? `block:${parentId}`;
+  if (parentId && isFirstEventForRun) {
+    const parentBlockNodeId = state.eventIdToBlockNodeId.get(parentId) ?? `block:${parentId}`;
     if (g.nodes.has(parentBlockNodeId)) {
-      g = addEdge(g, {
+      addEdgeMut(g, {
         id: `spawn:${parentId}:${chunkId}`,
         type: "spawn",
         roles: { trigger: [parentBlockNodeId], invocation: [chunkId] },
         properties: {},
       });
 
-      // Register child run for message grouping — key by parent's runId
-      const parentRunId = newState.eventIdToRunId.get(parentId) ?? parentId;
-      const children = newState.childRunsByParent.get(parentRunId) ?? new Set();
+      const parentRunId = state.eventIdToRunId.get(parentId) ?? parentId;
+      const children = state.childRunsByParent.get(parentRunId) ?? new Set();
       children.add(runId);
-      newState.childRunsByParent.set(parentRunId, children);
+      state.childRunsByParent.set(parentRunId, children);
 
-      // Thread child into parent's timeline: sequence edge from the parent
-      // run's current last block to the child's first block. This preserves
-      // temporal ordering across runs without lying about attribution.
       const parentLastBlock = state.lastBlockByRunId.get(parentRunId);
       const thisBlock = `block:${blockKey}`;
       if (parentLastBlock && parentLastBlock !== thisBlock) {
-        g = addEdge(g, {
+        addEdgeMut(g, {
           id: `seq:cross:${parentLastBlock}:${thisBlock}`,
           type: "sequence",
           roles: { predecessor: [parentLastBlock], successor: [thisBlock] },
@@ -223,114 +204,87 @@ export function reduceEvent(
   }
 
   // 5. Message boundary detection
-  // Track the current block node id for pending blocks
-  const currentBlockKey2 = newState.currentBlockIdByRunId.get(runId);
+  const currentBlockKey2 = state.currentBlockIdByRunId.get(runId);
   const currentBlockNodeId = currentBlockKey2 ? `block:${currentBlockKey2}` : null;
 
-  // Check for text-after-tool-result boundary: flush pending blocks as a message
-  // before adding the new text block. Check both this run and parent run, since
-  // tool_result is on the agent's runId but text arrives on the provider's runId.
   if (event.type === "text" || event.type === "reasoning") {
     const hadToolResult =
       state.hadToolResultSinceLastText.get(runId) ||
       (parentId && state.hadToolResultSinceLastText.get(parentId));
     if (hadToolResult) {
-      // Flush the parent's pending blocks (which include child run blocks)
       const flushRunId =
         parentId && state.hadToolResultSinceLastText.get(parentId) ? parentId : runId;
-      const pending = [...(newState.pendingBlocksByRunId.get(flushRunId) ?? [])];
-      // Also gather child run blocks
-      const childRuns = newState.childRunsByParent.get(flushRunId);
+      const pending = [...(state.pendingBlocksByRunId.get(flushRunId) ?? [])];
+      const childRuns = state.childRunsByParent.get(flushRunId);
       if (childRuns) {
         for (const childRunId of childRuns) {
-          const childPending = newState.pendingBlocksByRunId.get(childRunId);
+          const childPending = state.pendingBlocksByRunId.get(childRunId);
           if (childPending && childPending.length > 0) {
             pending.push(...childPending);
-            newState.pendingBlocksByRunId.set(childRunId, []);
+            state.pendingBlocksByRunId.set(childRunId, []);
           }
         }
       }
       if (pending.length > 0) {
-        const result = flushMessage(g, newState, flushRunId, pending);
-        g = result.graph;
-        newState.lastMessageId = result.messageId;
-        newState.messageCounter = result.messageCounter;
-        newState.pendingBlocksByRunId.set(flushRunId, []);
+        flushMessageMut(g, state, pending);
       }
-      newState.hadToolResultSinceLastText.set(runId, false);
-      if (parentId) newState.hadToolResultSinceLastText.set(parentId, false);
+      state.pendingBlocksByRunId.set(flushRunId, []);
+      state.hadToolResultSinceLastText.set(runId, false);
+      if (parentId) state.hadToolResultSinceLastText.set(parentId, false);
     }
   }
 
-  // Track tool_result / repl_output for text-after-tool-result detection
   if (event.type === "tool_result" || event.type === "repl_output") {
-    newState.hadToolResultSinceLastText.set(runId, true);
+    state.hadToolResultSinceLastText.set(runId, true);
   }
 
-  // Add current block to pending (only if it's a new block, not extending)
   if (currentBlockKey !== blockKey && currentBlockNodeId) {
-    const pending = newState.pendingBlocksByRunId.get(runId) ?? [];
+    const pending = state.pendingBlocksByRunId.get(runId) ?? [];
     pending.push(currentBlockNodeId);
-    newState.pendingBlocksByRunId.set(runId, pending);
+    state.pendingBlocksByRunId.set(runId, pending);
   }
 
-  // User events create their own message immediately
   if (event.type === "user" && currentBlockNodeId) {
-    const pending = [currentBlockNodeId];
-    const result = flushMessage(g, newState, runId, pending);
-    g = result.graph;
-    newState.lastMessageId = result.messageId;
-    newState.messageCounter = result.messageCounter;
-    newState.pendingBlocksByRunId.set(runId, []);
+    flushMessageMut(g, state, [currentBlockNodeId]);
+    state.pendingBlocksByRunId.set(runId, []);
   }
 
-  // harness_end closes the current message — include blocks from child runs
   if (event.type === "harness_end") {
-    const pending = [...(newState.pendingBlocksByRunId.get(runId) ?? [])];
-    const childRuns = newState.childRunsByParent.get(runId);
+    const pending = [...(state.pendingBlocksByRunId.get(runId) ?? [])];
+    const childRuns = state.childRunsByParent.get(runId);
     if (childRuns) {
       for (const childRunId of childRuns) {
-        const childPending = newState.pendingBlocksByRunId.get(childRunId);
+        const childPending = state.pendingBlocksByRunId.get(childRunId);
         if (childPending && childPending.length > 0) {
           pending.push(...childPending);
-          newState.pendingBlocksByRunId.set(childRunId, []);
+          state.pendingBlocksByRunId.set(childRunId, []);
         }
       }
     }
     if (pending.length > 0) {
-      const result = flushMessage(g, newState, runId, pending);
-      g = result.graph;
-      newState.lastMessageId = result.messageId;
-      newState.messageCounter = result.messageCounter;
-      newState.pendingBlocksByRunId.set(runId, []);
+      flushMessageMut(g, state, pending);
+      state.pendingBlocksByRunId.set(runId, []);
     }
-    newState.hadToolResultSinceLastText.delete(runId);
+    state.hadToolResultSinceLastText.delete(runId);
   }
 
-  return [g, newState];
+  return [g, state];
 }
 
-function flushMessage(
-  graph: ConversationGraph,
-  state: ReducerState,
-  runId: string,
-  blockIds: NodeId[],
-): { graph: ConversationGraph; messageId: NodeId; messageCounter: number } {
-  const messageCounter = state.messageCounter + 1;
-  const messageId = `msg:${messageCounter}`;
-  let g = graph;
+function flushMessageMut(graph: ConversationGraph, state: ReducerState, blockIds: NodeId[]): void {
+  state.messageCounter += 1;
+  const messageId = `msg:${state.messageCounter}`;
 
-  g = addNode(g, { id: messageId, kind: "message" });
-  g = addEdge(g, {
+  addNodeMut(graph, { id: messageId, kind: "message" });
+  addEdgeMut(graph, {
     id: `me:${messageId}`,
     type: "message",
     roles: { part: [...blockIds], whole: [messageId] },
     properties: {},
   });
 
-  // Message-level sequence edge
   if (state.lastMessageId) {
-    g = addEdge(g, {
+    addEdgeMut(graph, {
       id: `seq:msg:${state.lastMessageId}:${messageId}`,
       type: "sequence",
       roles: { predecessor: [state.lastMessageId], successor: [messageId] },
@@ -338,5 +292,5 @@ function flushMessage(
     });
   }
 
-  return { graph: g, messageId, messageCounter };
+  state.lastMessageId = messageId;
 }
