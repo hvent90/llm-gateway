@@ -79,6 +79,7 @@ export type HarnessEvent =
       type: "harness_start";
       runId: string;
       parentId?: string;
+      model?: string;
       depth?: number;
       maxIterations?: number;
     }

@@ -15,6 +15,7 @@ export type ServerEvent =
       runId: string;
       agentId: string;
       parentId?: string;
+      model?: string;
       depth?: number;
       maxIterations?: number;
     }

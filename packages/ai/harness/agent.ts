@@ -48,7 +48,7 @@ function createAgentHarness(options: AgentHarnessOptions): GeneratorHarnessModul
         return tagged;
       };
 
-      yield tag({ type: "harness_start", runId: myRunId });
+      yield tag({ type: "harness_start", runId: myRunId, model });
 
       // Mutable messages array for the agent loop
       const messages: Message[] = [...params.messages];

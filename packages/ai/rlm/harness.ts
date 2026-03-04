@@ -67,6 +67,7 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
       yield tag({
         type: "harness_start",
         runId,
+        model: params.model,
         ...(currentDepth > 0 ? { depth: currentDepth } : {}),
         maxIterations: config.maxIterations,
       });
