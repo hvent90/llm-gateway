@@ -16,7 +16,7 @@ import { createGeneratorHarness } from "../../packages/ai/harness/providers/zen.
 import { spawnSync } from "node:child_process";
 import { TaskSelectScreen, fetchTasks } from "./task-select";
 import { ModelSelectScreen } from "./model-select";
-import { loadMostRecentEvalConfig } from "./load-jobs";
+import { loadMostRecentEvalConfig, saveLastEvalConfig } from "./load-jobs";
 import {
   createInitialConversation,
   reduceConversation,
@@ -393,7 +393,9 @@ export function App() {
     setScreen("running");
     setOutput([]);
     setExitCode(null);
-    setLastRunConfig({ ...config, taskNames: [...config.taskNames] });
+    const savedConfig = { ...config, taskNames: [...config.taskNames] };
+    setLastRunConfig(savedConfig);
+    saveLastEvalConfig(savedConfig);
     setUserMessage(null);
     setConversation(createInitialConversation());
     setConversation((s) => reduceConversation(s, { type: "stream_start" }));

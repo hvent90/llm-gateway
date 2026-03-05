@@ -1,6 +1,8 @@
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EvalConfig } from "./runner";
+
+const LAST_CONFIG_PATH = join(import.meta.dir, "../.last-eval-config.json");
 
 export interface JobSummary {
   jobName: string;
@@ -43,6 +45,7 @@ interface ConfigJson {
 
 const HARNESS_BY_IMPORT_PATH: Record<string, string> = {
   "agents:RlmAgent": "rlm",
+  "evals.agents.rlm:RlmAgent": "rlm",
 };
 
 function listJobDirectories(jobsDir: string): string[] {
@@ -129,7 +132,24 @@ export async function loadJobSummaries(): Promise<JobSummary[]> {
   return summaries;
 }
 
+export function saveLastEvalConfig(config: EvalConfig): void {
+  writeFileSync(LAST_CONFIG_PATH, JSON.stringify(config));
+}
+
 export async function loadMostRecentEvalConfig(): Promise<EvalConfig | null> {
+  // Prefer the TUI-saved config over Harbor's config.json so we preserve
+  // exactly what the user selected (concurrency, task list, etc.).
+  if (existsSync(LAST_CONFIG_PATH)) {
+    try {
+      const saved = JSON.parse(await Bun.file(LAST_CONFIG_PATH).text()) as EvalConfig;
+      if (saved.model && saved.dataset && typeof saved.concurrency === "number") {
+        return saved;
+      }
+    } catch {
+      // fall through to Harbor configs
+    }
+  }
+
   const jobsDir = join(import.meta.dir, "../jobs");
   if (!existsSync(jobsDir)) return null;
 

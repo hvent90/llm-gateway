@@ -41,8 +41,13 @@ function StatusBar(props: {
         <Show when={props.turn!.usage}>
           {(() => {
             const u = props.turn!.usage!;
-            const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
-            return <text fg={colors.textDim}>tokens: {fmt(u.inputTokens)} in, {fmt(u.cacheReadTokens ?? 0)} cached, {fmt(u.outputTokens)} out</text>;
+            const fmt = (n: number) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
+            return (
+              <text fg={colors.textDim}>
+                tokens: {fmt(u.inputTokens)} in, {fmt(u.cacheReadTokens ?? 0)} cached,{" "}
+                {fmt(u.outputTokens)} out
+              </text>
+            );
           })()}
         </Show>
         <Show when={props.agent!.finalAnswer}>

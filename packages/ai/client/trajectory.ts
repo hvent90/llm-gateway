@@ -10,7 +10,14 @@ export interface TrajectoryMetadata {
 
 export type TrajectoryEventEntry =
   | { t: number; event: ServerEvent }
-  | { t: number; kind: "relay_resolution"; relayId: string; approved: boolean; always?: boolean; reason?: string }
+  | {
+      t: number;
+      kind: "relay_resolution";
+      relayId: string;
+      approved: boolean;
+      always?: boolean;
+      reason?: string;
+    }
   | { t: number; kind: "user_message"; content: string };
 
 export interface TrajectoryFile {

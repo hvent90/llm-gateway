@@ -5,3 +5,4 @@ jobs/*
 __pycache__/
 *.pyc
 .venv/
+.last-eval-config.json
