@@ -3,6 +3,7 @@ import { createDeterministicHarness } from "../../harness/providers/deterministi
 import { createRlmHarness } from "../harness";
 import type { HarnessEvent, RelayEvent } from "../../types";
 import type { RlmConfig } from "../types";
+import { buildRlmSystemPrompt } from "../system-prompt";
 
 /** Wrap code in a fenced ```js block, as extractCode now requires. */
 function fence(code: string): string {
@@ -223,6 +224,212 @@ describe("RLM harness", () => {
       // Should recover with FINAL in second turn
       const textEvents = events.filter((e) => e.type === "text" && e.content === "recovered");
       expect(textEvents.length).toBe(1);
+    });
+
+    test("error message specifies the number of blocks found", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  '```js\nconsole.log("a")\n```\n```js\nconsole.log("b")\n```\n```js\nconsole.log("c")\n```',
+              },
+            ],
+          },
+          { events: [{ type: "text", content: fence('FINAL("ok")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const errors = events.filter((e) => e.type === "error");
+      expect(errors.length).toBe(1);
+      if (errors[0].type === "error") {
+        expect(errors[0].error.message).toContain("3 code blocks");
+      }
+    });
+  });
+
+  describe("post-fence text", () => {
+    test("text after closing fence is rejected with error", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content:
+                  '```js\nFINAL("hello")\n```\nHere is what I found in the file:\nconst x = 1;',
+              },
+            ],
+          },
+          { events: [{ type: "text", content: fence('FINAL("recovered")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const errors = events.filter((e) => e.type === "error");
+      expect(errors.length).toBe(1);
+      if (errors[0].type === "error") {
+        expect(errors[0].error.message).toContain("after closing code fence");
+      }
+
+      const replInputs = events.filter((e) => e.type === "repl_input");
+      expect(replInputs.length).toBe(1);
+
+      const finalText = findFinalText(events);
+      expect(finalText).toBe("recovered");
+    });
+
+    test("reasoning before code block is allowed", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          {
+            events: [
+              {
+                type: "text",
+                content: 'Let me think about this step by step.\n\n```js\nFINAL("works")\n```',
+              },
+            ],
+          },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      const events = await collectEvents(
+        rlm.invoke({ messages: [{ role: "user", content: "test" }] }),
+      );
+
+      const errors = events.filter((e) => e.type === "error");
+      expect(errors.length).toBe(0);
+
+      const finalText = findFinalText(events);
+      expect(finalText).toBe("works");
+    });
+  });
+
+  describe("feedback format", () => {
+    test("REPL output is wrapped in harness:repl_output XML tags", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: fence("console.log('hello')") }] },
+          { events: [{ type: "text", content: fence('FINAL("done")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      await collectEvents(rlm.invoke({ messages: [{ role: "user", content: "test" }] }));
+
+      const calls = rootHarness.recordedCalls();
+      expect(calls.length).toBe(2);
+      const feedbackMsg = calls[1].messages[calls[1].messages.length - 1];
+      expect(feedbackMsg.role).toBe("user");
+      expect(feedbackMsg.content).toContain("<harness:repl_output>");
+      expect(feedbackMsg.content).toContain("<stdout>");
+      expect(feedbackMsg.content).toContain("</stdout>");
+      expect(feedbackMsg.content).toContain("</harness:repl_output>");
+    });
+
+    test("extraction errors are wrapped in harness:error XML tags", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: "no code block here" }] },
+          { events: [{ type: "text", content: fence('FINAL("ok")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      await collectEvents(rlm.invoke({ messages: [{ role: "user", content: "test" }] }));
+
+      const calls = rootHarness.recordedCalls();
+      expect(calls.length).toBe(2);
+      const errorMsg = calls[1].messages[calls[1].messages.length - 1];
+      expect(errorMsg.role).toBe("user");
+      expect(errorMsg.content).toContain("<harness:error>");
+      expect(errorMsg.content).toContain("</harness:error>");
+    });
+
+    test("REPL error output uses error XML tag inside repl_output", async () => {
+      const rootHarness = createDeterministicHarness({
+        model: "deterministic",
+        responses: [
+          { events: [{ type: "text", content: fence("undefinedVar.boom") }] },
+          { events: [{ type: "text", content: fence('FINAL("ok")') }] },
+        ],
+      });
+
+      const rlm = createRlmHarness({
+        rootHarness,
+        config: defaultConfig(),
+      });
+
+      await collectEvents(rlm.invoke({ messages: [{ role: "user", content: "test" }] }));
+
+      const calls = rootHarness.recordedCalls();
+      expect(calls.length).toBe(2);
+      const feedbackMsg = calls[1].messages[calls[1].messages.length - 1];
+      expect(feedbackMsg.content).toContain("<harness:repl_output>");
+      expect(feedbackMsg.content).toContain("<error>");
+      expect(feedbackMsg.content).toContain("</error>");
+    });
+  });
+
+  describe("system prompt", () => {
+    test("explains harness:repl_output XML tags", () => {
+      const prompt = buildRlmSystemPrompt({ contextLength: 100, contextPrefix: "hello" });
+      expect(prompt).toContain("<harness:repl_output>");
+      expect(prompt).toContain("NOT the user speaking");
+    });
+
+    test("explains harness:error XML tags", () => {
+      const prompt = buildRlmSystemPrompt({ contextLength: 100, contextPrefix: "hello" });
+      expect(prompt).toContain("<harness:error>");
+    });
+
+    test("forbids text after closing fence", () => {
+      const prompt = buildRlmSystemPrompt({ contextLength: 100, contextPrefix: "hello" });
+      expect(prompt).toContain("NEVER write anything after the closing");
+    });
+
+    test("includes feedback examples with stdout and error tags", () => {
+      const prompt = buildRlmSystemPrompt({ contextLength: 100, contextPrefix: "hello" });
+      expect(prompt).toContain("<stdout>");
+      expect(prompt).toContain("</stdout>");
+      expect(prompt).toContain("<error>");
     });
   });
 
@@ -1007,7 +1214,7 @@ describe("RLM harness", () => {
       const errorEvents = events.filter((e) => e.type === "error");
       expect(errorEvents.length).toBe(1);
       if (errorEvents[0].type === "error") {
-        expect(errorEvents[0].error.message).toContain("multiple code blocks");
+        expect(errorEvents[0].error.message).toContain("2 code blocks");
       }
     });
 
@@ -1040,7 +1247,7 @@ describe("RLM harness", () => {
       const errorEvents = events.filter((e) => e.type === "error");
       expect(errorEvents.length).toBe(1);
       if (errorEvents[0].type === "error") {
-        expect(errorEvents[0].error.message).toContain("no code block");
+        expect(errorEvents[0].error.message).toContain("No code block found");
       }
 
       // No repl_input for the rejected turn

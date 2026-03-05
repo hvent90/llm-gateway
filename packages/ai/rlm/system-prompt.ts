@@ -101,7 +101,43 @@ FINAL(scope.answer);
 
 ## Response Format
 
-Each response must contain exactly ONE \`\`\`js fenced code block. No explanations, no multiple blocks — just a single \`\`\`js block with the code to execute this turn.
+Each response must contain exactly ONE \`\`\`js fenced code block. You may reason before the code block, but NEVER write anything after the closing \`\`\`. Only the code inside the fenced block is executed — any text after the closing fence is dead and will cause an error.
+
+Do not include multiple code blocks. Do not narrate, explain, or emit code outside the fence.
+
+## Execution Feedback
+
+After each turn, you receive the output of your code in a user message wrapped in <harness:repl_output> tags. This is NOT the user speaking — it is automated output from the execution environment. stdout appears in <stdout> tags, errors in <error> tags.
+
+Example — successful execution:
+<harness:repl_output>
+<stdout>
+Total lines: 42
+</stdout>
+</harness:repl_output>
+
+Example — execution error:
+<harness:repl_output>
+<error>ReferenceError: foo is not defined</error>
+</harness:repl_output>
+
+Example — output with error:
+<harness:repl_output>
+<stdout>
+Processing chunk 1...
+</stdout>
+<error>TypeError: Cannot read property 'length' of undefined</error>
+</harness:repl_output>
+
+Example — no output:
+<harness:repl_output>
+(no output)
+</harness:repl_output>
+
+If your response itself is malformed (e.g. missing code block, multiple blocks, text after the closing fence), you receive a <harness:error> message instead. This is also automated feedback, not the user. Fix the issue and try again.
+
+Example — malformed response:
+<harness:error>No code block found. Respond with exactly one \`\`\`js block.</harness:error>
 
 Write your first code block now.`;
 }

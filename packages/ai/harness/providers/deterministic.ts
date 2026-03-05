@@ -37,14 +37,27 @@ export interface DeterministicHarnessConfig {
  * Each invoke() assigns its own runId (uuidv7), forwards context.parentId,
  * and generates unique event ids — matching real provider harness behavior.
  */
+export interface DeterministicHarnessModule extends GeneratorHarnessModule {
+  /** Returns the messages passed to each invoke() call, in order. */
+  recordedCalls(): { messages: GeneratorInvokeParams["messages"] }[];
+}
+
 export function createDeterministicHarness(
   config: DeterministicHarnessConfig,
-): GeneratorHarnessModule {
+): DeterministicHarnessModule {
   let callIndex = 0;
   const defaultModel = config.model;
+  const calls: { messages: GeneratorInvokeParams["messages"] }[] = [];
 
   return {
-    async *invoke({ env, model: invokeModel }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+    recordedCalls: () => calls,
+
+    async *invoke({
+      env,
+      model: invokeModel,
+      messages,
+    }: GeneratorInvokeParams): AsyncIterable<HarnessEvent> {
+      calls.push({ messages: messages ? [...messages] : [] });
       const model = invokeModel ?? defaultModel;
       if (!model) {
         throw new Error("No model specified: provide model at harness creation or invoke time");

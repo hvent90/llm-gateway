@@ -26,12 +26,26 @@ interface RlmHarnessOptions {
   _depth?: number;
 }
 
-/** Extract code from a model response. Looks for fenced JS blocks, concatenates if multiple. */
+/** Extract code from a model response. Requires exactly one fenced JS block with no trailing text. */
 function extractCode(text: string): string {
   const fenceRe = /```(?:js|javascript)\n([\s\S]*?)```/g;
   const matches = [...text.matchAll(fenceRe)];
-  if (matches.length >= 1) return matches.map((m) => m[1].trim()).join("\n");
-  throw new Error("Response contained no code block. Expected exactly one ```js block per turn.");
+  if (matches.length === 0)
+    throw new Error("No code block found. Respond with exactly one ```js block.");
+  if (matches.length > 1)
+    throw new Error(
+      `Found ${matches.length} code blocks. Respond with exactly one \`\`\`js block per turn.`,
+    );
+
+  const match = matches[0];
+  const endIndex = match.index! + match[0].length;
+  const trailing = text.slice(endIndex).trim();
+  if (trailing.length > 0)
+    throw new Error(
+      "Text found after closing code fence. Do not write anything after the closing ```. All reasoning must come before the code block.",
+    );
+
+  return match[1].trim();
 }
 
 /** Collect all text from a provider harness invocation. */
@@ -455,7 +469,10 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
           const error = e instanceof Error ? e : new Error(String(e));
           yield tag({ type: "error", runId, error });
           messages.push({ role: "assistant", content: responseText });
-          messages.push({ role: "user", content: `error: ${error.message}` });
+          messages.push({
+            role: "user",
+            content: `<harness:error>${error.message}</harness:error>`,
+          });
           continue;
         }
 
@@ -510,10 +527,11 @@ function createRlmHarness(options: RlmHarnessOptions): GeneratorHarnessModule {
         messages.push({ role: "assistant", content: responseText });
 
         const feedbackParts: string[] = [];
-        if (result.stdout) feedbackParts.push(`stdout:\n${result.stdout}`);
-        if (result.error) feedbackParts.push(`error: ${result.error}`);
+        if (result.stdout) feedbackParts.push(`<stdout>\n${result.stdout}\n</stdout>`);
+        if (result.error) feedbackParts.push(`<error>${result.error}</error>`);
         if (feedbackParts.length === 0) feedbackParts.push("(no output)");
-        messages.push({ role: "user", content: feedbackParts.join("\n") });
+        const feedback = `<harness:repl_output>\n${feedbackParts.join("\n")}\n</harness:repl_output>`;
+        messages.push({ role: "user", content: feedback });
 
         // Check if done
         if (result.done && result.finalValue !== undefined) {
