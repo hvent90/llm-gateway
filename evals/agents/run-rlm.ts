@@ -207,6 +207,7 @@ async function main() {
       maxDepth: depth,
       maxStdoutLength: 4000,
       metadataPrefixLength: 200,
+      ...(cwd && { execCwd: cwd }),
     },
   });
 
