@@ -149,8 +149,7 @@ ENV BUN_INSTALL="/root/.bun"
 ENV PATH="/root/.bun/bin:$PATH"
 
 COPY llm-gateway/ /opt/llm-gateway/
-WORKDIR /opt/llm-gateway
-RUN bun install --frozen-lockfile
+RUN cd /opt/llm-gateway && bun install --frozen-lockfile
 
 # Enable core dumps for crash debugging
 RUN mkdir -p /tmp/cores && chmod 777 /tmp/cores
