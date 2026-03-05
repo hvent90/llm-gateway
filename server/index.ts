@@ -35,6 +35,7 @@ interface ChatRequest {
   mode?: "agent" | "rlm";
   maxIterations?: number;
   maxDepth?: number;
+  execCwd?: string;
 }
 
 interface RelayRequest {
@@ -106,6 +107,7 @@ export async function createApp(config?: AppConfig): Promise<Hono> {
             maxStdoutLength: 4000,
             metadataPrefixLength: 200,
             maxDepth: body.maxDepth ?? 4,
+            ...(body.execCwd && { execCwd: body.execCwd }),
           },
         });
         const orchestrator = new AgentOrchestrator(rlm);
